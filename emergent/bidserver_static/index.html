@@ -1,0 +1,732 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bid desk</title>
+<style>
+:root{
+  --bg:#f6f5f1; --card:#ffffff; --line:#e2dfd7; --text:#1d1f23; --dim:#6f727a; --faint:#a9abb1;
+  --felt:#1f5e48; --felt-2:#2a7359; --felt-text:#eef5f1;
+  --accent:#2d5bd8; --accent-bg:#e7edfc; --red:#c0392b; --pick:#d99a00;
+  --pos:#1f8a5b; --neg:#c24a3a; --pos-bg:rgba(31,138,91,.14); --neg-bg:rgba(194,74,58,.14);
+  --mono: ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#121417; --card:#1b1e23; --line:#2d3139; --text:#e8eaed; --dim:#959aa4; --faint:#5a5f68;
+    --felt:#173f33; --felt-2:#1f5443; --felt-text:#e3efe9;
+    --accent:#7598ff; --accent-bg:#1f2842; --red:#ef6f5e; --pick:#f0b93f;
+    --pos:#4cc08a; --neg:#ef7866; --pos-bg:rgba(76,192,138,.16); --neg-bg:rgba(239,120,102,.16);
+  }
+}
+*{box-sizing:border-box}
+body{margin:0; background:var(--bg); color:var(--text);
+  font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; padding:16px 20px 60px}
+.wrap{max-width:1180px; margin:0 auto}
+button{font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--text);
+  border-radius:7px; padding:6px 12px}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:disabled{opacity:.35; cursor:default}
+button.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+select{font:inherit; border:1px solid var(--line); background:var(--card); color:var(--text); border-radius:7px; padding:5px 8px; max-width:100%}
+a.btn{display:inline-block; text-decoration:none; border:1px solid var(--line); background:var(--card); color:var(--text);
+  border-radius:7px; padding:6px 12px}
+a.btn:hover{border-color:var(--accent)}
+a.btn.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+.seg{display:inline-flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; margin-left:6px; vertical-align:middle}
+.seg button{border:0; border-radius:0; padding:2px 9px; font-size:11px}
+.seg button.on{background:var(--accent); color:#fff}
+table.th{border-collapse:separate; border-spacing:3px; font-size:12px}
+table.th th{font-size:11px; color:var(--dim); font-weight:600; padding:2px 6px; text-align:left}
+table.th td{background:var(--bg); border-radius:6px; text-align:center; padding:4px 8px; font-family:var(--mono)}
+table.th td .r{display:block; font-size:10px; color:var(--dim)}
+.num{font-family:var(--mono); font-variant-numeric:tabular-nums}
+.red{color:var(--red)}
+.dim{color:var(--dim)}
+
+header{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px}
+header h1{font-size:17px; margin:0 8px 0 0}
+header .meta{color:var(--dim); font-size:12px; flex:1; min-width:200px}
+#err{color:var(--neg); font-size:12px}
+
+.card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px}
+.card h2{margin:0 0 2px; font-size:13px}
+.card .hint{color:var(--dim); font-size:12px; margin:0 0 10px}
+.row{display:grid; gap:14px; margin-bottom:14px}
+.top{grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr)}
+@media (max-width:880px){ .top{grid-template-columns:1fr} }
+
+
+/* ---- why this call */
+.why{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px}
+.why .col{border:1px solid var(--line); border-radius:10px; padding:10px 12px; min-width:0}
+.why .col.chosen{border-color:var(--pick); box-shadow:0 0 0 3px rgba(217,154,0,.16)}
+.why .head{display:flex; align-items:baseline; gap:8px; margin-bottom:2px}
+.why .call{font-family:var(--mono); font-size:19px; font-weight:700}
+.why .tag{font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--dim)}
+.why .chance{margin-left:auto; font-family:var(--mono); font-size:13px}
+.why .meter{height:5px; border-radius:3px; background:var(--bg); overflow:hidden; margin:4px 0 10px}
+.why .meter i{display:block; height:100%; background:var(--accent)}
+.why .col.chosen .meter i{background:var(--pick)}
+.why .lbl{font-size:10.5px; color:var(--dim); text-transform:uppercase; letter-spacing:.04em; margin:10px 0 4px}
+.why .val{display:block; font-family:var(--mono); font-size:15px; white-space:nowrap}
+.why .ruler{position:relative; height:16px; background:var(--bg); border-radius:4px; margin:3px 0 2px}
+.why .ruler i{position:absolute; top:0; bottom:0; background:var(--accent-bg); border-left:2px solid var(--accent);
+  border-right:2px solid var(--accent); border-radius:3px}
+.why .ruler b{position:absolute; top:0; bottom:0; width:2px; background:var(--accent)}
+.why .scale{display:flex; justify-content:space-between; font-size:10px; color:var(--faint); font-family:var(--mono)}
+.why .shape{display:grid; grid-template-columns:auto 1fr auto; gap:2px 6px; align-items:center; font-size:12px}
+.why .shape .bar{height:6px; border-radius:3px; background:var(--accent); opacity:.55}
+.why .line{display:grid; grid-template-columns:34px 1fr; gap:6px; align-items:center; margin:3px 0; font-size:12px}
+.why .line .pc{font-family:var(--mono); text-align:right; color:var(--dim)}
+.why .chips{display:flex; flex-wrap:wrap; gap:3px; align-items:center}
+.why .chip{font-family:var(--mono); font-size:11px; padding:1px 5px; border-radius:5px; background:var(--bg)}
+.why .chip.us{background:var(--accent-bg); color:var(--accent)}
+.why .chip.end{background:var(--pick); color:#000; font-weight:700}
+.why .none{color:var(--dim); font-size:12px}
+.sys{display:grid; grid-template-columns:auto 46px 1fr; gap:3px 10px; align-items:center; font-size:12.5px}
+.sys .c{font-family:var(--mono); font-weight:700; text-align:right}
+.sys .sh{font-family:var(--mono); color:var(--dim); text-align:right}
+.sys .d{color:var(--text)}
+.sys .d em{font-style:normal; color:var(--dim)}
+.sys .d.pick{background:var(--pick); color:#000; border-radius:5px; padding:1px 5px}
+.sys .d.pick em{color:#000; opacity:.6}
+
+/* ---- table (compass) */
+.table{display:grid; grid-template-columns:1fr 1.15fr 1fr; grid-template-rows:auto auto auto; gap:10px;
+  background:radial-gradient(ellipse at center,var(--felt-2),var(--felt)); border-radius:12px; padding:14px}
+.hand{background:var(--card); border-radius:9px; padding:8px 10px; border:2px solid transparent; align-self:center}
+.hand.turn{border-color:var(--pick); box-shadow:0 0 0 4px rgba(217,154,0,.25)}
+.hand .hd{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:3px}
+.hand .hd b{font-size:13px}
+.hand .hd .tag{font-size:11px; color:var(--dim)}
+.hand .hd .go{font-size:11px; color:var(--pick); font-weight:600}
+.sl{display:flex; gap:6px; font-family:var(--mono); font-size:13px; line-height:1.5}
+.sl .sym{width:13px}
+.N{grid-column:2; grid-row:1} .W{grid-column:1; grid-row:2} .E{grid-column:3; grid-row:2} .S{grid-column:2; grid-row:3}
+.center{grid-column:2; grid-row:2; background:rgba(0,0,0,.18); border-radius:9px; padding:8px; color:var(--felt-text)}
+.center table{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:13px}
+.center th{font:600 11px/1.4 -apple-system,sans-serif; opacity:.75; padding-bottom:3px}
+.center td{text-align:center; padding:1px 0; height:20px}
+.center td.q{color:var(--pick); font-weight:700}
+.center .redc{color:#ff9b8e}
+.corner{color:var(--felt-text); font-size:12px; padding:2px 4px}
+.corner b{display:block; font-size:18px}
+.corner.tl{grid-column:1; grid-row:1} .corner.tr{grid-column:3; grid-row:1; text-align:right}
+.corner.bl{grid-column:1; grid-row:3; align-self:end} .corner.br{grid-column:3; grid-row:3; align-self:end; text-align:right}
+
+/* ---- bidding box */
+.bb{display:grid; grid-template-columns:18px repeat(5,1fr); gap:4px}
+.bb .lv{color:var(--dim); font-size:11px; display:flex; align-items:center}
+.bb button,.bb2 button{padding:3px 0 2px; border-radius:6px; line-height:1.15; position:relative}
+.bb button .c,.bb2 button .c{display:block; font-weight:600; font-size:12.5px}
+.bb button .v,.bb2 button .v{display:block; font-family:var(--mono); font-size:10px; opacity:.8}
+.bb button.illegal,.bb2 button.illegal{opacity:.28}
+.bb button.pick,.bb2 button.pick{outline:2.5px solid var(--pick); outline-offset:-1px}
+.bb2{display:grid; grid-template-columns:18px 1fr 1fr 1fr; gap:4px; margin-top:4px}
+.legend{display:flex; align-items:center; gap:6px; font-size:11px; color:var(--dim); margin:10px 0 2px}
+.legend .grad{height:8px; flex:1; border-radius:4px; background:linear-gradient(90deg,var(--neg-bg),transparent,var(--pos-bg)); border:1px solid var(--line)}
+.picks{margin-top:10px; display:grid; grid-template-columns:auto 1fr auto; gap:3px 10px; font-size:12px; align-items:center}
+.picks .bar{height:6px; border-radius:3px; background:var(--accent); opacity:.6}
+.actions{display:flex; gap:6px; margin-top:12px}
+.actions button{flex:1}
+
+/* ---- scores */
+.scores{display:grid; grid-template-columns:minmax(0,1.5fr) minmax(240px,1fr); gap:16px}
+@media (max-width:880px){ .scores{grid-template-columns:1fr} }
+.scroll{overflow-x:auto}
+table.dd{border-collapse:separate; border-spacing:3px; width:100%}
+table.dd th{font-size:11px; color:var(--dim); font-weight:600; padding:2px 4px}
+table.dd th.seat{text-align:left}
+table.dd td{background:var(--bg); border-radius:6px; text-align:center; padding:5px 4px; min-width:66px}
+table.dd td .t{font-family:var(--mono); font-size:15px; font-weight:600}
+table.dd td .k{font-size:11px; display:block}
+table.dd td .p{font-family:var(--mono); font-size:11px; display:block}
+table.dd td.best{outline:2px solid var(--pick)}
+table.dd tr.gap td{background:none; height:4px; padding:0}
+.big{display:flex; flex-direction:column; gap:10px}
+.stat{background:var(--bg); border-radius:9px; padding:9px 12px}
+.stat > span{font-size:11px; color:var(--dim); display:block}
+.stat b{font-size:17px}
+.stat.result{background:var(--accent-bg)}
+
+/* ---- input */
+.inp{display:grid; grid-template-columns:auto minmax(0,1fr); gap:18px}
+@media (max-width:880px){ .inp{grid-template-columns:1fr} }
+.sub{font-size:11px; color:var(--dim); font-weight:600; margin:0 0 5px; text-transform:uppercase; letter-spacing:.04em}
+.grid13{display:grid; grid-template-columns:16px repeat(13,17px); gap:2px; font-size:10px}
+.grid13 .h{color:var(--faint); text-align:center; font-family:var(--mono)}
+.cell{height:17px; border-radius:3px; background:var(--bg); border:1px solid var(--line)}
+.cell.on{background:var(--accent); border-color:var(--accent)}
+.hist{display:grid; grid-template-columns:62px repeat(35,minmax(9px,1fr)); gap:2px; font-size:10px; align-items:center}
+.hist .cell{height:15px; border-radius:2px}
+.hist .cell.bid{background:var(--accent); border-color:var(--accent)}
+.hist .cell.dbl{background:var(--neg); border-color:var(--neg)}
+.hist .lvl{font-family:var(--mono); color:var(--faint); text-align:center}
+.scal{display:grid; grid-template-columns:120px 1fr 44px; gap:3px 8px; font-size:12px; align-items:center}
+.scal .track{height:7px; background:var(--bg); border-radius:4px; border:1px solid var(--line); overflow:hidden}
+.scal .fill{height:100%; background:var(--accent)}
+.segs{display:grid; grid-template-columns:118px minmax(0,1fr); gap:3px 8px; font-size:11.5px; align-items:center}
+.strip{display:flex; height:14px; border-radius:3px; overflow:hidden; border:1px solid var(--line)}
+.strip i{flex:1}
+details summary{cursor:pointer; color:var(--dim); font-size:12px; margin-top:10px}
+#tip{position:fixed; pointer-events:none; background:var(--text); color:var(--bg); font:11px var(--mono); padding:3px 6px; border-radius:4px; display:none; z-index:9}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Bid desk</h1>
+  <select id="model" title="Which net bids and whose outputs you see"></select>
+  <div class="meta" id="meta">loading…</div>
+  <span id="err"></span>
+  <button id="undo" title="Take back the last call (Backspace)">↶ Undo</button>
+  <button id="restart" title="Same cards, empty auction">Restart auction</button>
+  <button id="share" title="Copy a link to this deal and auction">Copy link</button>
+  <a class="btn" id="play-it" href="/play" title="Hand this contract to the card-play net">Play desk</a>
+  <a class="btn" href="/table" title="Play a whole board against the nets, with teaching hints">Play a board</a>
+  <button id="new-deal">New deal</button>
+</header>
+
+<div class="row top">
+  <div class="table" id="table"></div>
+
+  <div class="card">
+    <h2 id="bb-title">Bidding box</h2>
+    <p class="hint" id="bb-hint"></p>
+    <div class="bb" id="bb"></div>
+    <div class="bb2" id="bb2"></div>
+    <div class="legend" id="legend"><span>worse</span><div class="grad"></div><span>better</span></div>
+    <div class="picks" id="picks"></div>
+    <div class="actions">
+      <button class="primary" id="net-call">Play net's call</button>
+      <button id="auto-end">Net bids to the end</button>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card">
+    <h2>What each contract scores</h2>
+    <p class="hint">Double dummy: all four hands known, perfect play. Each cell = tricks that declarer takes, and the best contract they can bid with it. Score is for the declaring side, undoubled.</p>
+    <div class="scores">
+      <div class="scroll"><table class="dd" id="dd"></table></div>
+      <div class="big" id="big"></div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card" id="heads-card">
+    <h2>The net's other outputs</h2>
+    <p class="hint">Heads the net trains next to its policy. They are not used to pick the call, except the X, XX and sacrifice gates.</p>
+    <div class="scores">
+      <div class="scroll"><table class="th" id="h-tricks"></table></div>
+      <div class="big" id="h-double"></div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card" id="why-card">
+    <h2>Why this call</h2>
+    <p class="hint" id="why-hint"></p>
+    <div class="why" id="why-cols"></div>
+    <div style="margin-top:12px">
+      <button id="why-run">Play it out (512 imagined hands)</button>
+      <span class="hint" id="why-status"></span>
+    </div>
+    <div id="why-system" style="margin-top:14px"></div>
+    <p class="hint" id="why-foot" style="margin-top:8px"></p>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card" id="inp-card">
+    <h2 id="inp-title">What the net sees</h2>
+    <p class="hint" id="inp-hint"></p>
+    <div class="inp">
+      <div>
+        <p class="sub">My hand (4 × 13 cards)</p>
+        <div class="grid13" id="g-hand"></div>
+        <p class="sub" style="margin-top:14px">Scalars</p>
+        <div class="scal" id="g-scal"></div>
+      </div>
+      <div style="min-width:0">
+        <p class="sub">Auction history, turned so row 1 is me</p>
+        <div class="scroll"><div class="hist" id="g-hist"></div></div>
+        <p class="hint" style="margin:4px 0 14px"><span style="color:var(--accent)">■</span> bid &nbsp; <span style="color:var(--neg)">■</span> doubled</p>
+        <p class="sub">Input vector, piece by piece</p>
+        <div class="segs" id="g-segs"></div>
+        <p class="hint" style="margin-top:6px"><span id="inp-note"></span> Hover a cell for its value.</p>
+        <details><summary>raw numbers</summary><pre class="num" id="g-raw" style="white-space:pre-wrap;font-size:10.5px;max-height:220px;overflow:auto"></pre></details>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+<div id="tip"></div>
+
+<script>
+const SYM = {S:"♠", H:"♥", D:"♦", C:"♣", NT:"NT"};
+const LADDER = ["C","D","H","S","NT"];
+const DD_ORDER = ["S","H","D","C","NT"];
+const SEATS = ["North","East","South","West"];
+const $ = id => document.getElementById(id);
+const isRed = s => s==="H" || s==="D";
+const strainOf = n => n.endsWith("NT") ? "NT" : n.slice(-1);
+const fmtPts = v => (v>0?"+":v<0?"−":"") + Math.abs(Math.round(v));
+function pretty(name){
+  if(name==="Pass"||name==="X"||name==="XX") return name;
+  const s = strainOf(name), lv = name[0];
+  return `<span class="${isRed(s)?'red':''}">${lv}${SYM[s]}</span>`;
+}
+function callLabel(i, names){ return i===35 ? "Pass" : i===36 ? "X" : i===37 ? "XX" : names[i]; }
+
+// one game per tab, kept across reloads of that tab
+let GAME_ID = null;
+try { GAME_ID = sessionStorage.getItem("bid-game"); } catch(e) {}
+if(!GAME_ID){
+  GAME_ID = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
+  try { sessionStorage.setItem("bid-game", GAME_ID); } catch(e) {}
+}
+async function post(url, body){
+  const r = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json", "X-Game": GAME_ID}, body: body?JSON.stringify(body):undefined});
+  const j = await r.json();
+  if(!r.ok){ $("err").textContent = j.error || "request failed"; return null; }
+  $("err").textContent = ""; return j;
+}
+
+let SHOW = null;   // "policy" or "q" in the bidding box; null = the model's own pick rule
+function render(d){
+  const h = "#m=" + d.model + "&d=" + d.deal_code + (d.auction_code ? "&a=" + d.auction_code : "");
+  document.body.dataset.code = h;
+  if(location.hash !== h) history.replaceState(null, "", h);
+  const sel = $("model");
+  if(sel.options.length !== d.models.length)
+    sel.innerHTML = d.models.map(m => `<option value="${m.id}">${m.label} · step ${m.step}</option>`).join("");
+  sel.value = d.model;
+  const m = d.models.find(x => x.id === d.model);
+  $("meta").textContent = `${m.info} · doubles ${m.doubles?"on":"off"} · not vulnerable · dealer North`;
+  $("undo").disabled = $("restart").disabled = d.auction.length===0;
+  const ready = d.game_over && d.contract;
+  $("play-it").hidden = false;
+  $("play-it").href = ready ? playLink(d) : "/play";
+  $("play-it").textContent = ready ? "Play it out →" : "Play desk";
+  $("play-it").className = ready ? "btn primary" : "btn";
+  renderTable(d); renderBox(d); renderScores(d); renderHeads(d); renderInput(d); renderWhy(d);
+}
+// The play desk takes the same deal code and auction code; the desk always deals North, nobody vulnerable.
+const playLink = d => `/play#d=${d.deal_code}&a=${d.auction_code}&dr=0&v=none`;
+const contractLabel = (d, style) => pretty(d.contract).replace('class="red"', style||'class="red"') + ["", "X", "XX"][d.doubled || 0];
+
+/* ------------------------------------------------ table */
+function renderTable(d){
+  const t = $("table"); t.innerHTML = "";
+  for(const s of d.seats){
+    const el = document.createElement("div");
+    const turn = !d.game_over && s.seat===d.current_seat;
+    el.className = `hand ${s.name[0]}${turn?' turn':''}`;
+    const side = s.seat%2===0 ? "NS" : "EW";
+    el.innerHTML = `<div class="hd"><b>${s.name}</b>${turn?'<span class="go">to bid</span>':`<span class="tag">${side}</span>`}</div>` +
+      ["S","H","D","C"].map(k => `<div class="sl ${isRed(k)?'red':''}"><span class="sym">${SYM[k]}</span><span>${(s.cards[k]||[]).map(r=>r==="T"?"10":r).join(" ")||"—"}</span></div>`).join("") +
+      `<div class="hd" style="margin:3px 0 0"><span class="tag">${s.hcp} HCP</span><span class="tag num">${s.shape.join("-")}</span></div>`;
+    t.appendChild(el);
+  }
+  // auction in the middle
+  const c = document.createElement("div"); c.className = "center";
+  let rows = "", n = d.auction.length, nr = Math.max(1, Math.ceil((n + (d.game_over?0:1))/4));
+  for(let r=0;r<nr;r++){
+    rows += "<tr>";
+    for(let k=0;k<4;k++){
+      const i = r*4+k;
+      if(i<n){ const nm = d.auction[i].name; const s = strainOf(nm);
+        const special = nm==="Pass"||nm==="X"||nm==="XX";
+        rows += `<td class="${!special&&isRed(s)?'redc':''}">${nm==="Pass"?"–":special?nm:nm[0]+SYM[s]}</td>`; }
+      else if(!d.game_over && i===d.turn) rows += `<td class="q">?</td>`;
+      else rows += "<td></td>";
+    }
+    rows += "</tr>";
+  }
+  c.innerHTML = `<table><thead><tr>${SEATS.map(s=>`<th>${s[0]}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
+  t.appendChild(c);
+  // corners
+  const par = d.par;
+  t.insertAdjacentHTML("beforeend",
+    `<div class="corner tl">Par (NS)<b class="num">${fmtPts(par)}</b></div>` +
+    `<div class="corner tr">${d.game_over ? "Final" : "Turn"}<b>${d.game_over ? (d.contract ? contractLabel(d, 'style="color:#ff9b8e"') + " " + d.declarer[0] : "Passed out") : d.turn+1}</b></div>` +
+    (d.game_over ? `<div class="corner bl">NS scored<b class="num">${fmtPts(d.ns_score)}</b></div><div class="corner br">vs par<b class="num">${fmtPts(d.gap_to_par)}</b></div>` : ""));
+}
+
+/* ------------------------------------------------ bidding box with net output */
+function renderBox(d){
+  const bb = $("bb"), bb2 = $("bb2"), picks = $("picks");
+  bb.innerHTML = ""; bb2.innerHTML = ""; picks.innerHTML = "";
+  const nv = d.net;
+  $("net-call").disabled = $("auto-end").disabled = d.game_over;
+  $("legend").hidden = d.game_over;
+  if(!nv){
+    $("bb-title").textContent = "Auction over";
+    $("bb-hint").textContent = "Deal again to see the net's outputs.";
+    return;
+  }
+  const who = d.seats[nv.seat].name;
+  const show = (SHOW === "policy" && nv.policy) ? "policy" : SHOW === "q" ? "q" : nv.primary;
+  const toggle = nv.policy ? `<span class="seg"><button data-show="policy" class="${show==='policy'?'on':''}">policy %</button><button data-show="q" class="${show==='q'?'on':''}">Q</button></span>` : "";
+  $("bb-title").innerHTML = `${who} to bid — net's view ${toggle}`;
+  $("bb-title").querySelectorAll("[data-show]").forEach(b => b.onclick = () => { SHOW = b.dataset.show; renderBox(d); });
+  const rule = nv.primary === "policy" ? "its policy's most likely call" : "the highest Q";
+  $("bb-hint").innerHTML = (show === "policy"
+      ? `Each button shows the policy's chance to make that call.`
+      : `Each button shows the net's value Q for that call (×100 ≈ points vs the best contract).`) +
+    ` Gold ring = net's pick (${rule}): ${pretty(nv.pick_name)}. Click any legal call to force it.`;
+
+  const vals = show === "policy" ? nv.policy : nv.q;
+  const legalV = vals.filter((_,i)=>nv.legal[i]);
+  const best = Math.max(...legalV), worst = Math.min(...legalV);
+  const span = Math.max(best - worst, 1e-6);
+  const shade = v => {
+    const f = (v - worst)/span; // 0 worst .. 1 best
+    if(show === "policy") return `rgba(31,160,100,${f*.5})`;
+    const a = Math.abs(f-.5)*2*.9;
+    return f>=.5 ? `rgba(31,160,100,${a*.45})` : `rgba(210,80,60,${a*.45})`;
+  };
+  const fmt = v => show === "policy" ? (v < 0.005 ? "·" : (v*100).toFixed(0) + "%") : v.toFixed(2);
+  const mk = (i, label) => {
+    const b = document.createElement("button");
+    const legal = nv.legal[i];
+    b.className = (legal?'':'illegal') + (i===nv.pick?' pick':'');
+    b.disabled = !legal;
+    if(legal) b.style.background = shade(vals[i]);
+    b.innerHTML = `<span class="c">${label}</span><span class="v">${legal ? fmt(vals[i]) : ""}</span>`;
+    b.title = legal ? `Q ${nv.q[i].toFixed(2)}` + (nv.policy ? ` · policy ${(nv.policy[i]*100).toFixed(1)}%` : "") : "not legal";
+    b.onclick = () => force(i);
+    return b;
+  };
+  for(let lv=1; lv<=7; lv++){
+    bb.insertAdjacentHTML("beforeend", `<div class="lv">${lv}</div>`);
+    LADDER.forEach((s, k) => bb.appendChild(mk((lv-1)*5+k, `<span class="${isRed(s)?'red':''}">${lv}${SYM[s]}</span>`)));
+  }
+  bb2.insertAdjacentHTML("beforeend", `<div></div>`);
+  bb2.appendChild(mk(35, "Pass")); bb2.appendChild(mk(36, "Double")); bb2.appendChild(mk(37, "Redouble"));
+
+  // top 5: the policy itself, or a softmax over legal Q
+  let share;
+  if(show === "policy") share = nv.policy.map((p,i)=> nv.legal[i] ? p : 0);
+  else {
+    const e = nv.q.map((v,i)=> nv.legal[i] ? Math.exp(v-best) : 0);
+    const z = e.reduce((a,b)=>a+b,0);
+    share = e.map(x => x/z);
+  }
+  const order = [...share.keys()].filter(i=>nv.legal[i]).sort((a,b)=>share[b]-share[a]).slice(0,5);
+  picks.innerHTML = `<span class="sub" style="grid-column:1/-1;margin:0">Top 5 (${show==="policy"?"policy":"softmax of Q"})</span>` + order.map(i =>
+    `<span>${pretty(callLabel(i, d.names))}</span><div class="bar" style="width:${Math.max(2,share[i]*100)}%"></div><span class="num">${(share[i]*100).toFixed(0)}%</span>`).join("");
+}
+
+/* ------------------------------------------------ scores */
+function renderScores(d){
+  const dd = d.dd; // cells[seat][S H D C NT]
+  const bestNS = dd.best.NS, bestEW = dd.best.EW;
+  let h = `<tr><th></th>${DD_ORDER.map(s=>`<th class="${isRed(s)?'red':''}">${SYM[s]}</th>`).join("")}</tr>`;
+  const order = [[0,"North"],[2,"South"],null,[1,"East"],[3,"West"]];
+  for(const o of order){
+    if(!o){ h += `<tr class="gap"><td colspan="6"></td></tr>`; continue; }
+    const [p, name] = o, sb = p%2===0 ? bestNS : bestEW;
+    h += `<tr><th class="seat">${name}</th>` + dd.cells[p].map((c, k) => {
+      const isBest = sb.seat===name && sb.contract===c.contract && sb.score===c.score;
+      const s = DD_ORDER[k];
+      const bg = c.score>0 ? "var(--pos-bg)" : "var(--neg-bg)";
+      return `<td class="${isBest?'best':''}" style="background:${bg}"><span class="t">${c.tricks}</span>` +
+        `<span class="k"><span class="${isRed(s)?'red':''}">${c.contract[0]}${SYM[s]}</span></span>` +
+        `<span class="p" style="color:${c.score>0?'var(--pos)':'var(--neg)'}">${fmtPts(c.score)}</span></td>`;
+    }).join("") + "</tr>";
+  }
+  $("dd").innerHTML = h;
+  const st = (label, main, sub, cls="") => `<div class="stat ${cls}"><span>${label}</span><b>${main}</b>${sub?`<span>${sub}</span>`:""}</div>`;
+  let big =
+    st("Best for NS alone", `${pretty(bestNS.contract)} by ${bestNS.seat} <span class="num">${fmtPts(bestNS.score)}</span>`, "if EW stay silent") +
+    st("Best for EW alone", `${pretty(bestEW.contract)} by ${bestEW.seat} <span class="num">${fmtPts(bestEW.score)}</span>`, "if NS stay silent") +
+    st("Par, NS view", `<span class="num">${fmtPts(d.par)}</span>`, "result when both sides bid perfectly, sacrifices and doubles included");
+  if(d.game_over){
+    big += st("This auction", d.contract ? `${contractLabel(d)} by ${d.declarer} → NS <span class="num">${fmtPts(d.ns_score)}</span>` : "Passed out → 0",
+      `vs par <span class="num">${fmtPts(d.gap_to_par)}</span> · own-bid NS ${fmtPts(d.ns_own_score)} / EW ${fmtPts(d.ew_own_score)}`, "result");
+    if(d.contract)
+      big += `<div class="stat"><span>Now play the cards</span>` +
+        `<a class="btn primary" style="margin-top:4px" href="${playLink(d)}">Play it out →</a>` +
+        `<span style="margin-top:6px">The card-play net takes over at the play desk with this deal, this auction and this contract. ` +
+        `That score above assumes double dummy play; the play desk shows what the net actually does with it.</span></div>`;
+  }
+  $("big").innerHTML = big;
+}
+
+/* ------------------------------------------------ input */
+const tip = $("tip");
+document.addEventListener("mousemove", e => {
+  const v = e.target.dataset && e.target.dataset.tip;
+  if(v){ tip.style.display="block"; tip.textContent=v; tip.style.left=(e.clientX+12)+"px"; tip.style.top=(e.clientY+12)+"px"; }
+  else tip.style.display="none";
+});
+function heat(v, m){
+  const f = Math.max(-1, Math.min(1, v/m));
+  return f>=0 ? `rgba(45,91,216,${f})` : `rgba(210,80,60,${-f})`;
+}
+function renderHeads(d){
+  const card = $("heads-card"), hd = d.net && d.net.heads;
+  if(!hd){ card.style.display="none"; return; }
+  card.style.display="";
+  const tr = hd.tricks, real = d.tricks_all;   // tricks: [S H D C NT], table order
+  let h = `<tr><th>Tricks head: expected DD tricks</th>${DD_ORDER.map(s=>`<th class="${isRed(s)?'red':''}">${SYM[s]}</th>`).join("")}</tr>`;
+  for(const [label, exp, seat] of [["me", tr.me, tr.me_seat], ["partner", tr.partner, tr.partner_seat]]){
+    h += `<tr><th>${label} (${SEATS[seat]}) declares</th>` + exp.map((v,k) => {
+      const diff = v - real[seat][k];
+      const col = Math.abs(diff) < 1 ? "var(--pos)" : "var(--neg)";
+      return `<td>${v.toFixed(1)}<span class="r">real ${real[seat][k]} · <span style="color:${col}">${diff>=0?"+":"−"}${Math.abs(diff).toFixed(1)}</span></span></td>`;
+    }).join("") + "</tr>";
+  }
+  $("h-tricks").innerHTML = h;
+  const st = (label, main, sub) => `<div class="stat"><span>${label}</span><b>${main}</b>${sub?`<span>${sub}</span>`:""}</div>`;
+  let dbl = "";
+  if(hd.p_double !== undefined) dbl += d.net.legal[36]
+    ? st("X gate: chance to double", `<span class="num">${(hd.p_double*100).toFixed(1)}%</span>`, "takes its share from Pass")
+    : st("X gate", "—", "X is not legal here");
+  if(hd.double_value !== undefined) dbl += d.net.legal[36]
+    ? st("Double value", `<span class="num">${fmtPts(hd.double_value*100)}</span>`, "net's guess: points our side gains if we double now and all pass")
+    : st("Double value", "—", "only trained where X is legal");
+  if(hd.p_redouble !== undefined) dbl += d.net.legal[37]
+    ? st("XX gate: chance to redouble", `<span class="num">${(hd.p_redouble*100).toFixed(1)}%</span>`,
+         `redouble value ${fmtPts(hd.redouble_value*100)}: net's guess of what XX gains over X if all pass`)
+    : st("XX gate", "—", "XX is not legal here");
+  if(hd.p_sac !== undefined) dbl += hd.sac.length
+    ? st("Sacrifice gate: chance to sacrifice", `<span class="num">${(hd.p_sac*100).toFixed(1)}%</span>`,
+         "value per candidate (points vs letting them play): " +
+         hd.sac.map(c => `${pretty(c.call)} ${fmtPts(c.value*100)}`).join(" · "))
+    : st("Sacrifice gate", "—", "only where they hold the contract, my Pass ends it, level 4+");
+  $("h-double").innerHTML = dbl || st("Double heads", "none", "this net cannot double");
+}
+
+function historyRows(d, seat){
+  // me / LHO / partner / RHO: bids, and the contract each one doubled
+  const rows = REL.map(r => ({rel:r, bids:[], dbls:[]}));
+  let last = -1;
+  d.auction.forEach(c => {
+    const r = rows[(c.seat - seat + 4) % 4];
+    if(c.call < 35){ r.bids.push(c.call); last = c.call; }
+    else if(c.call >= 36 && last >= 0) r.dbls.push(last);
+  });
+  rows.forEach((r,j) => r.seat = SEATS[(seat + j) % 4]);
+  return rows;
+}
+const REL = ["me","LHO","partner","RHO"];
+
+function renderInput(d){
+  const card = $("inp-card");
+  if(!d.net){ card.style.display="none"; return; }
+  card.style.display="";
+  const nv = d.net, inp = nv.input, me = d.seats[nv.seat];
+  inp.history = historyRows(d, nv.seat);
+  $("inp-title").textContent = `What the net sees — ${me.name}`;
+  $("inp-hint").textContent = `The inputs for the player on turn, before the net's layers. Left: the plain facts. Right: the ${inp.size} numbers of the auction input, piece by piece` + (nv.primary === "policy" ? " (the 52 hand bits go in separately)." : ".");
+  $("inp-note").textContent = inp.note;
+
+  // hand grid
+  const ranks = "AKQJT98765432";
+  let g = `<div></div>` + [...ranks].map(r=>`<div class="h">${r==="T"?"10":r}</div>`).join("");
+  for(const s of ["S","H","D","C"]){
+    g += `<div class="${isRed(s)?'red':''}">${SYM[s]}</div>`;
+    for(const r of ranks) g += `<div class="cell ${me.cards[s].includes(r)?'on':''}"></div>`;
+  }
+  $("g-hand").innerHTML = g;
+
+  // history grid
+  let hh = `<div></div>`;
+  for(let lv=1; lv<=7; lv++) LADDER.forEach(s => hh += `<div class="lvl ${isRed(s)?'red':''}" style="font-size:9px">${s==="C"?lv:""}${s==="NT"?"N":SYM[s]}</div>`);
+  for(const row of inp.history){
+    hh += `<div>${row.rel}<span class="dim"> ${row.seat[0]}</span></div>`;
+    for(let i=0;i<35;i++){
+      const cls = row.dbls.includes(i) ? "dbl" : row.bids.includes(i) ? "bid" : "";
+      hh += `<div class="cell ${cls}" data-tip="${row.rel} ${d.names[i]}${cls?' · '+cls:''}"></div>`;
+    }
+  }
+  $("g-hist").innerHTML = hh;
+
+  // scalars
+  $("g-scal").innerHTML = inp.scalars.map(([k,v]) =>
+    `<span>${k}</span><div class="track"><div class="fill" style="width:${Math.min(100,Math.max(0,v*100))}%"></div></div><span class="num">${v.toFixed(2)}</span>`).join("");
+
+  // segments
+  const all = inp.segments.flatMap(s=>s.values).map(Math.abs);
+  const m = Math.max(1e-6, ...all.sort((a,b)=>a-b).slice(0, Math.floor(all.length*.98)).slice(-1));
+  let off = 0;
+  $("g-segs").innerHTML = inp.segments.map(seg => {
+    const cells = seg.values.map((v,i)=>`<i style="background:${heat(v,m)}" data-tip="x[${off+i}] = ${v.toFixed(3)}"></i>`).join("");
+    const out = `<span>${seg.name} <span class="dim num">${seg.values.length}</span></span><div class="strip">${cells}</div>`;
+    off += seg.values.length; return out;
+  }).join("");
+  $("g-raw").textContent = inp.segments.map(s => `${s.name}: [${s.values.map(v=>v.toFixed(3)).join(", ")}]`).join("\n\n");
+}
+
+
+/* ------------------------------------------------ why this call */
+let WHY = {job:null, timer:null, data:null, lines:null};
+const SEATS4 = ["North","East","South","West"];
+
+function prettyC(name){                   // like pretty(), but keeps a doubled contract readable
+  if(!name) return "";
+  const m = /^(.*?)(XX|X)?$/.exec(name);
+  return (m[1] === "" ? name : pretty(m[1])) + (m[2] || "");
+}
+
+function suitGlyph(letter){ return {S:"♠", H:"♥", D:"♦", C:"♣"}[letter] || ""; }
+
+function ruler(hcp){                      // points band on a 0..30 scale, median marked
+  const x = v => Math.min(100, v / 30 * 100);
+  return `<div class="ruler"><i style="left:${x(hcp[0])}%;width:${x(hcp[2])-x(hcp[0])}%"></i>`
+    + `<b style="left:${x(hcp[1])}%"></b></div>`
+    + `<div class="scale"><span>0</span><span>10</span><span>20</span><span>30</span></div>`
+    + `<div class="val">${hcp[0]}–<b>${hcp[1]}</b>–${hcp[2]} points</div>`;
+}
+
+function promises(e){                     // what the offline self-play says this call held
+  if(!e) return '<p class="none">Self-play never made this call here.</p>';
+  let out = ruler(e.hcp) + '<div class="shape" style="margin-top:6px">';
+  if(e.suit_len){
+    const rows = [["4+", e.suit_len[0]], ["5+", e.suit_len[1]], ["6+", e.suit_len[2]]];
+    out += rows.map(([k, v]) => `<span>${suitGlyph(e.suit)} ${k}</span>`
+      + `<span class="bar" style="width:${(v*100).toFixed(0)}%"></span>`
+      + `<span class="num">${(v*100).toFixed(0)}%</span>`).join("");
+  }
+  out += `<span>balanced</span><span class="bar" style="width:${(e.bal*100).toFixed(0)}%"></span>`
+    + `<span class="num">${(e.bal*100).toFixed(0)}%</span></div>`;
+  return out;
+}
+
+function lineRow(l, mySeat){              // one imagined continuation, as call chips
+  const shown = l.calls.length > 9 ? l.calls.slice(0, 9) : l.calls;
+  const chips = shown.map((c, i) => {
+    const seat = (mySeat + i) % 4, us = seat % 2 === mySeat % 2;
+    return `<span class="chip${us ? " us" : ""}">${prettyC(c)}</span>`;
+  }).join("") + (l.calls.length > 9 ? '<span class="chip">…</span>' : "");
+  const end = l.contract ? `<span class="chip end">${prettyC(l.contract)}`
+    + `${l.declarer===null ? "" : " " + SEATS4[l.declarer][0]}</span>` : '<span class="chip">passed out</span>';
+  return `<div class="line"><span class="pc">${(l.share*100).toFixed(0)}%</span>`
+    + `<span class="chips">${chips}${end}</span></div>`;
+}
+
+function sentence(name, e){          // "11-14-18 HCP, 5+ hearts 62%, balanced 46%"
+  const bits = [`${e.hcp[0]}–<b>${e.hcp[1]}</b>–${e.hcp[2]} HCP`];
+  if(e.suit_len){
+    const pick = e.suit_len[2] >= 0.5 ? 2 : e.suit_len[1] >= 0.5 ? 1 : 0;
+    bits.push(`${pick+4}+ ${suitName(e.suit)} ${(e.suit_len[pick]*100).toFixed(0)}%`);
+    if(pick < 1 && e.suit_len[1] >= 0.2) bits.push(`5+ ${(e.suit_len[1]*100).toFixed(0)}%`);
+  }
+  bits.push(`balanced ${(e.bal*100).toFixed(0)}%`);
+  const sh = e.len.map(v => v.toFixed(1)).join("-");
+  return bits.join(" <em>·</em> ") + ` <em>· shape ${sh} (♠♥♦♣)</em>`;
+}
+
+function suitName(letter){ return {S:"spades", H:"hearts", D:"diamonds", C:"clubs"}[letter] || letter; }
+
+function renderSystem(d){
+  const box = $("why-system"), m = d.meaning;
+  if(!m){ box.innerHTML = ""; return; }
+  const picked = d.why.calls[0].call === "Pass" ? "P" : d.why.calls[0].call;
+  const rows = Object.entries(m.calls).sort((a, b) => b[1].share - a[1].share);
+  box.innerHTML = '<p class="sub">Every call it makes in this exact spot</p><div class="sys">'
+    + rows.map(([name, e]) => `<span class="c">${prettyC(name === "P" ? "Pass" : name)}</span>`
+        + `<span class="sh">${(e.share*100).toFixed(0)}%</span>`
+        + `<span class="d${name === picked ? " pick" : ""}">${sentence(name, e)}</span>`).join("")
+    + "</div>";
+}
+
+function renderWhy(d){
+  const card = $("why-card");
+  if(d.game_over || !d.net || !d.why){ card.style.display = "none"; return; }
+  card.style.display = "";
+  WHY.data = d;
+  if(WHY.timer){ clearTimeout(WHY.timer); WHY.timer = null; }
+  WHY.job = null; WHY.lines = null; $("why-status").textContent = "";
+  $("why-run").disabled = !d.explains;
+  drawWhy();
+}
+
+function drawWhy(){
+  const d = WHY.data, r = WHY.lines, mySeat = d.net.seat;
+  const table = (d.meaning || {}).calls || {};
+  $("why-hint").textContent = "Its call and its next choice, side by side.";
+  $("why-cols").innerHTML = d.why.calls.map((c, i) => {
+    const e = table[c.call === "Pass" ? "P" : c.call];
+    const cand = r ? r.candidates.find(x => x.call === c.call) : null;
+    return `<div class="col${i ? "" : " chosen"}">
+      <div class="head"><span class="call">${prettyC(c.call)}</span>
+        <span class="tag">${i ? "next choice" : "it bids"}</span>
+        <span class="chance">${c.p < 0.005 ? "<1" : (c.p*100).toFixed(0)}%</span></div>
+      <div class="meter"><i style="width:${(c.p*100).toFixed(0)}%"></i></div>
+      <div class="lbl">points it expects to lose vs the best contract</div>
+      <div class="val">${c.q===null ? "–" : fmtPts(c.q)}</div>
+      <div class="lbl">what this call held in self-play${e ? ` · ${e.n.toLocaleString()} hands` : ""}</div>
+      ${promises(e)}
+      <div class="lbl">where it leads</div>
+      ${cand ? cand.lines.map(l => lineRow(l, mySeat)).join("")
+             : '<p class="none">Press “play it out”.</p>'}
+    </div>`;
+  }).join("");
+  renderSystem(d);
+  const seen = d.meaning ? `${d.meaning.n.toLocaleString()} self-play hands reached this position. ` : "";
+  $("why-foot").innerHTML = seen + (r
+    ? `Endings from ${r.samples} hands the net imagined for the other three seats `
+      + `(${r.ess} of them carry the weight): `
+      + r.picture.map(p => `${SEATS4[p.seat]} ${p.hcp_mean} pts`).join(" · ")
+      + ". Those hands are its guess, not the real cards."
+    : "Blue chips are our side. Press “play it out” to see where each call ends.");
+}
+
+async function pollWhy(){
+  const r = await fetch("/api/explain?job=" + encodeURIComponent(WHY.job)).then(x => x.json());
+  if(r.status === "done"){ $("why-status").textContent = ""; WHY.lines = r.result; drawWhy(); return; }
+  if(r.status === "error"){ $("why-status").textContent = r.error; return; }
+  WHY.timer = setTimeout(pollWhy, 400);
+}
+
+$("why-run").onclick = async () => {
+  $("why-status").textContent = "thinking…";
+  const r = await post("/api/explain", {samples: 512});
+  if(!r) return;
+  WHY.job = r.job;
+  if(r.status === "done"){ $("why-status").textContent = ""; WHY.lines = r.result; drawWhy(); }
+  else pollWhy();
+};
+
+async function force(call){ const d = await post("/api/call", {call}); if(d) render(d); }
+$("new-deal").onclick = async () => { const d = await post("/api/new_deal"); if(d) render(d); };
+$("net-call").onclick = async () => { const d = await post("/api/net_call"); if(d) render(d); };
+$("auto-end").onclick = async () => { const d = await post("/api/auto_end"); if(d) render(d); };
+$("undo").onclick = async () => { const d = await post("/api/undo"); if(d) render(d); };
+$("restart").onclick = async () => { const d = await post("/api/restart"); if(d) render(d); };
+document.addEventListener("keydown", e => { if(e.key==="Backspace" && !$("undo").disabled && e.target.tagName!=="INPUT") $("undo").click(); });
+$("share").onclick = async () => {
+  try { await navigator.clipboard.writeText(location.href); $("share").textContent = "Copied ✓"; }
+  catch(e) { prompt("Copy this link:", location.href); }
+  setTimeout(() => $("share").textContent = "Copy link", 1500);
+};
+$("model").onchange = async () => { const d = await post("/api/model", {model: $("model").value}); if(d) render(d); };
+async function boot(){
+  const p = new URLSearchParams(location.hash.slice(1));
+  if(p.get("d")){
+    const d = await post("/api/load", {deal: p.get("d"), auction: p.get("a") || "", model: p.get("m") || ""});
+    if(d) return render(d);
+  }
+  fetch("/api/state", {headers:{"X-Game": GAME_ID}}).then(r=>r.json()).then(render);
+}
+// pasting a different link into the same tab
+window.addEventListener("hashchange", () => {
+  const p = new URLSearchParams(location.hash.slice(1));
+  const cur = document.body.dataset.code;
+  if(p.get("d") && ("#" + p.toString()) !== cur) boot();
+});
+boot();
+</script>
+</body>
+</html>

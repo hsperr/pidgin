@@ -1,0 +1,888 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Play desk</title>
+<style>
+:root{
+  --bg:#f6f5f1; --card:#ffffff; --line:#e2dfd7; --text:#1d1f23; --dim:#6f727a; --faint:#a9abb1;
+  --felt:#1f5e48; --felt-2:#2a7359; --felt-text:#eef5f1;
+  --accent:#2d5bd8; --accent-bg:#e7edfc; --red:#c0392b; --pick:#d99a00;
+  --pos:#1f8a5b; --neg:#c24a3a; --pos-bg:rgba(31,138,91,.14); --neg-bg:rgba(194,74,58,.14);
+  --n:#2d5bd8; --e:#c98a1b; --s:#1f8a5b; --w:#8a52c9;
+  --mono: ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#121417; --card:#1b1e23; --line:#2d3139; --text:#e8eaed; --dim:#959aa4; --faint:#5a5f68;
+    --felt:#173f33; --felt-2:#1f5443; --felt-text:#e3efe9;
+    --accent:#7598ff; --accent-bg:#1f2842; --red:#ef6f5e; --pick:#f0b93f;
+    --pos:#4cc08a; --neg:#ef7866; --pos-bg:rgba(76,192,138,.16); --neg-bg:rgba(239,120,102,.16);
+    --n:#7598ff; --e:#e9b458; --s:#4cc08a; --w:#b98cf0;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0; background:var(--bg); color:var(--text);
+  font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; padding:16px 20px 60px}
+.wrap{max-width:1180px; margin:0 auto}
+button{font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--text);
+  border-radius:7px; padding:6px 12px}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:disabled{opacity:.35; cursor:default}
+button.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+a.btn{display:inline-block; text-decoration:none; border:1px solid var(--line); background:var(--card);
+  color:var(--text); border-radius:7px; padding:6px 12px}
+a.btn:hover{border-color:var(--accent)}
+select,input[type=number]{font:inherit; border:1px solid var(--line); background:var(--card); color:var(--text);
+  border-radius:7px; padding:5px 8px; max-width:100%}
+input[type=number]{width:88px}
+.seg{display:inline-flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; vertical-align:middle}
+.seg button{border:0; border-radius:0; padding:2px 9px; font-size:11px}
+.seg button.on{background:var(--accent); color:#fff}
+.num{font-family:var(--mono); font-variant-numeric:tabular-nums}
+.red{color:var(--red)}
+.dim{color:var(--dim)}
+
+header{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px}
+header h1{font-size:17px; margin:0 8px 0 0}
+header .meta{color:var(--dim); font-size:12px; flex:1; min-width:200px}
+#err{color:var(--neg); font-size:12px}
+
+.card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px}
+.card h2{margin:0 0 2px; font-size:13px}
+.card .hint{color:var(--dim); font-size:12px; margin:0 0 10px}
+.row{display:grid; gap:14px; margin-bottom:14px}
+.top{grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr)}
+@media (max-width:920px){ .top{grid-template-columns:1fr} }
+.sub{font-size:11px; color:var(--dim); font-weight:600; margin:0 0 5px; text-transform:uppercase; letter-spacing:.04em}
+.scroll{overflow-x:auto}
+
+/* ---- the table */
+.table{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.05fr) minmax(0,1fr);
+  grid-template-rows:auto auto auto; gap:10px;
+  background:radial-gradient(ellipse at center,var(--felt-2),var(--felt)); border-radius:12px; padding:14px}
+.hand{background:var(--card); border-radius:9px; padding:7px 9px; border:2px solid transparent; align-self:center; min-width:0}
+.hand.turn{border-color:var(--pick); box-shadow:0 0 0 4px rgba(217,154,0,.25)}
+.hand.dummy{background:linear-gradient(0deg,var(--accent-bg),var(--card))}
+.hand .hd{display:flex; justify-content:space-between; align-items:baseline; gap:6px; margin-bottom:3px}
+.hand .hd b{font-size:13px}
+.hand .hd .tag{font-size:10.5px; color:var(--dim)}
+.hand .hd .go{font-size:10.5px; color:var(--pick); font-weight:700}
+.sl{display:flex; gap:5px; align-items:flex-start; line-height:1.5; margin:1px 0}
+.sl .sym{width:12px; font-family:var(--mono); font-size:12px}
+.sl .cards{display:flex; flex-wrap:wrap; gap:2px}
+.cd{font-family:var(--mono); font-size:12px; padding:0 4px; border-radius:4px; border:1px solid var(--line);
+  background:var(--bg); color:var(--text); min-width:17px; text-align:center; line-height:18px}
+.cd.play{cursor:pointer}
+.cd.play:hover{border-color:var(--accent)}
+.cd.no{opacity:.32}
+.cd.netpick{outline:2px solid var(--pick); outline-offset:-1px}
+.cd.back{background:repeating-linear-gradient(45deg,var(--line),var(--line) 3px,var(--bg) 3px,var(--bg) 6px); color:transparent}
+.spent{font-family:var(--mono); font-size:10.5px; color:var(--faint); margin-top:3px; word-break:break-all}
+.N{grid-column:2; grid-row:1} .W{grid-column:1; grid-row:2} .E{grid-column:3; grid-row:2} .S{grid-column:2; grid-row:3}
+.center{grid-column:2; grid-row:2; background:rgba(0,0,0,.18); border-radius:9px; padding:8px;
+  color:var(--felt-text); display:grid; grid-template-columns:1fr 1fr 1fr; grid-template-rows:auto auto auto;
+  gap:3px; align-items:center; justify-items:center; min-height:132px}
+.center .slot{font-family:var(--mono); font-size:15px; min-height:20px}
+.center .slot.win{color:var(--pick); font-weight:700}
+.center .slot.redc{color:#ff9b8e}
+.center .mid{grid-column:2; grid-row:2; text-align:center; font-size:10.5px; opacity:.85; line-height:1.3}
+.center .n{grid-column:2; grid-row:1} .center .w{grid-column:1; grid-row:2}
+.center .e{grid-column:3; grid-row:2} .center .s{grid-column:2; grid-row:3}
+.corner{color:var(--felt-text); font-size:11.5px; padding:2px 4px}
+.corner b{display:block; font-size:17px}
+.corner.tl{grid-column:1; grid-row:1} .corner.tr{grid-column:3; grid-row:1; text-align:right}
+.corner.bl{grid-column:1; grid-row:3; align-self:end} .corner.br{grid-column:3; grid-row:3; align-self:end; text-align:right}
+/* Narrow screens: drop the corner stats (the panel repeats them) and give North and
+   South the full width, so only West / trick / East share the middle row. */
+@media (max-width:620px){
+  .table{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr) minmax(0,1fr); gap:7px; padding:10px}
+  .corner{display:none}
+  .N{grid-column:1/-1; grid-row:1} .S{grid-column:1/-1; grid-row:3}
+  .center{min-height:104px}
+}
+
+/* ---- control panel */
+.stat{background:var(--bg); border-radius:9px; padding:9px 12px; margin-bottom:8px}
+.stat > span{font-size:11px; color:var(--dim); display:block}
+.stat b{font-size:17px}
+.stat.good{background:var(--pos-bg)} .stat.bad{background:var(--neg-bg)}
+.counts{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px}
+.counts .stat{margin:0; text-align:center}
+.who{display:grid; grid-template-columns:auto 1fr; gap:4px 8px; align-items:center; font-size:12px; margin:8px 0}
+.who .nm{font-weight:600}
+.actions{display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:10px}
+.actions button{width:100%}
+
+/* ---- card grids (policy, belief, hand) */
+.deck{display:grid; grid-template-columns:16px repeat(13,minmax(0,1fr)); gap:3px; min-width:430px}
+.deck .h{color:var(--faint); text-align:center; font-family:var(--mono); font-size:10px}
+.deck .sy{font-family:var(--mono); font-size:11px; align-self:center}
+.pc{border:1px solid var(--line); border-radius:5px; background:var(--bg); padding:1px 0 2px; text-align:center;
+  font-family:var(--mono); line-height:1.15; cursor:default; color:var(--text)}
+.pc .r{display:block; font-size:10.5px; font-weight:600}
+.pc .v{display:block; font-size:9.5px; opacity:.85}
+.pc.no{opacity:.26}
+.pc.hit{cursor:pointer}
+.pc.hit:hover{border-color:var(--accent)}
+.pc.pick{outline:2.5px solid var(--pick); outline-offset:-1px}
+.pc.ddbest{box-shadow:inset 0 -3px 0 var(--pos)}
+.legend{display:flex; align-items:center; gap:10px; font-size:11px; color:var(--dim); margin:10px 0 2px; flex-wrap:wrap}
+.legend .grad{height:8px; width:110px; border-radius:4px; background:linear-gradient(90deg,transparent,var(--pos)); border:1px solid var(--line)}
+.key{display:inline-flex; align-items:center; gap:4px}
+.key i{width:10px; height:10px; border-radius:3px; display:inline-block}
+.picks{margin-top:10px; display:grid; grid-template-columns:auto 1fr auto; gap:3px 10px; font-size:12px; align-items:center}
+.picks .bar{height:6px; border-radius:3px; background:var(--accent); opacity:.6}
+
+/* ---- belief */
+.bc{border:2px solid var(--line); border-radius:5px; padding:1px 0 0; text-align:center; background:var(--bg)}
+.bc .r{display:block; font-size:10px; font-family:var(--mono); line-height:1.2}
+.bc .bar{display:flex; height:8px; border-radius:0 0 3px 3px; overflow:hidden}
+.bc .bar i{display:block}
+.bc.seen{opacity:.4}
+
+/* ---- inputs */
+.inp{display:grid; grid-template-columns:auto minmax(0,1fr); gap:18px}
+@media (max-width:920px){ .inp{grid-template-columns:1fr} }
+.grid13{display:grid; grid-template-columns:16px repeat(13,17px); gap:2px; font-size:10px}
+.grid13 .h{color:var(--faint); text-align:center; font-family:var(--mono)}
+.cell{height:17px; border-radius:3px; background:var(--bg); border:1px solid var(--line)}
+.cell.on{background:var(--accent); border-color:var(--accent)}
+.scal{display:grid; grid-template-columns:130px 1fr 44px; gap:3px 8px; font-size:12px; align-items:center}
+.scal .track{height:7px; background:var(--bg); border-radius:4px; border:1px solid var(--line); overflow:hidden}
+.scal .fill{height:100%; background:var(--accent)}
+.segs{display:grid; grid-template-columns:160px minmax(0,1fr); gap:3px 8px; font-size:11.5px; align-items:center}
+.strip{display:flex; height:14px; border-radius:3px; overflow:hidden; border:1px solid var(--line)}
+.strip i{flex:1}
+details summary{cursor:pointer; color:var(--dim); font-size:12px; margin-top:10px}
+
+/* ---- setup */
+.setup{display:flex; flex-wrap:wrap; gap:10px 14px; align-items:flex-end}
+.field{display:flex; flex-direction:column; gap:3px}
+.field label{font-size:10.5px; color:var(--dim); text-transform:uppercase; letter-spacing:.04em}
+
+/* ---- auction + review tables */
+table.aq{border-collapse:collapse; font-family:var(--mono); font-size:12.5px}
+table.aq th{font:600 11px/1.4 -apple-system,sans-serif; color:var(--dim); padding:0 10px 3px; text-align:center}
+table.aq td{text-align:center; padding:1px 10px; height:20px}
+table.aq td.dl{background:var(--accent-bg); border-radius:4px}
+table.rv{border-collapse:separate; border-spacing:0 2px; width:100%; font-size:12px}
+table.rv th{font-size:10.5px; color:var(--dim); font-weight:600; text-align:left; padding:0 8px}
+table.rv td{background:var(--bg); padding:3px 8px; font-family:var(--mono)}
+table.rv td:first-child{border-radius:6px 0 0 6px} table.rv td:last-child{border-radius:0 6px 6px 0}
+table.rv tr.loss td{background:var(--neg-bg)}
+#tip{position:fixed; pointer-events:none; background:var(--text); color:var(--bg); font:11px var(--mono);
+  padding:3px 6px; border-radius:4px; display:none; z-index:9; max-width:260px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Play desk</h1>
+  <select id="model" title="Which card-play net plays and whose outputs you see"></select>
+  <div class="meta" id="meta">loading…</div>
+  <span id="err"></span>
+  <a class="btn" id="to-bid" href="/" title="The bidding desk">Bid desk</a>
+  <a class="btn" href="/table" title="Play a whole board against the nets, with teaching hints">Play a board</a>
+  <button id="undo" title="Take back the last card (Backspace)">↶ Undo</button>
+  <button id="restart" title="Same board, trick one again">Restart</button>
+  <button id="share" title="Copy a link to this board and position">Copy link</button>
+  <button id="new-board">New board</button>
+</header>
+
+<div class="row top">
+  <div class="table" id="table"></div>
+
+  <div class="card">
+    <h2 id="turn-title">The table</h2>
+    <p class="hint" id="turn-hint"></p>
+    <div class="counts" id="counts"></div>
+    <div id="dd-stat"></div>
+    <p class="sub" style="margin-top:12px">Who plays each seat</p>
+    <div class="who" id="who"></div>
+    <div class="legend" style="margin:8px 0 0"><span>Hands shown</span>
+      <span class="seg" id="reveal">
+        <button data-all="1">all four</button>
+        <button data-all="0">only what the net sees</button>
+      </span></div>
+    <div class="actions">
+      <button class="primary" id="step">Net plays one card</button>
+      <button id="auto">Play it out</button>
+    </div>
+    <p class="hint" style="margin:8px 0 0">Click a card in any hand to play it yourself, or a cell in the
+      policy grid below. Seats set to <b>you</b> stop “play it out”.</p>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card" id="pol-card">
+    <h2>The net's card</h2>
+    <p class="hint" id="pol-hint"></p>
+    <div class="scroll"><div class="deck" id="policy"></div></div>
+    <div class="legend" id="pol-legend"></div>
+    <div class="picks" id="picks"></div>
+    <p class="hint" id="dd-card" style="margin:12px 0 0"></p>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card" id="belief-card">
+    <h2>Where it thinks the hidden cards are</h2>
+    <p class="hint" id="bel-hint"></p>
+    <div class="scroll"><div class="deck" id="belief"></div></div>
+    <div class="legend" id="bel-legend"></div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card">
+    <h2>Board setup</h2>
+    <p class="hint">Pick the cards and the contract, or take a board straight from the frozen
+      benchmark the E48 numbers were measured on.</p>
+    <div class="setup" id="setup"></div>
+    <p class="hint" id="setup-note" style="margin:10px 0 0"></p>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card" id="inp-card">
+    <h2 id="inp-title">What the net sees</h2>
+    <p class="hint" id="inp-hint"></p>
+    <div class="inp">
+      <div>
+        <p class="sub">The hands it may look at</p>
+        <div id="g-hands"></div>
+        <p class="sub" style="margin-top:14px">The auction it was given</p>
+        <div id="g-auction"></div>
+        <p class="sub" style="margin-top:14px">Scalars</p>
+        <div class="scal" id="g-scal"></div>
+      </div>
+      <div style="min-width:0">
+        <p class="sub">The input vector, piece by piece</p>
+        <div class="segs" id="g-segs"></div>
+        <p class="hint" style="margin-top:6px"><span id="inp-note"></span> Hover a cell for its value.</p>
+        <details><summary>raw numbers</summary><pre class="num" id="g-raw"
+          style="white-space:pre-wrap;font-size:10.5px;max-height:220px;overflow:auto"></pre></details>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row" id="result-row" style="display:none">
+  <div class="card">
+    <h2>Result</h2>
+    <p class="hint" id="res-hint"></p>
+    <div id="res-stats"></div>
+    <div id="res-review"></div>
+  </div>
+</div>
+
+</div>
+<div id="tip"></div>
+
+<script>
+const SYM = {S:"♠", H:"♥", D:"♦", C:"♣", NT:"NT"};
+const SUITS = ["S","H","D","C"];
+const RANKS = "AKQJT98765432";
+const SEATS = ["North","East","South","West"];
+const SEAT_VAR = ["--n","--e","--s","--w"];
+const $ = id => document.getElementById(id);
+const isRed = s => s==="H" || s==="D";
+const rankTxt = r => r==="T" ? "10" : r;
+const fmtPts = v => (v>0?"+":v<0?"−":"") + Math.abs(Math.round(v));
+const seatColor = s => `var(${SEAT_VAR[s]})`;
+const cardSuit = c => SUITS[Math.floor(c/13)];
+const cardRank = c => RANKS[c%13];
+function cardHTML(c){
+  const s = cardSuit(c);
+  return `<span class="${isRed(s)?'red':''}">${SYM[s]}${rankTxt(cardRank(c))}</span>`;
+}
+function strainHTML(st){ return `<span class="${isRed(st)?'red':''}">${SYM[st]||st}</span>`; }
+function contractHTML(c){ return `${c.level}${strainHTML(c.strain)}${["","X","XX"][c.doubled]}`; }
+
+let GAME_ID = null;
+try { GAME_ID = sessionStorage.getItem("play-game"); } catch(e) {}
+if(!GAME_ID){
+  GAME_ID = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
+  try { sessionStorage.setItem("play-game", GAME_ID); } catch(e) {}
+}
+async function post(url, body){
+  const r = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json","X-Game":GAME_ID},
+                              body: body?JSON.stringify(body):undefined});
+  const j = await r.json();
+  if(!r.ok){ $("err").textContent = j.error || "request failed"; return null; }
+  $("err").textContent = ""; return j;
+}
+
+let D = null;                    // last state
+let SHOW_ALL = true;             // show every hand, or only what the net may see
+let POL_MODE = "policy";         // "policy" or "dd"
+
+function render(d){
+  D = d;
+  const q = new URLSearchParams();
+  if(d.code.b !== null && d.code.b !== undefined) q.set("b", d.code.b);
+  else { q.set("d", d.code.d); q.set("a", d.code.a); q.set("dr", d.code.dr); }
+  q.set("v", d.code.v);
+  if(d.code.p) q.set("p", d.code.p);
+  const h = "#" + q.toString();
+  document.body.dataset.code = h;
+  if(location.hash !== h) history.replaceState(null, "", h);
+
+  const sel = $("model");
+  if(sel.options.length !== d.models.length)
+    sel.innerHTML = d.models.map(m => `<option value="${m.id}">${m.label}</option>`).join("");
+  sel.value = d.model || "";
+  const m = d.models.find(x => x.id === d.model);
+  $("meta").textContent = m ? m.info : "no card-play model is loaded";
+  $("undo").disabled = d.step === 0;
+  $("restart").disabled = d.step === 0;
+  $("step").disabled = $("auto").disabled = d.done || !d.net;
+
+  renderTable(d); renderPanel(d); renderPolicy(d); renderBelief(d);
+  renderSetup(d); renderInput(d); renderResult(d);
+}
+
+/* ------------------------------------------------ the table */
+function seatRole(d, seat){
+  if(seat === d.contract.declarer) return "declarer";
+  if(seat === d.contract.dummy) return "dummy";
+  return "defender";
+}
+function canSee(d, seat){
+  if(SHOW_ALL || d.done) return true;
+  const turn = d.to_play;
+  if(turn === null) return true;
+  if(seat === turn) return true;
+  if(d.step === 0) return false;                 // nothing is face up before the lead
+  const faceUp = (turn === d.contract.dummy) ? d.contract.declarer : d.contract.dummy;
+  return seat === faceUp;
+}
+
+function renderTable(d){
+  const t = $("table"); t.innerHTML = "";
+  const netPick = d.net ? d.net.pick : -1;
+  for(const s of d.seats){
+    const el = document.createElement("div");
+    const turn = !d.done && s.seat === d.to_play;
+    const role = seatRole(d, s.seat);
+    el.className = `hand ${"NESW"[s.seat]}${turn?" turn":""}${role==="dummy"?" dummy":""}`;
+    const open = canSee(d, s.seat);
+    let body = "";
+    if(!open){
+      // Card backs only, never split by suit: the shape is part of what is hidden.
+      body = `<div class="sl"><span class="sym dim">?</span><span class="cards">` +
+        new Array(s.left).fill('<span class="cd back">x</span>').join("") + `</span></div>`;
+    }
+    for(const k of open ? SUITS : []){
+      const cards = s.suits[k] || [];
+      const inner = cards.map(c => {
+        const playable = turn && d.legal && d.legal[c.card];
+        return `<button class="cd ${playable?"play":"no"}${c.card===netPick&&turn?" netpick":""}"
+          ${playable?"":"disabled"} data-card="${c.card}"
+          title="${playable?"play "+SYM[k]+rankTxt(c.rank):"not legal now"}">${rankTxt(c.rank)}</button>`;
+      }).join("");
+      body += `<div class="sl"><span class="sym ${isRed(k)?'red':''}">${SYM[k]}</span>`
+            + `<span class="cards">${inner || '<span class="dim">—</span>'}</span></div>`;
+    }
+    const spent = SUITS.flatMap(k => (s.spent[k]||[]).map(c => SYM[k]+rankTxt(c.rank)));
+    el.innerHTML =
+      `<div class="hd"><b>${s.name}</b>` +
+      `<span class="tag">${role}${role==="dummy"?" · face up":""}</span>` +
+      (turn ? '<span class="go">to play</span>' : "") + `</div>` + body +
+      `<div class="hd" style="margin-top:3px"><span class="tag">${open?s.hcp+" HCP":"hidden"}</span>` +
+      `<span class="tag num">${s.left} left</span></div>` +
+      (spent.length ? `<div class="spent">played ${spent.join(" ")}</div>` : "");
+    el.querySelectorAll("button[data-card]").forEach(b =>
+      b.onclick = () => playCard(+b.dataset.card));
+    t.appendChild(el);
+  }
+
+  // the current trick, laid out on the compass
+  const c = document.createElement("div"); c.className = "center";
+  const byseat = {};
+  d.trick.forEach(x => byseat[x.seat] = x);
+  const winner = d.tricks.length ? d.tricks[d.tricks.length-1].winner : null;
+  let inner = "";
+  for(let s=0; s<4; s++){
+    const x = byseat[s];
+    const slot = ["n","e","s","w"][s];
+    inner += `<div class="slot ${slot}${x && isRed(x.suit) ? " redc":""}">` +
+      (x ? `${SYM[x.suit]}${rankTxt(x.rank)}` : "") + `</div>`;
+  }
+  const lead = d.trick.length ? SEATS[d.trick_leader][0] + " led" : "";
+  inner += `<div class="mid">Trick ${Math.min(13, d.trick_no+1)}/13<br>` +
+    (d.done ? "done" : lead || `${SEATS[d.trick_leader][0]} to lead`) +
+    (winner !== null && !d.trick.length ? `<br>last won by ${SEATS[winner][0]}` : "") + `</div>`;
+  c.innerHTML = inner;
+  t.appendChild(c);
+
+  const ct = d.contract;
+  t.insertAdjacentHTML("beforeend",
+    `<div class="corner tl">Contract<b>${contractHTML(ct)} ${ct.declarer_name[0]}</b></div>` +
+    `<div class="corner tr">NS – EW tricks<b class="num">${d.tricks_won.ns} – ${d.tricks_won.ew}</b></div>` +
+    `<div class="corner bl">Vulnerable<b style="font-size:13px">${ct.vul_ns&&ct.vul_ew?"both":ct.vul_ns?"NS":ct.vul_ew?"EW":"neither"}</b></div>` +
+    `<div class="corner br">${d.done ? "Declarer made" : "Declarer needs"}` +
+      `<b class="num">${d.done ? d.declarer_tricks : ct.level+6}</b></div>`);
+}
+
+/* ------------------------------------------------ control panel */
+function renderPanel(d){
+  const ct = d.contract, need = ct.level + 6, left = 13 - d.trick_no;
+  const vul = ct.vul_ns && ct.vul_ew ? "both vulnerable" : ct.vul_ns ? "NS vulnerable"
+            : ct.vul_ew ? "EW vulnerable" : "nobody vulnerable";
+  if(d.done){
+    $("turn-title").innerHTML = `Thirteen tricks played`;
+    $("turn-hint").innerHTML = `${contractHTML(ct)} by ${ct.declarer_name}, ${vul} — see the result below.`;
+  } else {
+    const who = SEATS[d.to_play];
+    $("turn-title").innerHTML = `${who} to play <span class="dim" style="font-weight:400">· ${seatRole(d, d.to_play)}</span>`;
+    $("turn-hint").innerHTML = `${contractHTML(ct)} by ${ct.declarer_name}, ${vul}. ` +
+      `Card ${d.step+1} of 52, trick ${d.trick_no+1}, ${d.trick.length} card${d.trick.length===1?"":"s"} already on the table.`;
+  }
+  $("counts").innerHTML =
+    `<div class="stat"><span>Declaring side</span><b class="num">${d.tricks_won.declaring}</b>` +
+      `<span>of ${need} needed${d.done?"":`, ${left} trick${left===1?"":"s"} left`}</span></div>` +
+    `<div class="stat"><span>Defenders</span><b class="num">${d.tricks_won.defending}</b>` +
+      `<span>of ${14-need} to beat it</span></div>`;
+
+  const dd = d.dd;
+  let s = "";
+  if(!dd.available && dd.declarer_tricks === null){
+    s = `<div class="stat"><span>Double dummy</span><b style="font-size:13px">not available</b>` +
+        `<span>${dd.reason || "no solver on this server, so there is no perfect-play answer to compare with"}</span></div>`;
+  } else {
+    const target = dd.declarer_tricks;
+    const bench = dd.bench_tricks !== null && dd.bench_tricks !== undefined
+      ? ` Benchmark board #${dd.bench_index} stores ${dd.bench_tricks}.` : "";
+    let sub = `with every hand face up and perfect play on both sides.${bench}`;
+    let cls = "";
+    if(d.done){
+      const gap = d.declarer_tricks - target;
+      cls = gap === 0 ? "good" : "bad";
+      sub = gap === 0 ? `the play matched it exactly.${bench}`
+          : gap > 0 ? `the play beat it by ${gap} — the defence let it through.${bench}`
+          : `the play fell ${-gap} short of it.${bench}`;
+    }
+    s = `<div class="stat ${cls}"><span>Double dummy: ${SEATS[d.contract.declarer]} takes</span>` +
+        `<b class="num">${target === null ? "—" : target}</b><span>${sub}</span></div>`;
+  }
+  $("dd-stat").innerHTML = s;
+
+  $("who").innerHTML = d.seat_mode.map((mode, seat) =>
+    `<span class="nm" style="color:${seatColor(seat)}">${SEATS[seat]}</span>` +
+    `<span class="seg"><button data-seat="${seat}" data-mode="net" class="${mode==="net"?"on":""}">net</button>` +
+    `<button data-seat="${seat}" data-mode="you" class="${mode==="you"?"on":""}">you</button></span>`).join("");
+  $("who").querySelectorAll("button").forEach(b => b.onclick = async () => {
+    const modes = [...D.seat_mode]; modes[+b.dataset.seat] = b.dataset.mode;
+    const r = await post("/api/play/seats", {seat_mode: modes}); if(r) render(r);
+  });
+  $("reveal").querySelectorAll("button").forEach(b => {
+    b.classList.toggle("on", (b.dataset.all === "1") === SHOW_ALL);
+    b.onclick = () => { SHOW_ALL = b.dataset.all === "1"; renderTable(D); renderPanel(D); };
+  });
+}
+
+/* ------------------------------------------------ policy grid */
+function renderPolicy(d){
+  const g = $("policy"), nv = d.net;
+  g.innerHTML = ""; $("picks").innerHTML = ""; $("dd-card").innerHTML = "";
+  $("pol-card").style.display = nv ? "" : "none";
+  if(!nv){ $("pol-legend").innerHTML = ""; return; }
+  const dd = d.dd, hasDD = dd.available && dd.cards;
+  const mode = (POL_MODE === "dd" && hasDD) ? "dd" : "policy";
+  const toggle = hasDD
+    ? `<span class="seg" style="margin-left:6px"><button data-m="policy" class="${mode==="policy"?"on":""}">policy %</button>` +
+      `<button data-m="dd" class="${mode==="dd"?"on":""}">double dummy</button></span>` : "";
+  $("pol-hint").innerHTML = (mode === "policy"
+      ? `Its chance for every one of the 52 cards, illegal ones greyed out. `
+      : `Tricks the ${dd.side_on_turn} side still takes after each card, with all four hands face up. `) +
+    `Gold ring = the card it would play: <b>${cardHTML(nv.pick)}</b>, ` +
+    `${(nv.confidence*100).toFixed(0)}% sure.` +
+    (hasDD ? ` Green underline = a card double dummy is happy with.` : "") + toggle;
+  $("pol-hint").querySelectorAll("[data-m]").forEach(b =>
+    b.onclick = () => { POL_MODE = b.dataset.m; renderPolicy(D); });
+
+  const best = hasDD ? dd.best_tricks : 0;
+  g.innerHTML = `<div></div>` + [...RANKS].map(r => `<div class="h">${rankTxt(r)}</div>`).join("");
+  let cells = "";
+  for(let s=0; s<4; s++){
+    cells += `<div class="sy ${isRed(SUITS[s])?'red':''}">${SYM[SUITS[s]]}</div>`;
+    for(let r=0; r<13; r++){
+      const c = s*13 + r, legal = nv.legal[c], p = nv.probs[c];
+      const ddv = hasDD ? dd.cards[String(c)] : undefined;
+      let bg = "transparent", label = "";
+      if(legal && mode === "policy"){
+        bg = `rgba(31,160,100,${Math.min(1, p)*0.72})`;
+        label = p < 0.005 ? "·" : (p*100).toFixed(0) + "%";
+      } else if(legal && ddv !== undefined){
+        const lost = best - ddv;
+        bg = lost === 0 ? "rgba(31,160,100,.42)" : `rgba(210,80,60,${Math.min(1, lost/3)*0.5})`;
+        label = String(ddv);
+      }
+      const cls = `pc${legal?" hit":" no"}${c===nv.pick?" pick":""}` +
+                  (legal && hasDD && ddv === best ? " ddbest" : "");
+      const tip = legal
+        ? `${SYM[SUITS[s]]}${rankTxt(RANKS[r])} · policy ${(p*100).toFixed(1)}%` +
+          (ddv !== undefined ? ` · double dummy ${ddv} trick${ddv===1?"":"s"}` : "")
+        : `${SYM[SUITS[s]]}${rankTxt(RANKS[r])} · not a legal card here`;
+      cells += `<div class="${cls}" style="background:${bg}" data-tip="${tip}"` +
+               `${legal?` data-card="${c}"`:""}><span class="r">${rankTxt(RANKS[r])}</span>` +
+               `<span class="v">${label}</span></div>`;
+    }
+  }
+  g.insertAdjacentHTML("beforeend", cells);
+  g.querySelectorAll("[data-card]").forEach(el => el.onclick = () => playCard(+el.dataset.card));
+
+  $("pol-legend").innerHTML = mode === "policy"
+    ? `<span>0%</span><div class="grad"></div><span>100%</span>` +
+      `<span class="key"><i style="outline:2px solid var(--pick);background:transparent"></i> its card</span>`
+    : `<span class="key"><i style="background:rgba(31,160,100,.42)"></i> no trick lost</span>` +
+      `<span class="key"><i style="background:rgba(210,80,60,.5)"></i> throws a trick away</span>`;
+
+  $("picks").innerHTML = `<span class="sub" style="grid-column:1/-1;margin:0">Its top cards</span>` +
+    nv.top.map(t => `<span>${cardHTML(t.card)}</span>` +
+      `<div class="bar" style="width:${Math.max(2, t.p*100)}%"></div>` +
+      `<span class="num">${(t.p*100).toFixed(0)}%</span>`).join("");
+
+  if(!dd.available){
+    $("dd-card").innerHTML = `<b>No double dummy answer for this position.</b> ` +
+      (dd.reason || "The solver is not available here, so nothing says what the perfect card was.");
+  } else if(hasDD){
+    const chosenDD = dd.cards[String(nv.pick)];
+    const lost = best - chosenDD;
+    const others = dd.best.filter(c => c !== nv.pick);
+    const names = dd.best.map(c => cardHTML(c)).join(" ");
+    $("dd-card").innerHTML = lost === 0
+      ? `Double dummy agrees: ${cardHTML(nv.pick)} keeps all ${best} tricks the ${dd.side_on_turn} side can still take. ` +
+        (others.length ? `So would ${others.map(c => cardHTML(c)).join(" ")}.` : `Nothing else would.`)
+      : `Double dummy says ${cardHTML(nv.pick)} costs <b>${lost} trick${lost===1?"":"s"}</b>: ` +
+        `${chosenDD} instead of ${best} for the ${dd.side_on_turn} side. It would play ${names}. ` +
+        `<span class="dim">That is against a perfect opponent, which is not who the net was trained against.</span>`;
+  }
+}
+
+/* ------------------------------------------------ belief */
+function renderBelief(d){
+  const g = $("belief"), card = $("belief-card"), nv = d.net;
+  if(!nv){ card.style.display = "none"; return; }
+  card.style.display = "";
+  const b = nv.belief, byCard = {};
+  b.cards.forEach(c => byCard[c.card] = c);
+  const me = nv.seat;
+  $("bel-hint").innerHTML =
+    `The net's second head guesses, for every card it cannot see, which seat is holding it. ` +
+    `${SEATS[me]} is on turn and cannot see ${b.hidden} card${b.hidden===1?"":"s"} spread over ` +
+    `${b.seats.map(s => `<b style="color:${seatColor(s)}">${SEATS[s]}</b>`).join(" and ")}. ` +
+    `Each bar splits that card's probability between them; the cell border is the seat that really has it, ` +
+    `so a matching colour means the net is right. ` +
+    (b.accuracy === null ? "" :
+      `It puts the biggest share on the right seat for <b>${(b.accuracy*100).toFixed(0)}%</b> of them.`);
+
+  g.innerHTML = `<div></div>` + [...RANKS].map(r => `<div class="h">${rankTxt(r)}</div>`).join("");
+  let cells = "";
+  for(let s=0; s<4; s++){
+    cells += `<div class="sy ${isRed(SUITS[s])?'red':''}">${SYM[SUITS[s]]}</div>`;
+    for(let r=0; r<13; r++){
+      const c = s*13 + r, e = byCard[c];
+      if(!e){
+        const owner = ownerOf(d, c);
+        cells += `<div class="bc seen" style="border-color:${seatColor(owner)}"` +
+          ` data-tip="${SYM[SUITS[s]]}${rankTxt(RANKS[r])} · ${SEATS[owner]} · already seen, nothing to guess">` +
+          `<span class="r">${rankTxt(RANKS[r])}</span><div class="bar"></div></div>`;
+        continue;
+      }
+      const parts = b.seats.map(seat => ({seat, p: e.p[String(seat)] || 0}));
+      const bar = parts.map(x =>
+        `<i style="width:${(x.p*100).toFixed(1)}%;background:${seatColor(x.seat)}"></i>`).join("");
+      const tip = `${SYM[SUITS[s]]}${rankTxt(RANKS[r])} · really ${SEATS[e.true]} · ` +
+        parts.map(x => `${SEATS[x.seat][0]} ${(x.p*100).toFixed(0)}%`).join("  ");
+      cells += `<div class="bc" style="border-color:${seatColor(e.true)}" data-tip="${tip}">` +
+        `<span class="r">${rankTxt(RANKS[r])}</span><div class="bar">${bar}</div></div>`;
+    }
+  }
+  g.insertAdjacentHTML("beforeend", cells);
+  $("bel-legend").innerHTML = SEATS.map((n, s) =>
+    `<span class="key"><i style="background:${seatColor(s)}"></i> ${n}</span>`).join("") +
+    `<span class="key"><i style="background:transparent;border:2px solid var(--line)"></i> faded = the net can already see it</span>`;
+}
+function ownerOf(d, card){
+  for(const s of d.seats){
+    for(const k of SUITS){
+      if((s.suits[k]||[]).some(c => c.card === card)) return s.seat;
+      if((s.spent[k]||[]).some(c => c.card === card)) return s.seat;
+    }
+  }
+  return 0;
+}
+
+/* ------------------------------------------------ what it sees */
+const tip = $("tip");
+document.addEventListener("mousemove", e => {
+  const v = e.target.dataset && e.target.dataset.tip;
+  if(v){ tip.style.display="block"; tip.textContent=v; tip.style.left=(e.clientX+12)+"px"; tip.style.top=(e.clientY+12)+"px"; }
+  else tip.style.display="none";
+});
+function heat(v, m){
+  const f = Math.max(-1, Math.min(1, v/m));
+  return f>=0 ? `rgba(45,91,216,${f})` : `rgba(210,80,60,${-f})`;
+}
+function handGrid(d, seat, title){
+  const held = new Set(), spent = new Set();
+  const s = d.seats[seat];
+  SUITS.forEach(k => { (s.suits[k]||[]).forEach(c => held.add(c.card));
+                       (s.spent[k]||[]).forEach(c => spent.add(c.card)); });
+  let g = `<p class="sub" style="margin:6px 0 4px">${title}</p><div class="grid13">`;
+  g += `<div></div>` + [...RANKS].map(r => `<div class="h">${rankTxt(r)}</div>`).join("");
+  for(let su=0; su<4; su++){
+    g += `<div class="${isRed(SUITS[su])?'red':''}">${SYM[SUITS[su]]}</div>`;
+    for(let r=0; r<13; r++){
+      const c = su*13+r;
+      const cls = held.has(c) ? "on" : "";
+      const op = spent.has(c) ? ' style="opacity:.35;background:var(--accent);border-color:var(--accent)"' : "";
+      g += `<div class="cell ${cls}"${op} data-tip="${SYM[SUITS[su]]}${rankTxt(RANKS[r])}${held.has(c)?" · in hand":spent.has(c)?" · already played":""}"></div>`;
+    }
+  }
+  return g + `</div>`;
+}
+
+function renderInput(d){
+  const nv = d.net;
+  $("inp-card").style.display = nv ? "" : "none";
+  if(!nv) return;
+  const inp = nv.input, me = nv.seat;
+  const faceUp = d.step === 0 ? null : (me === d.contract.dummy ? d.contract.declarer : d.contract.dummy);
+  $("inp-title").textContent = `What the net sees — ${SEATS[me]}`;
+  $("inp-hint").innerHTML =
+    `The ${inp.size} numbers that go in before the net's layers, for the seat on turn. ` +
+    `Seats are relative: slot 0 is always whoever is playing, so one net covers all four chairs. ` +
+    `It never sees the two hidden hands — only its own, the face-up one, every card already played ` +
+    `filed by who played it, the contract and the auction.`;
+  $("inp-note").textContent = inp.note;
+
+  $("g-hands").innerHTML = handGrid(d, me, `Its own hand (${SEATS[me]}) — solid = still held, faded = already played`) +
+    (faceUp === null
+      ? `<p class="hint" style="margin:6px 0 0">Nothing is face up yet: this is the opening lead, and the
+          52 face-up bits are all zero.</p>`
+      : handGrid(d, faceUp, `The face-up hand (${SEATS[faceUp]}, ${faceUp === d.contract.dummy ? "dummy" : "declarer"})`));
+
+  // auction
+  const a = d.auction;
+  let head = "", rows = "", n = a.calls.length;
+  const order = [0,1,2,3];
+  head = order.map(s => `<th style="color:${seatColor(s)}">${SEATS[s][0]}</th>`).join("");
+  const pad = a.dealer;
+  const cellsArr = new Array(pad).fill(null).concat(a.calls);
+  for(let i=0; i<cellsArr.length; i+=4){
+    rows += "<tr>" + order.map((_, k) => {
+      const x = cellsArr[i+k];
+      if(x === undefined) return "<td></td>";
+      if(x === null) return `<td class="dim">·</td>`;
+      const nm = x.name, special = nm==="Pass"||nm==="X"||nm==="XX";
+      const st = special ? "" : nm.slice(1);
+      return `<td class="${!special && isRed(st) ? "red":""}">${nm==="Pass"?"–":special?nm:nm[0]+SYM[st]}</td>`;
+    }).join("") + "</tr>";
+  }
+  $("g-auction").innerHTML = `<table class="aq"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>` +
+    `<p class="hint" style="margin:5px 0 0">` +
+    (a.synthetic
+      ? `No real auction for this board, so it was given the shortest one that lands in
+         ${contractHTML(d.contract)}: ${SEATS[a.dealer]} bids it, everyone passes. The net was trained on
+         real auctions, so this is thinner than what it usually reads.`
+      : `${SEATS[a.dealer]} dealt. This is the auction the board came with; the net reads it twice —
+         as a bag of calls per seat, and as an ordered sequence through a GRU.`) + `</p>`;
+
+  $("g-scal").innerHTML = inp.scalars.map(([k, v]) =>
+    `<span>${k}</span><div class="track"><div class="fill" style="width:${Math.min(100, Math.max(0, v*100))}%"></div></div>` +
+    `<span class="num">${v.toFixed(2)}</span>`).join("");
+
+  const all = inp.segments.flatMap(s => s.values).map(Math.abs);
+  const sorted = [...all].sort((a,b) => a-b);
+  const m = Math.max(1e-6, sorted[Math.floor(sorted.length*.98)] || 1);
+  let off = 0;
+  $("g-segs").innerHTML = inp.segments.map(seg => {
+    const cells = seg.values.map((v, i) =>
+      `<i style="background:${heat(v, m)}" data-tip="x[${off+i}] = ${v.toFixed(3)}"></i>`).join("");
+    const out = `<span>${seg.name} <span class="dim num">${seg.values.length}</span></span>` +
+                `<div class="strip">${cells}</div>`;
+    off += seg.values.length; return out;
+  }).join("");
+  $("g-raw").textContent = inp.segments.map(s =>
+    `${s.name}: [${s.values.map(v => v.toFixed(3)).join(", ")}]`).join("\n\n");
+}
+
+/* ------------------------------------------------ setup */
+function opt(list, val){ return list.map(([v, t]) =>
+  `<option value="${v}"${String(v)===String(val)?" selected":""}>${t}</option>`).join(""); }
+
+let SETUP = {source:"bench", bench:0};
+function renderSetup(d){
+  if(d.code.b === null || d.code.b === undefined){ if(SETUP.source === "bench") SETUP.source = "these"; }
+  else SETUP.bench = d.code.b;
+  if(!d.bench_size && SETUP.source === "bench") SETUP.source = "random";
+  const ct = d.contract;
+  const benchOn = SETUP.source === "bench";
+  const el = $("setup");
+  el.innerHTML =
+    `<div class="field"><label>Cards</label>
+      <span class="seg">
+        <button data-src="bench" class="${SETUP.source==="bench"?"on":""}" ${d.bench_size?"":"disabled"}>benchmark</button>
+        <button data-src="random" class="${SETUP.source==="random"?"on":""}">random deal</button>
+        <button data-src="these" class="${SETUP.source==="these"?"on":""}">these cards</button>
+      </span></div>` +
+    (benchOn
+      ? `<div class="field"><label>Board number (0–${Math.max(0,d.bench_size-1)})</label>
+           <input type="number" id="s-bench" min="0" max="${Math.max(0,d.bench_size-1)}" value="${SETUP.bench||0}"></div>
+         <div class="field"><label>&nbsp;</label><button id="s-rand-bench">Surprise me</button></div>`
+      : `<div class="field"><label>Level</label><select id="s-level">${opt([1,2,3,4,5,6,7].map(v=>[v,v]), ct.level)}</select></div>
+         <div class="field"><label>Strain</label><select id="s-trump">${opt([[0,"♠ spades"],[1,"♥ hearts"],[2,"♦ diamonds"],[3,"♣ clubs"],[4,"NT"]], ct.trump)}</select></div>
+         <div class="field"><label>Declarer</label><select id="s-declarer">${opt(SEATS.map((n,i)=>[i,n]), ct.declarer)}</select></div>
+         <div class="field"><label>Doubled</label><select id="s-doubled">${opt([[0,"—"],[1,"X"],[2,"XX"]], ct.doubled)}</select></div>`) +
+    `<div class="field"><label>Vulnerable</label><select id="s-vul">${opt([["none","neither"],["ns","NS"],["ew","EW"],["all","both"]], d.code.v)}</select></div>` +
+    `<div class="field"><label>&nbsp;</label><button class="primary" id="s-go">Load board</button></div>`;
+
+  el.querySelectorAll("[data-src]").forEach(b => b.onclick = () => {
+    SETUP.source = b.dataset.src; renderSetup(D);
+  });
+  const rb = $("s-rand-bench");
+  if(rb) rb.onclick = () => { $("s-bench").value = Math.floor(Math.random()*Math.max(1,D.bench_size)); };
+  $("s-go").onclick = applySetup;
+
+  $("setup-note").innerHTML = benchOn
+    ? `Boards 0–${Math.max(0,d.bench_size-1)} of <code>bench_100k.npz</code>, the frozen slice the E48
+       numbers were measured on. Each one brings its own E46 auction, its own contract and vulnerability,
+       and a stored double dummy trick count, so the contract pickers are hidden.`
+    : SETUP.source === "random"
+      ? `A fresh random deal. The contract pickers set what gets played; there is no real auction,
+         so the net is handed the shortest one that lands there.`
+      : `Keeps the 52 cards on the table and changes only the contract. The auction is replaced by
+         the shortest one that lands in it.`;
+}
+
+async function applySetup(){
+  const body = {vul: $("s-vul").value};
+  if(SETUP.source === "bench"){
+    body.bench = Math.max(0, +($("s-bench").value || 0));
+  } else {
+    body.contract = {level: +$("s-level").value, trump: +$("s-trump").value,
+                     declarer: +$("s-declarer").value, doubled: +$("s-doubled").value};
+    if(SETUP.source === "these") body.deal = D.code.d;
+  }
+  const r = await post("/api/play/setup", body);
+  if(r){ SETUP.bench = r.code.b; render(r); }
+}
+
+/* ------------------------------------------------ result */
+function renderResult(d){
+  const row = $("result-row");
+  if(!d.done){ row.style.display = "none"; return; }
+  row.style.display = "";
+  const r = d.result, ct = d.contract;
+  $("res-hint").innerHTML = `${contractHTML(ct)} by ${ct.declarer_name}, ` +
+    (r.made ? `made${r.delta ? ` +${r.delta}` : " exactly"}` : `down ${-r.delta}`) +
+    `. Score is for the declaring side (${r.declaring_side}), duplicate scoring.`;
+  const dd = d.dd;
+  $("res-stats").innerHTML =
+    `<div class="counts">` +
+    `<div class="stat ${r.made?"good":"bad"}"><span>Tricks</span><b class="num">${r.tricks}</b>` +
+      `<span>needed ${r.needed}</span></div>` +
+    `<div class="stat"><span>Score, ${r.declaring_side}</span><b class="num">${fmtPts(r.score)}</b>` +
+      `<span>${(r.declaring_side === "NS" ? ct.vul_ns : ct.vul_ew) ? "vulnerable" : "not vulnerable"}` +
+      `${r.declaring_side === "NS" ? "" : ` · NS ${fmtPts(r.ns_score)}`}</span></div>` +
+    `</div>` +
+    (dd.declarer_tricks === null
+      ? `<div class="stat"><span>Double dummy</span><b style="font-size:13px">not available</b>` +
+        `<span>${dd.reason || "no solver here, so there is nothing to compare the play with"}</span></div>`
+      : `<div class="stat"><span>Double dummy said</span><b class="num">${dd.declarer_tricks}</b>` +
+        `<span>${r.tricks === dd.declarer_tricks ? "the play landed exactly on it"
+          : r.tricks > dd.declarer_tricks ? `the play took ${r.tricks-dd.declarer_tricks} more, so the defence slipped`
+          : `the play took ${dd.declarer_tricks-r.tricks} fewer`}` +
+        (dd.bench_tricks !== null && dd.bench_tricks !== undefined
+          ? ` · benchmark board #${dd.bench_index} stores ${dd.bench_tricks}` : "") + `</span></div>`);
+
+  const rev = d.review;
+  if(!rev){
+    $("res-review").innerHTML = `<p class="hint">No card-by-card double dummy review: ` +
+      `${dd.reason || "the solver is not available here"}.</p>`;
+    return;
+  }
+  const bad = rev.cards.filter(c => c.lost > 0);
+  let html = `<p class="sub" style="margin-top:14px">Card by card against perfect play</p>` +
+    `<p class="hint">The solver is asked, before every card, how many tricks the side on turn can still
+     take. Anything the played card gives up is listed here. Declaring side threw away
+     <b>${rev.declaring_lost}</b>, defenders <b>${rev.defending_lost}</b>.
+     A card that costs a trick double dummy can still be the right card against a fallible opponent,
+     which is the only opponent the net was trained against.</p>`;
+  if(!bad.length){
+    html += `<p class="hint">Not one card cost a trick. Both sides played it out double dummy perfect.</p>`;
+  } else {
+    html += `<div class="scroll"><table class="rv"><thead><tr><th>trick</th><th>seat</th><th>played</th>` +
+      `<th>tricks</th><th>best</th><th>lost</th><th>should have played</th></tr></thead><tbody>` +
+      bad.map(c => `<tr class="loss"><td>${c.trick+1}</td>` +
+        `<td style="color:${seatColor(c.seat)}">${SEATS[c.seat]}</td>` +
+        `<td>${cardHTML(c.card)}</td><td>${c.tricks}</td><td>${c.best}</td><td>−${c.lost}</td>` +
+        `<td>${c.best_cards.slice(0,6).map(x => cardHTML(x)).join(" ")}</td></tr>`).join("") +
+      `</tbody></table></div>`;
+  }
+  $("res-review").innerHTML = html;
+}
+
+/* ------------------------------------------------ actions */
+async function playCard(card){ const r = await post("/api/play/card", {card}); if(r) render(r); }
+$("step").onclick = async () => { const r = await post("/api/play/net_card"); if(r) render(r); };
+$("auto").onclick = async () => { const r = await post("/api/play/auto"); if(r) render(r); };
+$("undo").onclick = async () => { const r = await post("/api/play/undo"); if(r) render(r); };
+$("restart").onclick = async () => { const r = await post("/api/play/restart"); if(r) render(r); };
+$("new-board").onclick = async () => {
+  const body = D && D.bench_size
+    ? {bench: Math.floor(Math.random()*D.bench_size)}
+    : {vul: (D ? D.code.v : "none")};
+  const r = await post("/api/play/setup", body); if(r){ SETUP.source = "bench"; render(r); }
+};
+$("model").onchange = async () => { const r = await post("/api/play/model", {model: $("model").value}); if(r) render(r); };
+$("share").onclick = async () => {
+  try { await navigator.clipboard.writeText(location.href); $("share").textContent = "Copied ✓"; }
+  catch(e) { prompt("Copy this link:", location.href); }
+  setTimeout(() => $("share").textContent = "Copy link", 1500);
+};
+document.addEventListener("keydown", e => {
+  if(e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if(e.key === "Backspace" && !$("undo").disabled){ e.preventDefault(); $("undo").click(); }
+  if(e.key === " " && e.target === document.body && !$("step").disabled){ e.preventDefault(); $("step").click(); }
+});
+
+async function boot(){
+  const p = new URLSearchParams(location.hash.slice(1));
+  const body = {};
+  if(p.get("b") !== null) body.bench = +p.get("b");
+  else if(p.get("d")){
+    body.deal = p.get("d");
+    if(p.get("a")) body.auction = p.get("a");
+    body.dealer = +(p.get("dr") || 0);
+    if(p.get("c")){                       // 4S / 3NT plus declarer, when there is no auction
+      const raw = p.get("c"), level = +raw[0], st = raw.slice(1).toUpperCase();
+      const trump = ["S","H","D","C","NT"].indexOf(st);
+      if(level >= 1 && trump >= 0){
+        body.contract = {level, trump, declarer: +(p.get("by") || 0), doubled: +(p.get("x") || 0)};
+        body.prefer = "contract";
+      }
+    }
+  }
+  if(p.get("v")) body.vul = p.get("v");
+  if(p.get("p")) body.played = p.get("p");
+  if(Object.keys(body).length){
+    const r = await post("/api/play/setup", body);
+    if(r) return render(r);
+  }
+  fetch("/api/play/state", {headers:{"X-Game": GAME_ID}}).then(r => r.json()).then(render);
+}
+window.addEventListener("hashchange", () => {
+  const p = new URLSearchParams(location.hash.slice(1));
+  if(("#" + p.toString()) !== document.body.dataset.code) boot();
+});
+boot();
+</script>
+</body>
+</html>
