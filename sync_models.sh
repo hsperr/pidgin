@@ -7,8 +7,9 @@
 # the bridgezero modules are a frozen copy, like emergent/.
 set -euo pipefail
 SRC="${SRC:-$HOME/code/bridge_new}"
-# E28 (D5OWN4XC) classes are only on branch integrate-fast-xxsac so far; once merged, CODE=$SRC.
-CODE="${CODE:-$SRC/.claude/worktrees/agent-a97e77ce1eb89dfdf}"
+# The D5OWN4XC branch was merged into bridge_new's main on 2026-09-22, so the bidding
+# code comes from the checkout itself; it used to come from a worktree that is now gone.
+CODE="${CODE:-$SRC}"
 cd "$(dirname "$0")"
 
 echo "==> bridgezero code from $CODE"
