@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bridgezero"
+version = "0.1.0"
+description = "Contract bridge bidding from self-play: grounding, cooperative, then adversarial"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+dependencies = ["numpy>=2.0", "torch>=2.0"]
+
+[project.optional-dependencies]
+dds = ["endplay>=0.5"]
+dev = ["pytest>=8"]
+
+[tool.setuptools]
+packages = ["bridgezero", "bridgezero.bridge", "bridgezero.contract",
+            "bridgezero.cooperative", "bridgezero.fourseat"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,23 @@
+.DS_Store
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+
+# Training output and checkpoints stay local; weights are published separately.
+runs/
+results/
+*.pt
+
+# Deal datasets. The tiny deterministic test fixture is the one exception.
+data/*
+!data/smoke_128.npz
+
+# Credentials must never land here.
+.env*
+*.pem
+*.key
+id_rsa*
+
+# DDS writes this at the repo root when a solve fails.
+dump.txt
