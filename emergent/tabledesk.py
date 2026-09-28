@@ -120,7 +120,7 @@ def first_id(models):
     return next(iter(models)) if models else None
 
 
-def new_board(user_seat=2, model=None, play_model=None, hints=True, peek=False,
+def new_board(user_seat=2, model=None, play_model=None, hints=False, peek=False,
               owners=None, board_no=1):
     bm, pm = bid_models(), play_models()
     if owners is None:
@@ -491,12 +491,11 @@ def state_dump(game):
             out["legal_cards"] = batch.legal()[0].tolist()
     if ph == "over" and pg is not None and game["hints"]:
         out["review"] = user_review(game)
-    if out["your_turn"]:
-        if game["hints"]:
-            out["hint"] = auction_hint(game) if ph == "auction" else play_hint(game)
-            out["suggest"] = suggest_from_hint(out["hint"])
-        else:
-            out["suggest"] = suggestion(game)
+    # With hints off the payload carries no suggestion of any kind: the page cannot
+    # show what it was never sent.
+    if out["your_turn"] and game["hints"]:
+        out["hint"] = auction_hint(game) if ph == "auction" else play_hint(game)
+        out["suggest"] = suggest_from_hint(out["hint"])
     return out
 
 
@@ -610,6 +609,7 @@ COUNT_WORD = {4: "four", 5: "five", 6: "six"}
 PROMISE_AT = 0.50        # a length counts as promised once this many hands hold it
 BALANCED_HIGH = 0.75     # above this share of balanced hands we say "balanced"
 BALANCED_LOW = 0.15      # below it we say "unbalanced"; in between we say nothing
+RUNNER_UP_AT = 0.10      # the net's second choice is named once it is this likely
 
 
 def call_glyph(name):
@@ -763,6 +763,124 @@ def recent_calls(game, limit=2):
     return out[:limit]
 
 
+def percent_words(p):
+    """'78%', or '<1%' so a live option never reads as zero."""
+    return "<1%" if p < 0.005 else f"{int(round(p * 100))}%"
+
+
+def hand_sentence(facts):
+    """Plain facts about the user's hand, for a position with nothing measured to quote.
+
+    'You have 13 HCP and a balanced hand (4♠ 3♥ 3♦ 3♣).'
+    """
+    shape = " ".join(f"{n}{'♠♥♦♣'[i]}" for i, n in enumerate(facts["shape"]))
+    if facts["balanced"]:
+        return f"You have {facts['hcp']} HCP and a balanced hand ({shape})."
+    longest = facts["longest"]
+    held = facts["shape"][SUITS.index(longest)]
+    return (f"You have {facts['hcp']} HCP and an unbalanced hand ({shape}); your longest "
+            f"suit is {cards_words(held, longest)}.")
+
+
+def net_sentence(facts, net):
+    """The net's own choice on these exact cards, said to a beginner.
+
+    'You have 13 HCP and 5 hearts: with exactly these cards the net bids 1♥ 78% of
+    the time.' The hand clause names only what bears on the call - the suit it
+    names, or the shape for notrump - and the percentage is the net's policy.
+    """
+    if not net or not net["calls"]:
+        return None
+    top = net["calls"][0]
+    name = top["call"]
+    hand = f"You have {facts['hcp']} HCP"
+    if name.endswith("NT"):
+        hand += " and a balanced hand" if facts["balanced"] else " and an unbalanced hand"
+    elif name not in ("Pass", "X", "XX"):
+        hand += f" and {cards_words(facts['shape'][SUITS.index(name[-1])], name[-1])}"
+    if top["p"] is None:
+        return f"{hand}: the net's best-scoring call here is {call_glyph(name)}."
+    verb = {"Pass": "passes", "X": "doubles", "XX": "redoubles"}.get(
+        name, f"bids {call_glyph(name)}")
+    out = f"{hand}: with exactly these cards the net {verb} {percent_words(top['p'])} of the time."
+    runner = net["calls"][1] if len(net["calls"]) > 1 else None
+    if runner and runner["p"] is not None and runner["p"] >= RUNNER_UP_AT:
+        out += f" Its next choice is {call_glyph(runner['call'])} ({percent_words(runner['p'])})."
+    return out
+
+
+def corpus_rows(entry, legal, facts):
+    """One row per call self-play made at a position, most frequent first."""
+    rows = []
+    for token, stats in sorted(entry["calls"].items(), key=lambda kv: -kv[1]["share"]):
+        action = token_to_call(token)
+        name = call_name(action)
+        rows.append({"call": name, "action": action, "token": token,
+                     "stats": stats, "legal": bool(legal[action]),
+                     "fit": fits_hand(stats, facts),
+                     "says": would_show_sentence(name, stats),
+                     "yours": fit_sentence(stats, facts)})
+    return rows
+
+
+NEAREST_KEEP = 4         # a front-trimmed stand-in keeps at least one whole round
+
+
+def nearby_auctions(calls, me):
+    """Stand-ins for an auction self-play never reached, most faithful first.
+
+    Each is (calls, what changed). Every one keeps the user on turn next and
+    partner two calls back, so only the calls' history changes, never who is who:
+
+    - the opening passes left out: the same auction opened in an earlier seat;
+    - the opponents' bids and doubles replaced by passes, most recent first, then
+      all of them: the same conversation between the user and partner;
+    - the earliest calls dropped, keeping at least a whole round.
+    """
+    words = lambda cs: " ".join(call_glyph(call_name(c)) for c in cs)
+    lead = next((i for i, c in enumerate(calls) if c != PASS), len(calls))
+    for k in range(1, lead + 1):
+        yield calls[k:], "the same calls with the opening passes left out"
+    theirs = [i for i, c in enumerate(calls) if c != PASS and (DEALER + i) % 2 != me % 2]
+    for i in reversed(theirs):
+        yield (calls[:i] + [PASS] + calls[i + 1:],
+               f"the same, but with the opponents' {words([calls[i]])} replaced by a pass")
+    if len(theirs) > 1:
+        yield ([PASS if i in theirs else c for i, c in enumerate(calls)],
+               f"the same, but with all the opponents' calls ({words(calls[i] for i in theirs)}) "
+               f"replaced by passes")
+    for k in range(1, len(calls) - NEAREST_KEEP + 1):
+        first = "the first call" if k == 1 else f"the first {k} calls"
+        yield (calls[k:],
+               f"the last {len(calls) - k} calls only, ignoring {first} ({words(calls[:k])})")
+
+
+def nearest_position(game, legal, facts):
+    """The closest auction self-play did reach, for a position it never did.
+
+    The corpus is keyed by the whole auction from the dealer, stops eight calls
+    deep, and leaves out any position fewer than 200 hands reached. The first
+    stand-in from `nearby_auctions` that the corpus holds is used, and the note
+    says exactly what was changed to get there. Only calls legal here are kept.
+    """
+    table = corpus_table(game)
+    if table is None:
+        return None
+    for calls, change in nearby_auctions(game["calls"], game["user_seat"]):
+        if not any(c != PASS for c in calls):
+            continue                          # all passes: nothing left that says anything
+        key = "-".join(corpus_token(c) for c in calls)
+        entry = table.get(key)
+        if entry is None:
+            continue
+        shown = " ".join(call_glyph(call_name(c)) for c in calls)
+        return {"position": key, "n": entry["n"], "change": change,
+                "note": f"Self-play never reached this exact auction. The nearest it did "
+                        f"reach is {shown} — {change}.",
+                "rows": [r for r in corpus_rows(entry, legal, facts) if r["legal"]]}
+    return None
+
+
 def auction_hint(game):
     """Everything the teaching panel shows before the user calls."""
     view, legal = bid_view(game)
@@ -771,11 +889,14 @@ def auction_hint(game):
     net = None
     if view is not None and view.get("policy"):
         ranked = sorted(((p, c) for c, p in enumerate(view["policy"]) if legal[c]),
-                        reverse=True)[:3]
+                        reverse=True)
         q = view.get("q") or []
         net = {
             "calls": [{"call": call_name(c), "action": c, "p": round(float(p), 4),
-                       "q": (round(float(q[c]) * 100, 0) if q else None)} for p, c in ranked],
+                       "q": (round(float(q[c]) * 100, 0) if q else None)}
+                      for p, c in ranked[:3]],
+            # Every legal call's share, so hovering any call in the box can quote it.
+            "p_by_call": {str(c): round(float(p), 4) for p, c in ranked},
             "note": "Its chance for each call with your exact cards, and how many points "
                     "below the best possible contract it expects to finish after each "
                     "(0 is perfect, less is worse).",
@@ -784,21 +905,10 @@ def auction_hint(game):
         best = max((view["q"][c], c) for c in range(N_CALLS) if legal[c])
         net = {"calls": [{"call": call_name(best[1]), "action": best[1], "p": None,
                           "q": round(float(best[0]) * 100, 0)}],
+               "p_by_call": {},
                "note": "This model scores calls instead of ranking them; here is its best."}
 
-    rows = []
-    by_action = {}
-    if here:
-        for token, stats in sorted(here["calls"].items(), key=lambda kv: -kv[1]["share"]):
-            action = token_to_call(token)
-            name = call_name(action)
-            row = {"call": name, "action": action, "token": token,
-                   "stats": stats, "legal": bool(legal[action]),
-                   "fit": fits_hand(stats, facts),
-                   "says": would_show_sentence(name, stats),
-                   "yours": fit_sentence(stats, facts)}
-            rows.append(row)
-            by_action[action] = row
+    rows = corpus_rows(here, legal, facts) if here else []
     candidates = [r["action"] for r in (net["calls"] if net else [])][:2]
     replies = []
     for c in candidates:
@@ -806,14 +916,23 @@ def auction_hint(game):
         if r is not None:
             replies.append({"call": call_name(c), **r})
     # One line of advice: what the suggested call would say, when the corpus knows it.
+    # Where self-play never reached this auction, the nearest one it did reach
+    # stands in, labelled as the approximation it is.
     pick = net["calls"][0]["action"] if net else None
-    picked = by_action.get(pick)
+    nearest = None if here else nearest_position(game, legal, facts)
+    picked = next((r for r in rows if r["action"] == pick), None)
+    near = next((r for r in (nearest or {}).get("rows", []) if r["action"] == pick), None)
     return {
         "kind": "auction",
         "seat": game["user_seat"],
         "net": net,
+        "net_says": net_sentence(facts, net),
+        "hand_says": hand_sentence(facts),
         "advice": (picked or {}).get("says"),
         "advice_fit": (picked or {}).get("yours"),
+        "nearest": nearest,
+        "nearest_advice": (near or {}).get("says"),
+        "nearest_fit": (near or {}).get("yours"),
         "told": recent_calls(game),
         "position": "-".join(corpus_token(c) for c in game["calls"]) or "(opening)",
         "corpus_n": here["n"] if here else None,
@@ -1105,6 +1224,23 @@ def solver_block(game, batch):
                     else "defending"}
 
 
+def play_advice(net):
+    """One line of advice: the net's card, how sure it is, and one fact about the card.
+
+    The notes are facts about the card, so the sentence never says *why* it chose
+    it, only what the card is. The percentages are its policy on the user's own
+    information, and a close second choice is named, so a coin flip never reads
+    like a certainty.
+    """
+    card = card_text(net["pick"])
+    head = f"The net plays {card} here {percent_words(net['confidence'])} of the time"
+    out = f"{head} — it is {net['notes'][0]}." if net["notes"] else f"{head}."
+    runner = next((t for t in net["top"] if t["card"] != net["pick"]), None)
+    if runner and runner["p"] >= RUNNER_UP_AT:
+        out += f" Its next choice is {runner['name']} ({percent_words(runner['p'])})."
+    return out
+
+
 def play_hint(game):
     pg = game["pg"]
     contracts = playdesk.contracts_of(pg)
@@ -1132,45 +1268,19 @@ def play_hint(game):
             "probs": view["probs"],
         }
         out["belief"] = belief_highlights(view)
-        # One line of advice. The notes are facts about the card, so the sentence
-        # never says *why* it chose it, only what the card is.
-        notes = out["net"]["notes"]
-        card = card_text(view["pick"])
-        out["advice"] = (f"It would play {card} — {notes[0]}." if notes
-                         else f"It would play {card}.")
+        out["advice"] = play_advice(out["net"])
     out["context"] = out["facts"][0] if out["facts"] else None
     if game["peek"]:
         out["solver"] = solver_block(game, batch)
     return out
 
 
-def suggestion(game):
-    """The move the Next button commits, whether or not teaching is switched on.
-
-    `state_dump` takes it off the hint when hints are on, so this only ever runs
-    the net for a user who turned them off: one forward pass either way.
-    """
-    ph = phase(game)
-    if ph == "auction":
-        view, _ = bid_view(game)
-        if view is None:
-            return None
-        name = call_name(view["pick"])
-        return {"kind": "call", "action": int(view["pick"]), "label": call_glyph(name),
-                "name": name}
-    if ph == "play":
-        pg = game["pg"]
-        bot = play_models().get(game["play_model"])
-        if bot is None:
-            return None
-        view = bot.view(playdesk.contracts_of(pg), batch_for(game), len(pg["played"]))
-        return {"kind": "card", "action": int(view["pick"]), "label": card_text(view["pick"]),
-                "name": card_name(view["pick"])}
-    return None
-
-
 def suggest_from_hint(hint):
-    """The same thing, reusing the forward pass the hint already paid for."""
+    """The move the Next button commits, taken off the hint's own forward pass.
+
+    Only ever built with hints on: with them off the user picks every call and
+    card unaided, and the payload says nothing about what the nets would do.
+    """
     if not hint or not hint.get("net"):
         return None
     if hint["kind"] == "auction":
@@ -1370,6 +1480,8 @@ def register(app):
     @with_game
     def api_table_explain(game):
         """Queue the imagined-hands rollout for the call on turn; newest request wins."""
+        if not game["hints"]:
+            return jsonify(error="hints are off"), 400
         bot = bid_bot(game)
         if bot is None or not getattr(bot, "explains", False):
             return jsonify(error="this model cannot be rolled out"), 400

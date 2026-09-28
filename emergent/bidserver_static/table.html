@@ -6,259 +6,331 @@
 <title>Play a board</title>
 <style>
 :root{
-  --bg:#f6f5f1; --card:#ffffff; --line:#e2dfd7; --text:#1d1f23; --dim:#6f727a; --faint:#a9abb1;
+  --bg:#f6f5f1; --card:#ffffff; --line:#d9d5cb; --text:#1d1f23; --dim:#5f636b; --faint:#9a9da4;
   --felt:#1f5e48; --felt-2:#2a7359; --felt-text:#eef5f1;
-  --accent:#2d5bd8; --accent-bg:#e7edfc; --red:#c0392b; --pick:#d99a00;
+  --face:#ffffff; --face-line:#cfcac0; --back-1:#2d5bd8; --back-2:#1f45ad;
+  --accent:#2d5bd8; --accent-bg:#e7edfc; --red:#c0392b; --pick:#b77f00; --glow:#f0b93f;
   --pos:#1f8a5b; --neg:#c24a3a; --pos-bg:rgba(31,138,91,.14); --neg-bg:rgba(194,74,58,.14);
-  --n:#2d5bd8; --e:#c98a1b; --s:#1f8a5b; --w:#8a52c9;
+  --n:#2d5bd8; --e:#a8700f; --s:#1f8a5b; --w:#8a52c9;
   --mono: ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  /* The table is drawn on fixed tracks, so nothing on it moves when a card is played:
+     every hand keeps a slot for all thirteen of its cards, and the centre is exactly
+     as tall as a hand. */
+  --cw:36px;            /* a card in hand: preferred width, it shrinks to fit a long suit */
+  --ch:36px;            /* ... and its height, which is also one suit row */
+  --hand-hd:28px;       /* a hand's name line */
+  --hand-pad:8px;
+  --hand-h:calc(var(--hand-hd) + 6px + 4 * var(--ch) + 3 * 4px + 2 * var(--hand-pad) + 4px);
+  --tw:46px; --th:60px; /* a card on the trick */
 }
 @media (prefers-color-scheme:dark){
   :root{
-    --bg:#121417; --card:#1b1e23; --line:#2d3139; --text:#e8eaed; --dim:#959aa4; --faint:#5a5f68;
+    --bg:#121417; --card:#1b1e23; --line:#343943; --text:#e8eaed; --dim:#a3a8b1; --faint:#6b707a;
     --felt:#173f33; --felt-2:#1f5443; --felt-text:#e3efe9;
-    --accent:#7598ff; --accent-bg:#1f2842; --red:#ef6f5e; --pick:#f0b93f;
+    --face:#262a31; --face-line:#40464f; --back-1:#3a5fc4; --back-2:#2a4796;
+    --accent:#7598ff; --accent-bg:#1f2842; --red:#ff7b6b; --pick:#f0b93f; --glow:#f0b93f;
     --pos:#4cc08a; --neg:#ef7866; --pos-bg:rgba(76,192,138,.16); --neg-bg:rgba(239,120,102,.16);
     --n:#7598ff; --e:#e9b458; --s:#4cc08a; --w:#b98cf0;
   }
 }
 *{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
 body{margin:0; background:var(--bg); color:var(--text);
-  font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; padding:16px 20px 60px}
-.wrap{max-width:1180px; margin:0 auto}
+  font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; padding:18px 24px 72px}
+.wrap{max-width:1320px; margin:0 auto}
 button{font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--text);
-  border-radius:7px; padding:6px 12px}
+  border-radius:9px; padding:8px 14px; min-height:40px; touch-action:manipulation}
 button:hover:not(:disabled){border-color:var(--accent)}
-button:disabled{opacity:.35; cursor:default}
+button:disabled{opacity:.4; cursor:default}
 button.primary{background:var(--accent); border-color:var(--accent); color:#fff}
-a.btn{display:inline-block; text-decoration:none; border:1px solid var(--line); background:var(--card);
-  color:var(--text); border-radius:7px; padding:6px 12px}
+button:focus-visible,a.btn:focus-visible,summary:focus-visible{outline:3px solid var(--accent); outline-offset:2px}
+a.btn{display:inline-flex; align-items:center; min-height:40px; text-decoration:none; border:1px solid var(--line);
+  background:var(--card); color:var(--text); border-radius:9px; padding:8px 14px}
 a.btn:hover{border-color:var(--accent)}
-select{font:inherit; border:1px solid var(--line); background:var(--card); color:var(--text);
-  border-radius:7px; padding:5px 8px; max-width:100%}
-.seg{display:inline-flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; vertical-align:middle}
-.seg button{border:0; border-radius:0; padding:3px 10px; font-size:11px}
+.seg{display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; vertical-align:middle}
+.seg button{border:0; border-radius:0; padding:6px 12px; font-size:14px; min-height:38px}
+.seg button + button{border-left:1px solid var(--line)}
 .seg button.on{background:var(--accent); color:#fff}
 .num{font-family:var(--mono); font-variant-numeric:tabular-nums}
 .red{color:var(--red)}
 .dim{color:var(--dim)}
 
-header{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px}
-header h1{font-size:17px; margin:0 6px 0 0}
-header .meta{color:var(--dim); font-size:12px; flex:1; min-width:180px}
-#err{color:var(--neg); font-size:12px}
+/* ---- header: the controls never change size, and the long model line is one line */
+header{margin-bottom:16px}
+header .bar{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+header h1{font-size:22px; margin:0 8px 0 0; white-space:nowrap}
+header .grow{flex:1 1 0; min-width:0}
+header .meta{color:var(--dim); font-size:14px; margin-top:8px; height:21px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+#skip.off{visibility:hidden}
+#err{position:fixed; left:50%; top:14px; transform:translateX(-50%); z-index:30; max-width:min(640px,calc(100vw - 32px));
+  background:var(--neg); color:#fff; font-size:15px; padding:10px 16px; border-radius:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.2)}
+#err:empty{display:none}
 
-.card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px}
-.card h2{margin:0 0 2px; font-size:13px}
-.card .hint{color:var(--dim); font-size:12px; margin:0 0 10px}
-.row{display:grid; gap:14px; margin-bottom:14px}
-.top{grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr)}
-@media (max-width:920px){ .top{grid-template-columns:1fr} }
-.sub{font-size:11px; color:var(--dim); font-weight:600; margin:0 0 5px; text-transform:uppercase; letter-spacing:.04em}
-.scroll{overflow-x:auto}
+.card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px 20px}
+.card h2{margin:0 0 4px; font-size:20px; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.card .hint{color:var(--dim); font-size:15px; margin:0 0 12px}
+.row{display:grid; gap:16px; margin-bottom:16px}
+.top{grid-template-columns:minmax(0,1.45fr) minmax(340px,1fr); align-items:start}
+@media (max-width:980px){ .top{grid-template-columns:minmax(0,1fr)} }     /* same breakpoint as #nextbar below */
+.sub{font-size:13px; color:var(--dim); font-weight:600; margin:0 0 6px; text-transform:uppercase; letter-spacing:.04em}
 
-/* ---- the table */
-.table{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.05fr) minmax(0,1fr);
-  grid-template-rows:auto auto auto; gap:10px;
-  background:radial-gradient(ellipse at center,var(--felt-2),var(--felt)); border-radius:12px; padding:14px}
-.hand{background:var(--card); border-radius:9px; padding:7px 9px; border:2px solid transparent; align-self:center; min-width:0}
-.hand.turn{border-color:var(--pick); box-shadow:0 0 0 4px rgba(217,154,0,.25)}
+/* ---- the table: fixed tracks, you at the bottom */
+.table{display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+  grid-template-rows:repeat(3,var(--hand-h)); gap:10px;
+  background:radial-gradient(ellipse at center,var(--felt-2),var(--felt)); border-radius:14px; padding:14px}
+.hand{position:relative; background:var(--card); border-radius:11px; padding:var(--hand-pad);
+  border:2px solid transparent; min-width:0; height:var(--hand-h);
+  display:grid; grid-template-rows:var(--hand-hd) 1fr; row-gap:6px}
+.hand.turn{border-color:var(--glow); box-shadow:0 0 0 4px rgba(240,185,63,.35)}
+.hand.acting{border-color:var(--glow); box-shadow:0 0 0 4px rgba(240,185,63,.2)}
 .hand.mine{background:linear-gradient(0deg,var(--accent-bg),var(--card))}
-.hand .hd{display:flex; justify-content:space-between; align-items:baseline; gap:6px; margin-bottom:3px}
-.hand .hd b{font-size:13px}
-.hand .hd .tag{font-size:10.5px; color:var(--dim)}
-.hand .hd .go{font-size:10.5px; color:var(--pick); font-weight:700}
-.sl{display:flex; gap:5px; align-items:flex-start; line-height:1.5; margin:1px 0}
-.sl .sym{width:12px; font-family:var(--mono); font-size:12px}
-.sl .cards{display:flex; flex-wrap:wrap; gap:2px}
-.cd{font-family:var(--mono); font-size:12px; padding:0 4px; border-radius:4px; border:1px solid var(--line);
-  background:var(--bg); color:var(--text); min-width:17px; text-align:center; line-height:18px}
-.cd.play{cursor:pointer}
-.cd.play:hover{border-color:var(--accent); background:var(--accent-bg)}
-.cd.no{opacity:.32}
-.cd.tip{outline:2px solid var(--pick); outline-offset:-1px}
-.cd.back{background:repeating-linear-gradient(45deg,var(--line),var(--line) 3px,var(--bg) 3px,var(--bg) 6px); color:transparent}
-.spent{font-family:var(--mono); font-size:10.5px; color:var(--faint); margin-top:3px; word-break:break-all}
+.hand .hd{display:flex; align-items:center; gap:8px; min-width:0; white-space:nowrap}
+.hand .hd b{font-size:17px; flex:none}
+.hand .hd .who{font-size:13px; color:var(--dim); flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis}
+.hand .hd .pts{font-size:13px; color:var(--dim); flex:none}
+.hand .go{position:absolute; top:-11px; right:10px; font-size:12.5px; font-weight:700; line-height:20px;
+  padding:0 9px; border-radius:20px; background:var(--glow); color:#1d1f23; white-space:nowrap; pointer-events:none}
+.suits{display:grid; grid-template-rows:repeat(4,var(--ch)); row-gap:4px; min-width:0}
+.sl{display:flex; align-items:center; gap:6px; min-width:0}
+.sl .sym{flex:none; width:20px; font-size:20px; line-height:1; text-align:center}
+.sl .cards{display:flex; gap:3px; flex:1 1 auto; min-width:0; height:100%}
+.sl .void{color:var(--faint); align-self:center}
+/* A card in hand. It gives up width before it wraps, so a long suit never adds a row. */
+.cd{flex:0 1 var(--cw); min-width:0; height:100%; padding:0; border-radius:7px;
+  border:1px solid var(--face-line); background:var(--face); color:var(--text);
+  font:600 18px/1 var(--mono); letter-spacing:-.04em; display:flex; align-items:center; justify-content:center;
+  overflow:hidden; min-height:0}
+.cd.red{color:var(--red)}
+.cd.ten{font-size:15px; letter-spacing:-.1em}      /* the one two-character rank */
+button.cd.play{box-shadow:0 2px 0 var(--face-line)}
+button.cd.play:hover{border-color:var(--accent); background:var(--accent-bg)}
+button.cd:disabled{opacity:1; cursor:default}
+.hand.turn button.cd:disabled{opacity:.4}          /* cannot follow suit with these */
+/* Played cards keep their place, faded, so the rest of the hand never slides over. */
+.cd.gone{opacity:.16; border-style:dashed; box-shadow:none}
+.backs{display:flex; align-items:center; justify-content:center; gap:2px; min-width:0}
+.cd.back{flex-basis:var(--cw); height:calc(var(--ch) * 1.6); border:1px solid var(--back-2);
+  background:repeating-linear-gradient(45deg,var(--back-1),var(--back-1) 4px,var(--back-2) 4px,var(--back-2) 8px)}
+.cd.back.gone{visibility:hidden}
 .pos0{grid-column:2; grid-row:3} .pos1{grid-column:1; grid-row:2}
 .pos2{grid-column:2; grid-row:1} .pos3{grid-column:3; grid-row:2}
-.center{grid-column:2; grid-row:2; background:rgba(0,0,0,.18); border-radius:9px; padding:8px;
-  color:var(--felt-text); min-height:150px; display:grid; align-items:center; justify-items:center}
-.trick{display:grid; grid-template-columns:1fr 1fr 1fr; grid-template-rows:auto auto auto;
-  gap:3px; align-items:center; justify-items:center; width:100%}
-.trick .slot{font-family:var(--mono); font-size:15px; min-height:20px}
-.trick .slot.win{color:var(--pick); font-weight:700}
-.trick .slot.redc{color:#ff9b8e}
-.trick .mid{grid-column:2; grid-row:2; text-align:center; font-size:10.5px; opacity:.85; line-height:1.3}
+.center{grid-column:2; grid-row:2; background:rgba(0,0,0,.2); border-radius:11px; padding:8px;
+  color:var(--felt-text); min-width:0; height:var(--hand-h); overflow:hidden;
+  display:flex; align-items:center; justify-content:center}
+.trick{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-rows:repeat(3,var(--th));
+  gap:2px 4px; align-items:center; justify-items:center; width:100%}
+.trick .slot{width:var(--tw); height:var(--th); border-radius:8px; border:1.5px dashed rgba(255,255,255,.22);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  font:700 20px/1.05 var(--mono)}
+.trick .slot.has{background:var(--face); border:1px solid var(--face-line); color:var(--text);
+  box-shadow:0 3px 8px rgba(0,0,0,.25)}
+.trick .slot.has.red{color:var(--red)}
+.trick .slot.win{outline:3px solid var(--glow); outline-offset:1px}
+.trick .mid{grid-column:2; grid-row:2; text-align:center; font-size:13px; line-height:1.3; opacity:.9;
+  white-space:nowrap; overflow:hidden; max-width:100%}
 .trick .p2{grid-column:2; grid-row:1} .trick .p1{grid-column:1; grid-row:2}
 .trick .p3{grid-column:3; grid-row:2} .trick .p0{grid-column:2; grid-row:3}
 
 /* ---- the nets' moves, played out one at a time on the client.
-   --deal and --sweep are set from the speed control; reduced motion zeroes them. */
+   --deal and --sweep are set from the speed control; reduced motion zeroes them.
+   Only transforms and opacity animate, so no animation ever moves the layout. */
 :root{ --deal:260ms; --sweep:300ms }
-@keyframes land-p0{from{transform:translateY(46px) scale(.8); opacity:0}}
-@keyframes land-p1{from{transform:translateX(-52px) scale(.8); opacity:0}}
-@keyframes land-p2{from{transform:translateY(-46px) scale(.8); opacity:0}}
-@keyframes land-p3{from{transform:translateX(52px) scale(.8); opacity:0}}
+@keyframes land-p0{from{transform:translateY(54px) scale(.8); opacity:0}}
+@keyframes land-p1{from{transform:translateX(-60px) scale(.8); opacity:0}}
+@keyframes land-p2{from{transform:translateY(-54px) scale(.8); opacity:0}}
+@keyframes land-p3{from{transform:translateX(60px) scale(.8); opacity:0}}
 .slot.land.p0{animation:land-p0 var(--deal) cubic-bezier(.2,.85,.3,1) both}
 .slot.land.p1{animation:land-p1 var(--deal) cubic-bezier(.2,.85,.3,1) both}
 .slot.land.p2{animation:land-p2 var(--deal) cubic-bezier(.2,.85,.3,1) both}
 .slot.land.p3{animation:land-p3 var(--deal) cubic-bezier(.2,.85,.3,1) both}
 .trick .slot{transition:transform var(--sweep) ease-in, opacity var(--sweep) ease-in}
-.trick.sweep .slot{opacity:0}
-.trick.sweep.w0 .slot{transform:translateY(40px) scale(.7)}
-.trick.sweep.w1 .slot{transform:translateX(-46px) scale(.7)}
-.trick.sweep.w2 .slot{transform:translateY(-40px) scale(.7)}
-.trick.sweep.w3 .slot{transform:translateX(46px) scale(.7)}
+.trick.sweep .slot.has{opacity:0}
+.trick.sweep.w0 .slot.has{transform:translateY(46px) scale(.7)}
+.trick.sweep.w1 .slot.has{transform:translateX(-52px) scale(.7)}
+.trick.sweep.w2 .slot.has{transform:translateY(-46px) scale(.7)}
+.trick.sweep.w3 .slot.has{transform:translateX(52px) scale(.7)}
 @keyframes pop{from{transform:scale(.6); opacity:0}}
-.center table.aq td.fresh{animation:pop var(--deal) cubic-bezier(.2,.85,.3,1) both}
-.hand.acting{border-color:var(--pick); box-shadow:0 0 0 4px rgba(217,154,0,.18)}
+.aq td.fresh span{display:inline-block; animation:pop var(--deal) cubic-bezier(.2,.85,.3,1) both}
 .table.clickskip{cursor:pointer}
 @media (prefers-reduced-motion:reduce){
   :root{ --deal:1ms; --sweep:1ms }
   .slot.land.p0,.slot.land.p1,.slot.land.p2,.slot.land.p3{animation:none}
   .trick .slot{transition:none}
-  .trick.sweep .slot{transform:none}
-  .center table.aq td.fresh{animation:none}
+  .aq td.fresh span{animation:none}
 }
-.center table.aq{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:13px}
-.center table.aq th{font:600 11px/1.4 -apple-system,sans-serif; opacity:.75; padding-bottom:3px}
-.center table.aq td{text-align:center; padding:1px 0; height:20px}
-.center table.aq td.q{color:var(--pick); font-weight:700}
-.center table.aq td.me{background:rgba(255,255,255,.12); border-radius:4px}
+/* The auction scrolls inside the centre instead of growing it. */
+.aqwrap{width:100%; align-self:stretch; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin}
+.aq{width:100%; border-collapse:collapse; table-layout:fixed; font:600 18px/1 var(--mono)}
+.aq th{font:600 13px/1.4 -apple-system,sans-serif; opacity:.8; padding-bottom:4px;
+  position:sticky; top:0; background:rgba(0,0,0,.25)}
+.aq td{text-align:center; height:28px; padding:0}
+.aq td.q{color:var(--glow); font-weight:700}
+.aq td.me{background:rgba(255,255,255,.12)}
 .center .redc{color:#ff9b8e}
-.corner{color:var(--felt-text); font-size:11.5px; padding:2px 4px}
-.corner b{display:block; font-size:17px}
+.corner{color:var(--felt-text); font-size:13px; padding:2px 4px; min-width:0; white-space:nowrap; overflow:hidden}
+.corner b{display:block; font-size:22px; line-height:1.25; overflow:hidden; text-overflow:ellipsis}
+.corner .redc{color:#ff9b8e}
 .corner.tl{grid-column:1; grid-row:1} .corner.tr{grid-column:3; grid-row:1; text-align:right}
 .corner.bl{grid-column:1; grid-row:3; align-self:end} .corner.br{grid-column:3; grid-row:3; align-self:end; text-align:right}
-@media (max-width:620px){
-  .table{gap:7px; padding:10px}
+
+/* ---- phone: partner on top, the opponents side by side, the trick, then you */
+@media (max-width:640px){
+  :root{ --cw:30px; --ch:32px; --hand-hd:24px; --hand-pad:7px; --tw:42px; --th:54px }
+  body{padding:12px 12px 96px}
+  .card{padding:14px}
+  .table{grid-template-columns:repeat(2,minmax(0,1fr));
+    grid-template-rows:var(--hand-h) var(--hand-h) calc(3 * var(--th) + 22px) var(--hand-h);
+    gap:8px; padding:8px; border-radius:12px}
   .corner{display:none}
-  .pos0{grid-column:1/-1; grid-row:3} .pos2{grid-column:1/-1; grid-row:1}
-  .center{min-height:120px}
+  .pos2{grid-column:1/-1; grid-row:1} .pos1{grid-column:1; grid-row:2}
+  .pos3{grid-column:2; grid-row:2} .pos0{grid-column:1/-1; grid-row:4}
+  .center{grid-column:1/-1; grid-row:3; height:auto; align-self:stretch}
+  .cd{font-size:16px}
+  .cd.ten{font-size:14px}
+  .hand .hd b{font-size:16px}
+  .hand .hd .who{font-size:12px}
 }
 
-/* ---- panel */
-.stat{background:var(--bg); border-radius:9px; padding:9px 12px; margin-bottom:8px}
-.stat > span{font-size:11px; color:var(--dim); display:block}
-.stat b{font-size:17px}
+/* ---- panel. Title and status line have fixed heights; the controls sit above the
+   prose, so text of any length never pushes a button. */
+#panel-hint{min-height:calc(2 * 1.5em)}
+.stat{background:var(--bg); border-radius:11px; padding:11px 14px; margin-bottom:10px}
+.stat > span{font-size:14px; color:var(--dim); display:block}
+.stat b{font-size:24px}
 .stat.good{background:var(--pos-bg)} .stat.bad{background:var(--neg-bg)}
-.stat.call{background:var(--accent-bg)}
-.counts{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px}
+.counts{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px}
 .counts .stat{margin:0; text-align:center}
-.actions{display:flex; gap:6px; margin-top:10px; flex-wrap:wrap}
-.actions button{flex:1; min-width:120px}
+.actions{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap}
+.actions button{flex:1; min-width:140px}
 
 /* ---- bidding box */
-.bb{display:grid; grid-template-columns:18px repeat(5,1fr); gap:4px}
-.bb .lv{color:var(--dim); font-size:11px; display:flex; align-items:center}
-.bb button,.bb2 button{padding:4px 0 3px; border-radius:6px; line-height:1.15}
-.bb button .c,.bb2 button .c{display:block; font-weight:600; font-size:12.5px}
+.bb{display:grid; grid-template-columns:22px repeat(5,minmax(0,1fr)); gap:6px}
+.bb .lv{color:var(--dim); font-size:14px; display:flex; align-items:center}
+.bb button,.bb2 button{padding:0; min-height:44px; border-radius:8px; line-height:1.1; min-width:0}
+.bb button .c,.bb2 button .c{display:block; font-weight:600; font-size:17px; white-space:nowrap}
 .bb button.illegal,.bb2 button.illegal{opacity:.22}
-.bb button.tip,.bb2 button.tip{outline:2.5px solid var(--pick); outline-offset:-1px}
-.bb2{display:grid; grid-template-columns:18px 1fr 1fr 1fr; gap:4px; margin-top:4px}
+.bb button.tip,.bb2 button.tip{outline:3px solid var(--glow); outline-offset:-1px}
+.bb2{display:grid; grid-template-columns:22px repeat(3,minmax(0,1fr)); gap:6px; margin-top:6px}
 
-/* ---- the teacher: a short block of prose, and one obvious button */
-.advice{border-left:3px solid var(--accent); background:var(--accent-bg);
-  border-radius:0 9px 9px 0; padding:10px 12px; margin:12px 0 0; font-size:13.5px; line-height:1.5}
-.advice p{margin:0 0 7px} .advice p:last-child{margin:0}
+/* ---- the teacher: one obvious button, then a short block of prose */
+#nextbar{margin-top:14px}
+#nextbar button{width:100%; min-height:54px; padding:12px 16px; font-size:18px; font-weight:600; border-radius:11px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+#nextbar .kbd{display:block; text-align:center; color:var(--dim); font-size:13px; margin-top:6px; height:20px}
+#advice.on{min-height:8em}
+.advice{border-left:4px solid var(--accent); background:var(--accent-bg);
+  border-radius:0 11px 11px 0; padding:12px 14px; margin:14px 0 0; font-size:16px; line-height:1.55}
+.advice p{margin:0 0 8px} .advice p:last-child{margin:0}
 .advice .say{font-weight:600}
-.advice .aside{color:var(--dim); font-size:12.5px}
+.advice .aside{color:var(--dim); font-size:15px}
 .advice.quiet{border-left-color:var(--line); background:var(--bg); color:var(--dim)}
-#nextbar{margin-top:12px}
-#nextbar button{width:100%; padding:11px 14px; font-size:15px; font-weight:600; border-radius:9px}
-#nextbar .kbd{display:block; text-align:center; color:var(--dim); font-size:11px; margin-top:6px}
+.advice .tag{margin-right:4px}
 
 /* ---- disclosures: the rigour is still here, just folded away */
-details.discl > summary{list-style:none; cursor:pointer; font-size:13px; font-weight:600;
-  display:flex; align-items:center; gap:8px; color:var(--text)}
+details.discl > summary{list-style:none; cursor:pointer; font-size:17px; font-weight:600; min-height:32px;
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--text)}
 details.discl > summary::-webkit-details-marker{display:none}
 details.discl > summary::before{content:"▸"; color:var(--dim); font-weight:400}
 details.discl[open] > summary::before{content:"▾"}
-details.discl > summary em{font-style:normal; font-weight:400; color:var(--dim); font-size:12px}
-details.discl > .body{margin-top:14px}
+details.discl > summary em{font-style:normal; font-weight:400; color:var(--dim); font-size:14px}
+details.discl > .body{margin-top:16px}
 
-/* ---- phone: the button that commits your move stays under your thumb */
-@media (max-width:920px){
-  body{padding-bottom:90px}
+/* ---- narrow screens: the button that commits your move stays under your thumb */
+@media (max-width:980px){
+  body{padding-bottom:calc(104px + env(safe-area-inset-bottom))}
   #nextbar{position:fixed; left:0; right:0; bottom:0; z-index:20; margin:0;
-    background:var(--card); border-top:1px solid var(--line); padding:10px 14px;
+    background:var(--card); border-top:1px solid var(--line);
+    padding:10px 14px calc(10px + env(safe-area-inset-bottom));
     box-shadow:0 -8px 24px rgba(0,0,0,.14)}
   #nextbar .kbd{display:none}
-  header h1{font-size:15px}
   /* Which checkpoints are playing is not what you need on a phone, and it costs a
      whole row above the table. It is one tap away in the settings disclosure. */
   header .meta{display:none}
 }
+.phone-links{display:none}
+@media (max-width:640px){
+  header h1{font-size:19px; flex:1 0 100%}
+  header .links{display:none}
+  .phone-links{display:flex}
+}
 
 /* ---- hints */
-.tag{display:inline-block; font-size:9.5px; text-transform:uppercase; letter-spacing:.05em;
-  padding:1px 6px; border-radius:20px; border:1px solid var(--line); color:var(--dim); vertical-align:middle}
+.tag{display:inline-block; font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; line-height:1.5;
+  padding:1px 7px; border-radius:20px; border:1px solid var(--line); color:var(--dim); vertical-align:middle}
 .tag.net{border-color:var(--accent); color:var(--accent); background:var(--accent-bg)}
 .tag.sp{border-color:var(--pos); color:var(--pos); background:var(--pos-bg)}
 .tag.cards{border-color:var(--pick); color:var(--pick)}
+.tag.approx{border-color:var(--pick); color:var(--pick); background:transparent}
 .tag.solver{border-color:var(--neg); color:var(--neg); background:var(--neg-bg)}
-.hintgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px}
-.block{border:1px solid var(--line); border-radius:10px; padding:11px 13px; min-width:0}
-.block h3{margin:0 0 3px; font-size:12.5px; display:flex; align-items:center; gap:7px; flex-wrap:wrap}
-.block p.note{color:var(--dim); font-size:11.5px; margin:4px 0 8px}
-.block ul{margin:4px 0 0; padding-left:17px}
-.block li{margin:3px 0}
-.bars{display:grid; grid-template-columns:auto 1fr auto; gap:4px 9px; align-items:center; font-size:12.5px}
-.bars .bar{height:7px; border-radius:4px; background:var(--accent); opacity:.6}
+.hintgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:16px}
+.block{border:1px solid var(--line); border-radius:12px; padding:14px 16px; min-width:0; font-size:15px}
+.block h3{margin:0 0 4px; font-size:16px; display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.block p.note{color:var(--dim); font-size:14px; margin:4px 0 10px}
+.block ul{margin:4px 0 0; padding-left:20px}
+.block li{margin:4px 0}
+.bars{display:grid; grid-template-columns:auto 1fr auto; gap:6px 10px; align-items:center; font-size:15px}
+.bars .bar{height:9px; border-radius:5px; background:var(--accent); opacity:.6}
 .bars .c{font-family:var(--mono); font-weight:700}
 .bars .pc{font-family:var(--mono); color:var(--dim); text-align:right}
-.bars .tip .bar{background:var(--pick); opacity:.85}
-.notes{margin-top:8px; font-size:12.5px}
-.notes b{font-family:var(--mono)}
-.callout{margin-top:9px; border-left:3px solid var(--pick); background:var(--bg); border-radius:0 7px 7px 0;
-  padding:7px 10px; font-size:12.5px}
+.notes{margin-top:10px; font-size:15px}
+.callout{margin-top:10px; border-left:4px solid var(--pick); background:var(--bg); border-radius:0 8px 8px 0;
+  padding:9px 12px; font-size:15px}
 .callout.book{border-left-color:var(--dim)}
-.sys{display:grid; grid-template-columns:auto 42px 1fr; gap:3px 10px; align-items:center; font-size:12.5px}
+.sys{display:grid; grid-template-columns:auto 44px minmax(0,1fr); gap:5px 12px; align-items:center; font-size:14.5px}
 .sys .c{font-family:var(--mono); font-weight:700; text-align:right}
 .sys .sh{font-family:var(--mono); color:var(--dim); text-align:right}
 .sys .d em{font-style:normal; color:var(--dim)}
-.sys .d.fit{background:var(--pos-bg); border-radius:5px; padding:1px 5px}
+.sys .d.fit{background:var(--pos-bg); border-radius:6px; padding:2px 6px}
 .sys .c.illegal{opacity:.4}
-.line{display:grid; grid-template-columns:34px 1fr; gap:6px; align-items:center; margin:3px 0; font-size:12px}
+.line{display:grid; grid-template-columns:40px 1fr; gap:8px; align-items:center; margin:4px 0; font-size:14px}
 .line .pc{font-family:var(--mono); text-align:right; color:var(--dim)}
-.chips{display:flex; flex-wrap:wrap; gap:3px; align-items:center}
-.chip{font-family:var(--mono); font-size:11px; padding:1px 5px; border-radius:5px; background:var(--bg)}
+.chips{display:flex; flex-wrap:wrap; gap:4px; align-items:center}
+.chip{font-family:var(--mono); font-size:13px; padding:2px 6px; border-radius:6px; background:var(--bg)}
 .chip.us{background:var(--accent-bg); color:var(--accent)}
-.chip.end{background:var(--pick); color:#000; font-weight:700}
-.bel{display:grid; grid-template-columns:auto 1fr auto; gap:4px 9px; align-items:center; font-size:12.5px}
+.chip.end{background:var(--glow); color:#000; font-weight:700}
+.bel{display:grid; grid-template-columns:auto 1fr auto; gap:6px 10px; align-items:center; font-size:15px}
 .bel .who{color:var(--dim)}
-.bel .bar{height:7px; border-radius:4px; opacity:.65}
-.ddgrid{display:flex; flex-wrap:wrap; gap:4px; margin-top:6px}
-.ddc{font-family:var(--mono); font-size:11.5px; padding:2px 6px; border-radius:6px; border:1px solid var(--line)}
+.bel .bar{height:9px; border-radius:5px; opacity:.65}
+.ddgrid{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+.ddc{font-family:var(--mono); font-size:14px; padding:4px 8px; border-radius:7px; border:1px solid var(--line)}
 .ddc.best{background:var(--pos-bg); border-color:var(--pos)}
-table.rv{border-collapse:separate; border-spacing:0 2px; width:100%; font-size:12px}
-table.rv th{font-size:10.5px; color:var(--dim); font-weight:600; text-align:left; padding:0 8px}
-table.rv td{background:var(--neg-bg); padding:3px 8px; font-family:var(--mono)}
-table.rv td:first-child{border-radius:6px 0 0 6px} table.rv td:last-child{border-radius:0 6px 6px 0}
+.rvwrap{overflow-x:auto}
+table.rv{border-collapse:separate; border-spacing:0 3px; width:100%; font-size:15px}
+table.rv th{font-size:13px; color:var(--dim); font-weight:600; text-align:left; padding:0 10px}
+table.rv td{background:var(--neg-bg); padding:6px 10px; font-family:var(--mono)}
+table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border-radius:0 7px 7px 0}
 </style>
 </head>
 <body>
 <div class="wrap">
 
 <header>
-  <h1>Play a board</h1>
-  <span class="seg" id="hintseg" title="Teaching notes before every call and every card">
-    <button data-h="1">hints on</button><button data-h="0">hints off</button>
-  </span>
-  <span class="seg" id="searchseg" title="Before it plays, the bot guesses where the hidden cards are, solves twenty of those guesses double dummy, and plays the card that wins most often. It does this as declarer, and in defence from trick two.">
-    <button data-r="1">search on</button><button data-r="0">search off</button>
-  </span>
-  <span class="seg" id="speedseg" title="How fast the other three play their cards">
-    <button data-s="slow">slow</button><button data-s="normal">normal</button
-    ><button data-s="fast">fast</button><button data-s="off">instant</button>
-  </span>
-  <button id="skip" title="Jump to the end of what the others just did" hidden>Skip ▸</button>
+  <div class="bar">
+    <h1>Play a board</h1>
+    <span class="seg" id="hintseg" role="group" aria-label="Hints"
+          title="Teaching notes, and the net's suggestion, before every call and every card">
+      <button data-h="1" aria-pressed="false">hints on</button><button data-h="0" aria-pressed="true">hints off</button>
+    </span>
+    <span class="seg" id="searchseg" role="group" aria-label="Search" title="Before it plays, the bot guesses where the hidden cards are, solves twenty of those guesses double dummy, and plays the card that wins most often. It does this as declarer, and in defence from trick two.">
+      <button data-r="1">search on</button><button data-r="0">search off</button>
+    </span>
+    <span class="seg" id="speedseg" role="group" aria-label="Speed" title="How fast the other three play their cards">
+      <button data-s="slow">slow</button><button data-s="normal">normal</button
+      ><button data-s="fast">fast</button><button data-s="off">instant</button>
+    </span>
+    <button id="skip" class="off" title="Jump to the end of what the others just did">Skip ▸</button>
+    <span class="grow"></span>
+    <span class="links">
+      <a class="btn" href="/" title="Bid against the net and see its outputs">Bid desk</a>
+      <a class="btn" href="/play" title="Watch the card-play net">Play desk</a>
+    </span>
+    <button id="new-board" class="primary">New board</button>
+  </div>
   <div class="meta" id="meta">dealing…</div>
-  <span id="err"></span>
-  <a class="btn" href="/" title="Bid against the net and see its outputs">Bid desk</a>
-  <a class="btn" href="/play" title="Watch the card-play net">Play desk</a>
-  <button id="new-board" class="primary">New board</button>
 </header>
+<div id="err" role="alert"></div>
 
 <div class="row top">
   <div class="table" id="table"></div>
@@ -267,8 +339,8 @@ table.rv td:first-child{border-radius:6px 0 0 6px} table.rv td:last-child{border
     <h2 id="panel-title">The table</h2>
     <p class="hint" id="panel-hint"></p>
     <div id="panel-body"></div>
-    <div id="advice"></div>
     <div id="nextbar"></div>
+    <div id="advice" aria-live="polite"></div>
     <div class="actions" id="panel-actions"></div>
   </div>
 </div>
@@ -278,7 +350,7 @@ table.rv td:first-child{border-radius:6px 0 0 6px} table.rv td:last-child{border
     <h2 id="res-title">Result</h2>
     <p class="hint" id="res-hint"></p>
     <div id="res-stats"></div>
-    <div id="res-review" style="margin-top:10px"></div>
+    <div id="res-review" style="margin-top:12px"></div>
   </div>
 </div>
 
@@ -299,6 +371,9 @@ table.rv td:first-child{border-radius:6px 0 0 6px} table.rv td:last-child{border
       <div class="actions" id="seats" style="margin:0"></div>
       <div class="actions" style="margin-top:8px">
         <button id="restart" title="Same thirteen cards, auction from the top">Restart this board</button>
+      </div>
+      <div class="actions phone-links">
+        <a class="btn" href="/">Bid desk</a><a class="btn" href="/play">Play desk</a>
       </div>
       <p class="hint" style="margin:12px 0 0" id="setup-note"></p>
     </div>
@@ -453,12 +528,14 @@ function render(d){
   const at = d.board_no + ":" + d.auction.length;
   if(WHY.at !== at){ WHY = {job:null, timer:null, lines:null, at}; }   // a rollout belongs to one position
   $("meta").textContent = d.meta;
+  $("meta").title = d.meta_long || d.meta;
   $("searchseg").querySelectorAll("button").forEach(b => {
     b.classList.toggle("on", (b.dataset.r === "1") === d.search);
     b.onclick = () => go(() => post("/api/table/hints", {search: b.dataset.r === "1"}));
   });
   $("hintseg").querySelectorAll("button").forEach(b => {
     b.classList.toggle("on", (b.dataset.h === "1") === d.hints);
+    b.setAttribute("aria-pressed", String((b.dataset.h === "1") === d.hints));
     b.onclick = () => go(() => post("/api/table/hints", {hints: b.dataset.h === "1"}));
   });
   $("restart").disabled = d.auction.length === 0;
@@ -471,8 +548,10 @@ function paint(){
   const full = atTarget();
   D = frameOf(SRV, VIEW.calls, VIEW.cards, full);
   renderTable(D); renderPanel(D); renderAdvice(D); renderNext(D); renderSettings(D);
-  $("skip").hidden = full;
-  if(full){ renderNumbers(D); renderResult(D); }
+  renderNumbers(D);
+  // Hidden, not removed: the header keeps its width while the others play.
+  $("skip").classList.toggle("off", full);
+  if(full) renderResult(D);
   else $("result-row").style.display = "none";
 }
 
@@ -594,41 +673,20 @@ function renderTable(d){
     const yours = mine && d.your_turn;
     el.className = `hand pos${slotOf(d, s.seat)}${turn && yours?" turn":""}` +
                    `${turn && !yours?" acting":""}${mine?" mine":""}`;
-    let body = "";
-    if(s.hidden){
-      body = `<div class="sl"><span class="sym dim">?</span><span class="cards">` +
-        new Array(s.left).fill('<span class="cd back">x</span>').join("") + `</span></div>`;
-    } else {
-      for(const k of SUITS){
-        const cards = (s.suits && s.suits[k]) || [];
-        const inner = cards.map(c => {
-          const playable = d.phase === "play" && yours && d.legal_cards && d.legal_cards[c.card];
-          return `<button class="cd ${playable?"play":"no"}" ${playable?"":"disabled"}
-            data-card="${c.card}" title="${playable?"play "+SYM[k]+rankTxt(c.rank):""}"
-            >${rankTxt(c.rank)}</button>`;
-        }).join("");
-        body += `<div class="sl"><span class="sym ${isRed(k)?'red':''}">${SYM[k]}</span>` +
-                `<span class="cards">${inner || '<span class="dim">—</span>'}</span></div>`;
-      }
-    }
     const role = seatRole(d, s.seat);
     // Spell out the one case that surprises people: you declare, and dummy is still
     // played for you. Nobody needs telling that an opponent's dummy is not theirs.
     const spell = role === "dummy" && !mine && d.role === "declarer" && d.phase === "play";
-    const who = mine ? "you"
-      : s.seat === d.partner_seat ? (spell ? "your partner" : "your partner · net") : "the net";
-    const note = spell ? ` <span class="dim">· net plays it</span>` : "";
-    const spent = s.spent ? SUITS.flatMap(k => (s.spent[k]||[]).map(c => SYM[k]+rankTxt(c.rank))) : [];
+    const who = (mine ? "you"
+      : s.seat === d.partner_seat ? (spell ? "your partner" : "your partner · net") : "the net") +
+      (role ? " · " + role : "") + (spell ? " · net plays it" : "");
+    const badge = turn ? `<span class="go">${mine ? (d.phase==="auction"?"your bid":"your card")
+                                          : (d.phase==="auction"?"bidding…":"playing…")}</span>` : "";
     el.innerHTML =
       `<div class="hd"><b style="color:${seatColor(s.seat)}">${s.name}</b>` +
-      `<span class="tag" style="border:0;padding:0">${who}${role?" · "+role:""}${note}</span>` +
-      (turn ? `<span class="go">${mine ? (d.phase==="auction"?"your bid":"your card")
-                                       : (d.phase==="auction"?"bidding…":"playing…")}</span>` : "") +
-      `</div>` + body +
-      `<div class="hd" style="margin-top:3px">` +
-      `<span class="tag" style="border:0;padding:0">${s.hidden ? "hidden" : s.hcp + " HCP"}</span>` +
-      `<span class="tag num" style="border:0;padding:0">${s.left} left</span></div>` +
-      (spent.length ? `<div class="spent">played ${spent.join(" ")}</div>` : "");
+      `<span class="who" title="${who}">${who}</span>` +
+      `<span class="pts num">${s.hidden ? s.left + " cards" : s.hcp + " HCP"}</span></div>` +
+      badge + (s.hidden ? backsHTML(s.left) : suitsHTML(d, s, yours));
     el.querySelectorAll("button[data-card]").forEach(b =>
       b.onclick = () => go(() => post("/api/table/card", {card: +b.dataset.card})));
     t.appendChild(el);
@@ -637,10 +695,12 @@ function renderTable(d){
   const c = document.createElement("div"); c.className = "center";
   c.innerHTML = (d.phase === "auction") ? auctionTable(d) : trickHTML(d);
   t.appendChild(c);
+  const aq = c.querySelector(".aqwrap");
+  if(aq) aq.scrollTop = aq.scrollHeight;              // the newest round stays in view
 
   const ct = d.contract;
   const left = ct ? `<div class="corner tl">Contract<b>${contractHTML(ct)} ${ct.declarer_name[0]}</b></div>`
-                  : `<div class="corner tl">Board<b>#${d.board_no}</b></div>`;
+                  : `<div class="corner tl">Board<b class="num">#${d.board_no}</b></div>`;
   const tw = d.tricks_won;
   const tr = tw
     ? `<div class="corner tr">Tricks: you – them` +
@@ -651,6 +711,36 @@ function renderTable(d){
     (ct ? `<div class="corner br">${d.phase === "over" ? "Declarer made" : "Declarer needs"}` +
           `<b class="num">${d.phase === "over" && d.result ? d.result.tricks : ct.needs}</b></div>`
         : `<div class="corner br">Your hand<b class="num">${d.your_hand.hcp} HCP</b></div>`));
+}
+
+/* A face-up hand: all thirteen cards keep their place for the whole board, the
+   played ones faded, so playing a card never slides the rest of the hand over. */
+function suitsHTML(d, s, yours){
+  let out = "";
+  for(const k of SUITS){
+    const cards = ((s.suits && s.suits[k]) || []).map(c => ({c, live: true}))
+      .concat(((s.spent && s.spent[k]) || []).map(c => ({c, live: false})))
+      .sort((x, y) => x.c.card - y.c.card);
+    const red = isRed(k) ? " red" : "";
+    const inner = cards.map(({c, live}) => {
+      const label = SYM[k] + rankTxt(c.rank);
+      const cls = red + (c.rank === "T" ? " ten" : "");
+      if(!live) return `<span class="cd gone${cls}" aria-hidden="true">${rankTxt(c.rank)}</span>`;
+      const playable = d.phase === "play" && yours && d.legal_cards && d.legal_cards[c.card];
+      return `<button class="cd${cls}${playable ? " play" : ""}" ${playable ? "" : "disabled"} ` +
+             `data-card="${c.card}" aria-label="${playable ? "play " : ""}${label}">${rankTxt(c.rank)}</button>`;
+    }).join("");
+    out += `<div class="sl"><span class="sym${red}" aria-hidden="true">${SYM[k]}</span>` +
+           `<span class="cards">${inner || '<span class="void">—</span>'}</span></div>`;
+  }
+  return `<div class="suits">${out}</div>`;
+}
+
+// A hidden hand: thirteen slots, the played ones empty, so its size never changes.
+function backsHTML(left){
+  let out = "";
+  for(let i = 0; i < 13; i++) out += `<span class="cd back${i < left ? "" : " gone"}"></span>`;
+  return `<div class="backs" aria-label="${left} cards, face down">${out}</div>`;
 }
 
 function auctionTable(d){
@@ -666,7 +756,7 @@ function auctionTable(d){
         const nm = d.auction[i].name, special = nm==="Pass"||nm==="X"||nm==="XX";
         const s = strainOf(nm);
         body += `<td class="${!special&&isRed(s)?'redc':''}${me}${i===FRESH?" fresh":""}">` +
-                `${nm==="Pass"?"–":special?nm:nm[0]+SYM[s]}</td>`;
+                `<span>${nm==="Pass"?"–":special?nm:nm[0]+SYM[s]}</span></td>`;
       } else if(!d.auction_over && i === n){ body += `<td class="q${me}">?</td>`; }
       else body += `<td class="${me}"></td>`;
     }
@@ -677,7 +767,8 @@ function auctionTable(d){
     const seat = (d.dealer + k) % 4;
     return `<th style="color:${seat===d.user_seat?"var(--pick)":"inherit"}">${SEATS[seat][0]}</th>`;
   }).join("");
-  return `<table class="aq"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  return `<div class="aqwrap"><table class="aq"><thead><tr>${head}</tr></thead>` +
+         `<tbody>${body}</tbody></table></div>`;
 }
 
 function trickHTML(d){
@@ -690,13 +781,14 @@ function trickHTML(d){
     const win = stale && d.last_trick.winner === s;
     // Only the card that just arrived animates in; the ones already down stay put.
     const land = x && LAND === s && !stale ? " land" : "";
-    inner += `<div class="slot p${p}${x && isRed(x.suit) ? " redc":""}${win?" win":""}${land}">` +
-      (x ? `${SYM[x.suit]}${rankTxt(x.rank)}` : "") + `</div>`;
+    inner += `<div class="slot p${p}${x ? " has" : ""}${x && isRed(x.suit) ? " red" : ""}` +
+      `${win ? " win" : ""}${land}">` +
+      (x ? `<span>${rankTxt(x.rank)}</span><span>${SYM[x.suit]}</span>` : "") + `</div>`;
   }
   let mid;
-  if(d.phase === "over") mid = "all thirteen played";
+  if(d.phase === "over") mid = "all 13<br>played";
   else if(stale) mid = `trick ${d.trick_no} to ${SEATS[d.last_trick.winner][0]}<br>` +
-                       `${SEATS[d.trick_leader][0]} leads next`;
+                       `${SEATS[d.trick_leader][0]} leads`;
   else if(d.trick.length) mid = `trick ${d.trick_no+1}/13<br>${SEATS[d.trick_leader][0]} led`;
   else mid = `trick ${d.trick_no+1}/13<br>${SEATS[d.trick_leader][0]} to lead`;
   return `<div class="trick">${inner}<div class="mid">${mid}</div></div>`;
@@ -710,9 +802,10 @@ function renderPanel(d){
 
   if(d.phase === "auction"){
     T.innerHTML = d.your_turn ? "Your call" : `${SEATS[d.to_play]} is thinking…`;
-    H.innerHTML = d.your_turn
-      ? `${d.dealer_name} dealt, nobody vulnerable. Pick a call, or take the one on the button.`
-      : `Waiting for ${SEATS[d.to_play]}. ${d.to_play === d.partner_seat ? "That is your partner." : "That is an opponent."}`;
+    H.innerHTML = !d.your_turn
+      ? `Waiting for ${SEATS[d.to_play]}. ${d.to_play === d.partner_seat ? "That is your partner." : "That is an opponent."}`
+      : d.suggest ? `${d.dealer_name} dealt, nobody vulnerable. Pick a call, or take the ringed one.`
+                  : `${d.dealer_name} dealt, nobody vulnerable. Pick a call in the box.`;
     B.innerHTML = biddingBox(d);
     B.querySelectorAll("button[data-call]").forEach(b => {
       b.onclick = () => go(() => post("/api/table/call", {call: +b.dataset.call}));
@@ -738,12 +831,11 @@ function renderPanel(d){
     T.innerHTML = `Your card`;
     H.innerHTML = role === "declarer"
       ? `You declare ${contractHTML(ct)}. Play from <b>your own hand</b>; the net plays dummy.`
-      : `You defend ${contractHTML(ct)} by ${ct.declarer_name}. Click a card in your hand.`;
+      : `You defend ${contractHTML(ct)} by ${ct.declarer_name}. Pick a card in your hand.`;
   } else {
     T.innerHTML = `${SEATS[d.to_play]} is playing…`;
     H.innerHTML = role === "dummy"
-      ? `You are dummy: your hand is face up and your partner, the net, plays it. ` +
-        `Sit back and watch — you take the next board.`
+      ? `You are dummy: your partner, the net, plays your hand. Watch this one.`
       : d.to_play === ct.dummy
         ? `The net is playing dummy.`
         : `Waiting for ${SEATS[d.to_play]}.`;
@@ -758,7 +850,7 @@ function renderPanel(d){
       `<span>of ${need} needed</span></div>` +
     `<div class="stat"><span>Defenders</span><b class="num">${tw.defending}</b>` +
       `<span>of ${14-need} to beat it</span></div></div>` +
-    `<div class="stat"><span>You are</span><b style="font-size:14px">${role}</b>` +
+    `<div class="stat"><span>You are</span><b style="font-size:18px">${role}</b>` +
       `<span>${d.user_seat_name}, partner ${d.partner_name} — ${job}</span></div>`;
 
   if(d.phase === "over"){
@@ -784,7 +876,9 @@ function renderNext(d){
       ? () => go(() => post("/api/table/call", {call: d.suggest.action}))
       : () => go(() => post("/api/table/card", {card: d.suggest.action}));
   } else if(d.your_turn){
-    label = "Your turn"; cls = "";
+    // Hints off: nothing to take, so the button only says whose move it is.
+    label = d.phase === "auction" ? "Your call — pick one above" : "Your card — pick one from your hand";
+    cls = "";
   } else {
     const done = SRV && SRV.phase === "over";
     label = done ? "Skip to the result ▸" : "Play the rest out ▸"; cls = "";
@@ -792,7 +886,7 @@ function renderNext(d){
   }
   NEXT_ACT = act;
   bar.innerHTML = `<button class="${cls}" id="nextbtn" ${act ? "" : "disabled"}>${label}</button>` +
-                  (kbd ? `<span class="kbd">${kbd}</span>` : "");
+                  `<span class="kbd">${kbd}</span>`;             // always there, so nothing moves
   const b = bar.querySelector("#nextbtn");
   if(act) b.onclick = () => { b.blur(); act(); };
 }
@@ -807,41 +901,71 @@ document.addEventListener("keydown", e => {
 });
 
 /* ------------------------------------------------ the teacher, in plain English.
-   Every number in these sentences comes from the server's corpus templates; the
-   page only arranges them. `preview` lets the bidding box show what another call
-   would say without committing to it. */
+   Every sentence comes from the server's templates; the page only arranges them.
+   Measured self-play meaning first; where self-play never reached the auction,
+   the net's own choice on these cards and the nearest auction it did reach,
+   tagged as approximate. `preview` lets the bidding box show what another call
+   would say without committing to it. With hints off the box stays empty. */
+const APPROX = `<span class="tag approx" title="Not measured at this exact auction">approximate</span>`;
+
 function renderAdvice(d, preview){
   const box = $("advice");
-  if(!d.hints || !d.hint || !d.your_turn){ box.className = ""; box.innerHTML = ""; return; }
-  const h = d.hint;
+  box.classList.toggle("on", !!d.hints);          // reserve the room while hints are on
+  if(!d.hints){ box.innerHTML = ""; return; }
+  const h = d.your_turn ? d.hint : null;
+  if(!h){
+    box.innerHTML = `<div class="advice quiet"><p>Advice appears when it is your turn.</p></div>`;
+    return;
+  }
   let out = "";
-  if(h.kind === "auction"){
-    for(const t of (h.told || [])) out += `<p class="aside">${t.sentence}</p>`;
-    const row = preview !== undefined
-      ? (h.corpus || []).find(r => r.action === preview) : null;
-    const says = row ? row.says : h.advice;
-    const fit = row ? row.yours : h.advice_fit;
-    if(says){
-      out += `<p class="say">${says}</p>`;
-      if(fit) out += `<p class="aside">${fit}</p>`;
-    } else if(preview !== undefined){
-      out += `<p class="say">Self-play never made that call here, so there is nothing ` +
-             `measured to say about it.</p>`;
-    } else if(!h.has_corpus){
-      out += `<p class="aside">This model has no self-play table, so there is nothing ` +
-             `measured to say about its calls.</p>`;
-    } else {
-      out += `<p class="aside">Self-play never reached this position, so there is nothing ` +
-             `measured to say about it. Better that than a guess.</p>`;
-    }
-  } else {
+  if(h.kind === "auction") out = preview !== undefined ? previewAdvice(h, preview) : auctionAdvice(h);
+  else {
     if(h.context) out += `<p class="aside">${h.context}</p>`;
     if(h.advice) out += `<p class="say">${h.advice}</p>`;
     if(h.finesse) out += `<p class="aside">${h.finesse.text}</p>`;
     else if(h.book) out += `<p class="aside">${h.book}</p>`;
   }
-  box.className = "advice" + (out.indexOf('class="say"') < 0 ? " quiet" : "");
-  box.innerHTML = out;
+  box.innerHTML = `<div class="advice${out.indexOf('class="say"') < 0 ? " quiet" : ""}">${out}</div>`;
+}
+
+function auctionAdvice(h){
+  let out = "";
+  for(const t of (h.told || [])) out += `<p class="aside">${t.sentence}</p>`;
+  if(h.advice){                                   // measured at this exact auction
+    out += `<p class="say">${h.advice}</p>`;
+    if(h.advice_fit) out += `<p class="aside">${h.advice_fit}</p>`;
+    if(h.net_says) out += `<p class="aside">${h.net_says}</p>`;
+    return out;
+  }
+  out += `<p class="say">${h.net_says || h.hand_says}</p>`;
+  if(!h.has_corpus)
+    out += `<p class="aside">This model has no self-play table, so that is the net's own view ` +
+           `of your cards, with nothing measured behind it.</p>`;
+  else if(h.corpus && h.corpus.length)
+    out += `<p class="aside">Self-play reached this auction but rarely made that call here, so ` +
+           `there is no measured meaning for it.</p>`;
+  else if(h.nearest){
+    out += `<p class="aside">${APPROX} ${h.nearest.note}</p>`;
+    if(h.nearest_advice) out += `<p class="aside">${h.nearest_advice} ${h.nearest_fit || ""}</p>`;
+  } else
+    out += `<p class="aside">Self-play never reached this auction (or fewer than 200 hands did), ` +
+           `and nothing close to it either, so that is the net's own view of your cards.</p>`;
+  return out;
+}
+
+// Hovering a call: its measured meaning here, else at the nearest auction, and
+// always the net's own chance for it on these cards.
+function previewAdvice(h, call){
+  const exact = (h.corpus || []).find(r => r.action === call);
+  const near = !exact && h.nearest ? h.nearest.rows.find(r => r.action === call) : null;
+  const p = h.net && h.net.p_by_call ? h.net.p_by_call[call] : undefined;
+  const odds = p === undefined ? "" :
+    `<p class="aside">With your cards the net makes this call ${p < 0.005 ? "<1%" : Math.round(p*100) + "%"} ` +
+    `of the time.</p>`;
+  if(exact) return `<p class="say">${exact.says}</p><p class="aside">${exact.yours}</p>` + odds;
+  if(near) return `<p class="say">${APPROX} ${near.says}</p><p class="aside">${near.yours} ` +
+                  `Measured at the nearest auction self-play reached, not this one.</p>` + odds;
+  return `<p class="say">Self-play has no measured meaning for that call here.</p>` + odds;
 }
 
 function biddingBox(d){
@@ -867,8 +991,14 @@ function biddingBox(d){
    counts and the source tags all still live here, closed by default. */
 function renderNumbers(d){
   const row = $("numbers-row");
-  if(!d.hints || !d.hint){ row.style.display = "none"; return; }
-  row.style.display = "";
+  if(!d.hints || d.phase === "over"){ row.style.display = "none"; return; }
+  row.style.display = "";                 // stays put between turns, so nothing below it jumps
+  if(!d.hint){
+    $("numbers-sub").textContent = "filled in on your turn";
+    $("numbers-body").innerHTML = `<p class="hint" style="margin:0">Nothing to show while the ` +
+      `others are ${d.phase === "auction" ? "bidding" : "playing"}.</p>`;
+    return;
+  }
   $("numbers-sub").textContent = d.hint.kind === "auction"
     ? "what the sentences above are made of"
     : "the net's policy, its beliefs, and the solver";
@@ -905,10 +1035,8 @@ function sentence(e){
 const FOOT = text => `<p class="hint" style="margin:14px 0 0">${text}</p>`;
 
 function auctionHints(d){
-  const h = d.hint, hand = h.your_hand, blocks = [];
-  blocks.push(`<p class="hint" style="grid-column:1/-1;margin:0">` +
-    `You hold <b class="num">${hand.hcp}</b> points and ` +
-    `<b class="num">${hand.shape.join("-")}</b> shape (♠♥♦♣)${hand.balanced?", a balanced hand":""}. ` +
+  const h = d.hint, blocks = [];
+  blocks.push(`<p class="hint" style="grid-column:1/-1;margin:0">${h.hand_says} ` +
     `Every claim is tagged with where it comes from.</p>`);
 
   if(h.net){
@@ -953,11 +1081,25 @@ function auctionHints(d){
         `<span class="sh">${(r.stats.share*100).toFixed(0)}%</span>` +
         `<span class="d${r.fit && r.fit.fits ? " fit" : ""}" title="${r.fit ? r.fit.checks.map(c=>c.detail).join(" · ") : ""}">` +
         `${sentence(r.stats)}</span>`).join("") + `</div></div>`);
+  } else if(h.nearest){
+    const n = h.nearest;
+    blocks.push(`<div class="block" style="grid-column:1/-1"><h3>The nearest auction self-play ` +
+      `reached ${TAGS.sp} ${APPROX}</h3>` +
+      `<p class="note">Fewer than 200 self-play hands reached <span class="num">${h.position}</span>, ` +
+      `so it has no entry. <span class="num">${n.n.toLocaleString()}</span> reached ` +
+      `<span class="num">${n.position}</span> — ${n.change}. These are that auction's calls, ` +
+      `legal ones only: close, but not measured here.</p>` +
+      `<div class="sys">` + n.rows.map(r =>
+        `<span class="c">${pretty(r.call)}</span>` +
+        `<span class="sh">${(r.stats.share*100).toFixed(0)}%</span>` +
+        `<span class="d${r.fit && r.fit.fits ? " fit" : ""}">${sentence(r.stats)}</span>`).join("") +
+      `</div></div>`);
   } else if(h.has_corpus){
     blocks.push(`<div class="block"><h3>No measured meaning here ${TAGS.sp}</h3>` +
       `<p class="note">Fewer than 200 self-play auctions reached ` +
-      `<span class="num">${h.position}</span>, so the table has no entry. Anything said about ` +
-      `what these calls mean would be invented.</p></div>`);
+      `<span class="num">${h.position}</span>, so the table has no entry, and no nearby auction ` +
+      `it did reach is close enough to stand in. Anything said about what these calls mean ` +
+      `would be invented.</p></div>`);
   }
 
   for(const r of (h.partner_next || [])){
@@ -1137,10 +1279,10 @@ function renderResult(d){
     own = `<p class="hint">You were dummy, so you played no cards of your own — your partner, ` +
           `the net, played both hands.</p>`;
   else if(rv.mine.length)
-    own = `<table class="rv"><tr><th>trick</th><th>you played</th><th>cost</th><th>it wanted</th></tr>` +
+    own = `<div class="rvwrap"><table class="rv"><tr><th>trick</th><th>you played</th><th>cost</th><th>it wanted</th></tr>` +
       rv.mine.map(m => `<tr><td>${m.trick+1}</td><td>${cardHTML(m.card)}</td>` +
         `<td>${m.lost} trick${m.lost===1?"":"s"}</td>` +
-        `<td>${m.best_cards.slice(0,5).join(" ")}</td></tr>`).join("") + `</table>`;
+        `<td>${m.best_cards.slice(0,5).join(" ")}</td></tr>`).join("") + `</table></div>`;
   else
     own = `<p class="hint">Not one of your ${rv.played} cards cost a trick against perfect ` +
           `defence. That is a clean board.</p>`;

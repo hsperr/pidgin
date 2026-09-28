@@ -39,7 +39,7 @@ from bridgezero.contract.environment import AUCTION_FEATURES
 from bridgezero.fourseat.model import (competitive_log_probs, load_fourseat_checkpoint,
                                        policy_log_probs)
 from bridgezero.fourseat.state import features_from_history
-from emergent import playdesk, tabledesk
+from emergent import apis, playdesk, tabledesk
 from emergent.deck import deal_owners, owners_to_bitmaps, owners_to_pbn
 
 from endplay.types import Deal, Denom, Player
@@ -686,6 +686,7 @@ def api_explain_result():
 
 playdesk.register(app)          # /play and /api/play/*, the card play desk
 tabledesk.register(app)         # /table and /api/table/*, play a board against the nets
+apis.register(app)              # /apis/bbo.php and /apis/brill/*, for other sites' tables
 
 
 def create_app(ckpt=None):
@@ -695,6 +696,7 @@ def create_app(ckpt=None):
     load_corpus()
     playdesk.load_models()
     tabledesk.load(sys.modules[__name__])
+    apis.load(sys.modules[__name__])
     return app
 
 
@@ -708,6 +710,7 @@ def main():
     load_corpus()
     playdesk.load_models()
     tabledesk.load(sys.modules[__name__])
+    apis.load(sys.modules[__name__])
     for b in MODELS.values():
         print(f"  {b.id:10s} step {b.step}  {b.info}")
     for b in playdesk.MODELS.values():

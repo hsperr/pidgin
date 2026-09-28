@@ -46,6 +46,29 @@ classes, copy again:
     cd ~/code/bridge/emergent && cp exp1.py exp3.py exp3q.py exp10four.py \
       exp11four.py scoring.py scoring4.py deck.py fullinfo.py ~/code/bridge_server/emergent/
 
+## Machine APIs (`/apis/…`) — seat our bots at other sites' tables
+
+`emergent/apis.py`, on the same app. Stateless: every request carries the whole position.
+Default models are the first entries of `models/models.json` (bidding) and
+`models/play_models.json` (card play); `model=<id>` / `play_model=<id>` pick another.
+Dealer and vulnerability are real inputs here (the desks fix North / nobody).
+
+- **BBO robot.php format** — `GET /apis/bbo.php?pov=S&d=N&v=-&n=..&e=..&s=..&w=..&h=1c-p`
+  (hands `s.h.d.c` lowercase, `h` calls from the dealer joined by `-`, `v` one of `- n e b`,
+  `botstyle` ignored). Answers `<sc_bm ...><r type="bid" bid="1N" meaning="..."/></sc_bm>`.
+  Card play too: once the auction is over `h` goes on with the cards played
+  (`...-4h-p-p-p-H9`) and the answer is `<r type="play" card="HJ"/>`; when dummy is on turn
+  the declarer is asked. Only what `pov` can see is read: its hand, dummy after the lead.
+- **Brill Seat Robot API** (https://brill.aalborgdata.dk/seat-api.html), base URL
+  `https://bridge.localgeek.jp/apis/brill`: `GET /` (200), `/bid`, `/lead`, `/play`.
+  `/bid` answers `bid`, `alert`, `explanation` (from `models/corpus_<id>.json`), `candidates`.
+  Card play uses the play net; unseen cards are random filler that never reaches its input
+  (checked in `tests/test_apis.py`). §11 answers: one process serves all four seats, no state
+  between requests; cold start = server start (models load at boot), then ~10–50 ms per
+  request; `meanings` and `matchtype` are accepted and ignored; one system per model id.
+
+    python3 -m pytest -q tests/test_apis.py      # Brill's §9 checklist + robot.php, full boards
+
 ## Why this call (the section under the bidding box)
 
 Three parts, all from the deployed net alone:
@@ -155,13 +178,22 @@ auction, the ringed card during the play, "Next board" once the deal is scored,
 same. Clicking a call or a card directly still works, and hovering a call in the
 bidding box previews what that call would say without committing to it.
 
-The suggestion arrives as `suggest` on every turn of the user's, so the button
-works with hints switched off too. It costs one forward pass either way:
-`suggest_from_hint` reuses the one the hint already paid for, and `suggestion()`
-only runs when hints are off.
+**Hints are off by default**, on every new game. With them off the page shows no
+suggestion of any kind, and the payload carries none: `hint` and `suggest` are
+both `null`, and `POST /api/table/explain` refuses. The Next button then only says
+whose turn it is. With them on, `suggest` comes from the hint's own forward pass
+(`suggest_from_hint`). A choice made with the toggle lasts for the rest of that
+browser tab's session, new boards included.
 
-On a phone the Next button is fixed to the bottom of the viewport, so a board can
+Below 980px the Next button is fixed to the bottom of the viewport, so a board can
 be played one-handed.
+
+**Nothing on the table moves when a card is played.** The felt is a grid of fixed
+tracks; every hand keeps a slot for all thirteen of its cards for the whole board
+(played ones stay in place, faded; a hidden hand keeps thirteen backs, the played
+ones blank), cards shrink rather than wrap when a suit is long, the auction
+scrolls inside the centre instead of growing it, and the long model line in the
+header is one line with an ellipsis. Only transforms and opacity animate.
 
 ### Saying the corpus out loud
 
@@ -199,17 +231,24 @@ not have. Every claim carries a tag saying where it came from:
 - **self-play** — `models/corpus_<model id>.json`, a million greedy self-play
   auctions summarised by prefix (`bridge_new/experiments/explain/corpus.py`).
   What a call actually held: point band, balanced share, suit lengths. Positions
-  with fewer than 200 hands are not in the file and the page says so rather than
-  guessing. "If you bid X, partner usually answers…" walks two nodes further on
-  and prints the opponent call it assumed to get there.
+  with fewer than 200 hands, and anything past eight calls, are not in the file.
+  There the advice leads with the net's own policy on the user's cards
+  (`net_sentence`: "You have 13 HCP and 5 hearts: with exactly these cards the net
+  bids 1♥ 78% of the time"), and quotes the nearest auction the corpus does hold
+  (`nearest_position`), tagged **approximate** with what was changed to reach it:
+  opening passes left out, an opponent's call replaced by a pass, or the earliest
+  calls dropped (keeping at least a round). Every stand-in keeps the user on turn
+  and partner two calls back. "If you bid X, partner usually answers…" walks two
+  nodes further on and prints the opponent call it assumed to get there.
 - **the cards** — arithmetic on what the user can already see: who is winning the
   trick, whether they must follow suit, how many trumps are unaccounted for,
   whether a card is a certain winner, whether a finesse is available. The finesse
   test only fires for declarer, who can see both hands, and only when a low card
   in one hand faces an honour in the other with a higher card still out.
 - **standard advice** — an ordinary club rule of thumb, ours, shown only for the
-  opening lead. The play advice line names the card and one fact about it; it
-  never says *why* the net chose it, because the net cannot say.
+  opening lead. The play advice line (`play_advice`) names the card, how often the
+  net plays it here, one fact about it, and a second choice once that is at least
+  10% likely; it never says *why* the net chose it, because the net cannot say.
 - **solver** — double dummy, which looks at all four hands. Off by default,
   always labelled. It also drives the after-the-deal review, which re-solves the
   board card by card (`playdesk.review`) and lists the user's own cards that cost
