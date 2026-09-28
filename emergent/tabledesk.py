@@ -1745,7 +1745,7 @@ def register(app):
         """Start a challenge: deal the boards and play the other table now."""
         n = int_field(body_of(request), "boards")
         n = CHALLENGE_BOARDS if n < 1 else min(n, CHALLENGE_MAX)
-        ch = new_challenge(game["model"], game["play_model"], game.get("search", True), n)
+        ch = new_challenge(game["model"], game["play_model"], game.get("search", engine.CONFIG.search), n)
         fresh = challenge_board(ch, game["board_no"])
         game.clear()
         game.update(fresh)
