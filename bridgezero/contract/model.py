@@ -132,23 +132,33 @@ class AuctionContractNet(nn.Module):
     inputs = "auction"
 
     def __init__(self, width: int = 384, suit_width: int = 64, depth: int = 3,
-                 policy_logit_bound: float | None = None):
+                 policy_logit_bound: float | None = None, dropout: float = 0.0):
         super().__init__()
         if policy_logit_bound is not None and policy_logit_bound <= 0:
             raise ValueError("policy_logit_bound must be positive")
+        if not 0.0 <= dropout < 1.0:
+            raise ValueError("dropout must be in [0, 1)")
         self.policy_logit_bound = policy_logit_bound
         self.config = dict(width=width, suit_width=suit_width, depth=depth)
         if policy_logit_bound is not None:
             self.config["policy_logit_bound"] = policy_logit_bound
+        # E52: recorded only when on, so every checkpoint written before it still loads.
+        if dropout:
+            self.config["dropout"] = dropout
+
+        def drop() -> list[nn.Module]:
+            return [nn.Dropout(dropout)] if dropout else []
+
         self.suit_net = nn.Sequential(
-            nn.Linear(13, suit_width), nn.GELU(),
-            nn.Linear(suit_width, suit_width), nn.GELU(),
+            nn.Linear(13, suit_width), nn.GELU(), *drop(),
+            nn.Linear(suit_width, suit_width), nn.GELU(), *drop(),
         )
-        self.auction_net = nn.Sequential(nn.Linear(AUCTION_FEATURES, width), nn.GELU())
+        self.auction_net = nn.Sequential(
+            nn.Linear(AUCTION_FEATURES, width), nn.GELU(), *drop())
         layers: list[nn.Module] = []
         dim = 4 * suit_width + width
         for _ in range(depth):
-            layers += [nn.Linear(dim, width), nn.GELU()]
+            layers += [nn.Linear(dim, width), nn.GELU(), *drop()]
             dim = width
         self.trunk = nn.Sequential(*layers)
         self.trick_head = nn.Linear(width, 2 * 5 * 14)

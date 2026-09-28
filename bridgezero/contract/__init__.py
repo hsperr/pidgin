@@ -1,1 +1,1 @@
-"""Cooperative constructive-bidding curriculum (CURRICULUM.md stages A-C)."""
+"""Cooperative constructive bidding: the contract finder and its auction stages."""

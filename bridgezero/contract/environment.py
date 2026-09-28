@@ -1,4 +1,4 @@
-"""Silent-opponent cooperative auction (CURRICULUM.md section 5).
+"""Silent-opponent cooperative auction.
 
 Reference implementation on top of the trusted four-seat ``AuctionState``:
 

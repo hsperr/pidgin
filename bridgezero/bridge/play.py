@@ -14,7 +14,6 @@ from __future__ import annotations
 import torch
 
 N_CARDS, N_SEATS = 52, 4
-NOTRUMP = 4
 SUIT_OF = torch.arange(N_CARDS) // 13
 RANK_OF = torch.arange(N_CARDS) % 13
 
@@ -98,8 +97,9 @@ class PlayBatch:
         trick = self.history[:, start:start + N_SEATS]              # (n, 4) in play order
         suits, ranks = self.suit_of[trick], self.rank_of[trick]
         led = suits[:, :1]
+        # No-trump needs no special case: strain 4 never equals a suit index 0..3, so
+        # `is_trump` is all false and the led suit decides. Trumps beat everything else.
         is_trump = suits == self.trump[:, None]
-        # Trumps beat everything. Failing that, only the led suit can win.
         contends = torch.where(is_trump.any(1, keepdim=True), is_trump, suits == led)
         best = torch.where(contends, ranks, torch.full_like(ranks, 99)).argmin(1)
         winner = (self.leader + best) % N_SEATS
@@ -111,9 +111,6 @@ class PlayBatch:
 
     def declarer_tricks(self) -> torch.Tensor:
         return self.tricks_won[self.rows, self.declarer % 2]
-
-    def side_tricks(self, seat: torch.Tensor) -> torch.Tensor:
-        return self.tricks_won[self.rows, seat % 2]
 
 
 def play_random(batch: PlayBatch, generator: torch.Generator | None = None) -> PlayBatch:

@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from ..contract.data import TorchDeals
-from ..contract.environment import AUCTION_FEATURES, N_COOP_ACTIONS
+from ..contract.environment import AUCTION_FEATURES
 from ..contract.prefixes import CoopBatch, final_scores, net_outputs
 from ..contract.targets import TARGET_SCALE, TorchScorer
 

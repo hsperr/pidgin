@@ -6,12 +6,13 @@ import argparse
 from pathlib import Path
 
 import numpy as np
+from bridgezero.bridge.calls import STRAIN_PERM
 
 SUITS = ("S", "H", "D", "C")
 RANKS = "AKQJT98765432"
 SEATS = ("N", "E", "S", "W")
 PGX_RANK_TO_OURS = np.asarray([0] + [13 - r for r in range(1, 13)], dtype=np.int64)
-PGX_STRAIN_TO_OURS = np.asarray([3, 2, 1, 0, 4], dtype=np.int64)
+PGX_STRAIN_TO_OURS = np.asarray(STRAIN_PERM, dtype=np.int64)
 
 
 class PackedPGXOwners:

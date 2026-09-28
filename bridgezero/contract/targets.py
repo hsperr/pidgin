@@ -1,6 +1,6 @@
 """Exact cooperative contract score tables and differentiable expected scores.
 
-Conventions (see CURRICULUM.md section 1):
+Conventions (see DATA_CONVENTIONS.md):
 
 - DDS tables are ``tricks[seat, table_strain]`` with seats N,E,S,W and table
   strains S,H,D,C,NT.
@@ -19,12 +19,13 @@ import torch
 
 from ..bridge.calls import CONTRACTS
 from ..bridge.scoring import contract_score
+from bridgezero.bridge.calls import STRAIN_PERM
 
 N_CONTRACTS = len(CONTRACTS)
 N_DECLARERS = 2
 PAIR_PASS = N_DECLARERS * N_CONTRACTS
 N_PAIR_ACTIONS = PAIR_PASS + 1
-BID_TO_TABLE_STRAIN = np.asarray((3, 2, 1, 0, 4), dtype=np.int64)
+BID_TO_TABLE_STRAIN = np.asarray(STRAIN_PERM, dtype=np.int64)
 CONTRACT_LEVEL = np.asarray([level for _, level, _ in CONTRACTS], dtype=np.int64)
 CONTRACT_BID_STRAIN = np.asarray([strain for _, _, strain in CONTRACTS], dtype=np.int64)
 CONTRACT_TABLE_STRAIN = BID_TO_TABLE_STRAIN[CONTRACT_BID_STRAIN]

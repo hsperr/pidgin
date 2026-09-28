@@ -12,9 +12,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
+from bridgezero.bridge.calls import STRAIN_PERM, DOUBLE, PASS, REDOUBLE
 
-BID_STRAIN_TO_TRUMP = (3, 2, 1, 0, 4)     # bids are C,D,H,S,NT; cards and DDS are S,H,D,C,NT
+BID_STRAIN_TO_TRUMP = STRAIN_PERM         # bids are C,D,H,S,NT; cards and DDS are S,H,D,C,NT
 N_CALLS = 38
 
 

@@ -40,6 +40,7 @@ torch.save(ck, sys.argv[2])
 print(f"   {sys.argv[2]}  step {ck.get('step')}")
 PY
 }
+copy E49B_adv_selfplay_from_cooperative/ckpt_step60000.pt E49B_s60k.pt  # beats E46 s40k by +0.063..+0.100 IMP/board, paired
 copy E46_brlstyle_league_l1.0_40k/ckpt_step40000.pt E46_s40k.pt   # +0.89 IMP/board vs E28 s50k
 copy E44_table_l1.0_40k/ckpt_step10000.pt E44_l1_s10k.pt          # best: +0.47 IMP/board vs E28 60K
 copy E28_fourseat_xx_sac_from_E21/ckpt_step50000.pt E28_s50k.pt   # +0.29 IMP/board vs E21

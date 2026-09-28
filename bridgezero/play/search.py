@@ -32,7 +32,7 @@ from bridgezero.play.data import Contracts
 from bridgezero.play.model import PlayNet, encode
 
 try:                                              # endplay is the optional `dds` extra
-    from endplay.dds import solve_all_boards
+    from endplay.dds import solve_all_boards, solve_board
     from endplay.types import Card, Deal, Denom, Player, Rank
 
     DENOMS = (Denom.spades, Denom.hearts, Denom.diamonds, Denom.clubs, Denom.nt)
@@ -352,12 +352,32 @@ def deal_for(position: Position, layout: dict[int, int]):
     return deal
 
 
+MISPAIRED = [0, 0]                # deals solved, and tables the batch solver got wrong
+
+
 def solved_values(deals: list) -> list[dict[int, int]]:
-    """Tricks for the side on turn, per card, one dict per deal."""
+    """Tricks for the side on turn, per card, one dict per deal.
+
+    A batch holding a deal *and* that same deal one card later occasionally comes back
+    with the neighbour's table, listing cards that are not legal in the board it was
+    asked about — measured at roughly 1 in 10000 solves by
+    ``experiments/play/depth2.py``, which is the only caller that batches positions of
+    different depths. PIMC never does (all its samples share one decision point) and
+    ``best_cards`` never does (a ``PlayBatch`` advances in lockstep), so today every
+    caller is safe — but safe by a precondition none of them states. Each table is
+    checked against the deal's own legal moves and the odd one re-solved alone, so a
+    future caller that does batch a tree cannot inherit the bug silently.
+    """
     out = []
     for start in range(0, len(deals), SOLVE_CHUNK):
-        for solved in solve_all_boards(deals[start:start + SOLVE_CHUNK]):
-            out.append({from_card(card): tricks for card, tricks in solved})
+        part = deals[start:start + SOLVE_CHUNK]
+        for deal, solved in zip(part, solve_all_boards(part)):
+            table = {from_card(card): tricks for card, tricks in solved}
+            MISPAIRED[0] += 1
+            if set(table) != {from_card(card) for card in deal.legal_moves()}:
+                MISPAIRED[1] += 1
+                table = {from_card(card): tricks for card, tricks in solve_board(deal)}
+            out.append(table)
     return out
 
 
@@ -386,7 +406,7 @@ class PIMCPlayer:
         """
         return cls(None, samples, net=net, **kwargs)
 
-    DEFENCE_MODES = ("off", "lead", "all")
+    DEFENCE_MODES = ("off", "lead", "all", "only")
 
     def __init__(self, path: str | None, samples: int, seed: int = 0,
                  counting: bool = False, budget_ms: float | None = None,
@@ -410,7 +430,18 @@ class PIMCPlayer:
             self.net.load_state_dict(state["net"])
             self.net.eval()
             name = Path(path).parent.name
-        self.name = f"{name}+pimc{samples}" + ("" if defence == "off" else f"+def-{defence}")
+        # Every knob that changes the cards must show in the name: it is the only
+        # identity line most runs print, and `--defence-from-trick 0` vs `2` and
+        # `--search-counting` on vs off are comparisons this project actually makes.
+        self.name = f"{name}+pimc{samples}"
+        if counting:
+            self.name += "+counting"
+        if defence != "off":
+            self.name += f"+def-{defence}"
+            if defence_from_trick:
+                self.name += f"@t{defence_from_trick}"
+        if budget_ms is not None:
+            self.name += f"+{budget_ms:.0f}ms"
         self.samples = samples
         self.budget_ms = budget_ms
         self.counting = counting
@@ -420,7 +451,9 @@ class PIMCPlayer:
         # played, so there are no partner signals to misread -- the only difficulty is
         # that 39 cards are unseen, which is exactly what the belief head is for. "all"
         # searches every defensive turn too, where partner is guessing as well and the
-        # sampled layout is a weaker picture.
+        # sampled layout is a weaker picture. "only" searches the defenders and leaves
+        # declarer to the net; it exists so distillation can generate defensive targets
+        # without paying for declarer solves it is going to throw away.
         self.defence = defence
         # A solve costs ~290ms at trick one on the droplet and ~1ms by trick seven, so
         # nearly all of defence search's price is the first few tricks. Skipping them
@@ -457,6 +490,9 @@ class PIMCPlayer:
             declaring = torch.ones_like(declaring)
         elif self.defence == "lead" and step == 0:
             declaring = torch.ones_like(declaring)
+        elif self.defence == "only":
+            declaring = (~declaring if batch.trick_no >= self.defence_from_trick
+                         else torch.zeros_like(declaring))
         if self.seats is not None:
             mine = torch.zeros_like(declaring)
             for seat in self.seats:

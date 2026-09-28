@@ -8,6 +8,7 @@ import numpy as np
 
 from .auction import AuctionState
 from .calls import CONTRACTS, PASS
+from bridgezero.bridge.calls import STRAIN_PERM
 
 
 def contract_score(
@@ -66,7 +67,7 @@ def terminal_ns_score(state: AuctionState, tricks: np.ndarray) -> int:
         return 0
     _, level, bid_strain = CONTRACTS[state.last_contract]
     # Bidding order is C,D,H,S,NT; trick table order is S,H,D,C,NT.
-    trick_strain = (3, 2, 1, 0, 4)[bid_strain]
+    trick_strain = STRAIN_PERM[bid_strain]
     declarer = state.declarer()
     raw = contract_score(level, bid_strain, int(tricks[declarer, trick_strain]),
                          state.doubled, state.vulnerable(declarer % 2))
@@ -109,7 +110,7 @@ def dd_par_score(tricks: np.ndarray, vul_ns: bool, vul_ew: bool) -> int:
     n_contracts = len(CONTRACTS)
     stand_ns = np.empty(n_contracts, dtype=np.int32)
     stand_ew = np.empty(n_contracts, dtype=np.int32)
-    trick_perm = (3, 2, 1, 0, 4)
+    trick_perm = STRAIN_PERM
     for action, (_, level, bid_strain) in enumerate(CONTRACTS):
         ts = trick_perm[bid_strain]
         best_ns = []
@@ -140,7 +141,7 @@ def dd_cooperative_score(tricks: np.ndarray, side: int, vulnerable: bool) -> int
     Returned from that partnership's perspective and clamped at zero because the
     partnership may pass the deal out.
     """
-    trick_perm = (3, 2, 1, 0, 4)
+    trick_perm = STRAIN_PERM
     best = 0
     for action, (_, level, bid_strain) in enumerate(CONTRACTS):
         del action
@@ -169,6 +170,6 @@ def own_contract_score(state: AuctionState, tricks: np.ndarray, side: int) -> in
     _, level, strain = CONTRACTS[contract]
     declarer = next(
         seat for action, seat in own_calls if CONTRACTS[action][2] == strain)
-    table_strain = (3, 2, 1, 0, 4)[strain]
+    table_strain = STRAIN_PERM[strain]
     return contract_score(level, strain, int(tricks[declarer, table_strain]),
                           doubled=0, vulnerable=state.vulnerable(side))
