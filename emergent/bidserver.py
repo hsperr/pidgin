@@ -31,14 +31,13 @@ import torch
 from flask import Flask, jsonify, request, send_from_directory
 
 from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
+from bridgezero.bridge.calls import PASS
 from bridgezero.bridge.scoring import (contract_score, dd_par_score, own_contract_score,
                                        terminal_ns_score)
 from bridgezero.contract.environment import AUCTION_FEATURES
 from bridgezero.fourseat.model import (competitive_log_probs, load_fourseat_checkpoint,
                                        policy_log_probs)
-from bridgezero.fourseat.state import features_from_history
-from emergent import apis, playdesk, tabledesk
+from emergent import apis, engine, playdesk, tabledesk
 from emergent.deck import (CALL_CHARS, HCP_W, N_CALLS, NAMES, RANKS, SEAT_NAMES, SUITS,
                            TRUMP_TO_BID_STRAIN, call_name, call_token, deal_owners,
                            decode_deal, encode_deal, owners_to_bitmaps, owners_to_pbn)
@@ -55,33 +54,21 @@ STATIC_DIR = os.path.join(HERE, "bidserver_static")
 MODELS_DIR = os.path.join(os.path.dirname(HERE), "models")
 
 app = Flask(__name__, static_folder=None)
-MODELS = OrderedDict()   # id -> bot
+MODELS = engine.BID_MODELS   # id -> bot
 GAMES = OrderedDict()    # game id -> game dict
 MAX_GAMES = 300
 LOCK = threading.Lock()
 
 
-def competitive_features(history, actor):
-    """E28 (D5OWN4XC) input: the 149 double bits + [149] Pass would end the auction +
-    [150] standing redoubled. Copy of fourseat/competitive.py, whose imports pull in the trainer."""
-    b = len(history)
-    z = torch.zeros(b)
-    feats = features_from_history(history, torch.zeros(b, dtype=torch.long), z, z, actor, doubles=True)
-    extra = torch.zeros(len(history), 2)
-    if history.shape[1]:
-        pos = torch.arange(history.shape[1])[None]
-        none = torch.full_like(history, -1)
-        valid = history >= 0
-        last_bid = torch.where(valid & (history < PASS), pos, none).max(1).values
-        last_active = torch.where(valid & (history != PASS), pos, none).max(1).values
-        last_xx = torch.where(history == REDOUBLE, pos, none).max(1).values
-        trailing = valid.sum(1) - 1 - last_active
-        extra[:, 0] = ((last_bid >= 0) & (trailing == 2)).float()
-        extra[:, 1] = (last_xx > last_bid).float()
-    return torch.cat((feats, extra), 1)
-
-
 # ------------------------------------------------------------------- models
+#
+# Each family's `decide(hand, calls, dealer, vul, legal)` is its one forward pass and
+# its greedy call: engine.choose_call reads it for every page and API, and `view`
+# draws the desk's panels from the same pass. `hand` is a (1, 52) float tensor.
+
+def hand_tensor(game, seat):
+    return torch.tensor(game["bitmaps"][seat], dtype=torch.float32)[None]
+
 
 class Phase1Bot:
     """Phase 1 SeatNet: one Q per call, argmax Q."""
@@ -115,13 +102,22 @@ class Phase1Bot:
         return st
 
     @torch.no_grad()
+    def decide(self, hand, calls, dealer, vul, legal):
+        if dealer or any(vul):
+            raise ValueError("a phase 1 net only knows dealer North, nobody vulnerable")
+        seat, t = len(calls) % 4, len(calls)
+        st = self._state(calls)
+        hv = self.net.hand_enc(hand)
+        q = self.net._base_q(self.net._trunk(hand, st, seat, t, hv))[0].tolist()
+        q += [0.0] * (N_CALLS - len(q))         # no XX row
+        pick = max((qi, c) for c, qi in enumerate(q) if legal[c])[1]
+        return {"q": q, "policy": None, "pick": pick, "st": st, "hv": hv}
+
+    @torch.no_grad()
     def view(self, game, legal):
         calls, seat, t = game["calls"], len(game["calls"]) % 4, len(game["calls"])
-        net, st = self.net, self._state(calls)
-        h = torch.tensor(game["bitmaps"][seat], dtype=torch.float32)[None]
-        hv = net.hand_enc(h)
-        q = net._base_q(net._trunk(h, st, seat, t, hv))[0].tolist()
-        q += [0.0] * (N_CALLS - len(q))         # no XX row
+        d = self.decide(hand_tensor(game, seat), calls, 0, (False, False), legal)
+        net, st, hv, q = self.net, d["st"], d["hv"], d["q"]
         # rebuild the exact input vector _trunk made, for the dump
         lastv = net.rung(st.last.clamp(min=0)) if st.last[0] >= 0 else net.no_bid.unsqueeze(0)
         mine = float((st.lastseat[0] >= 0) and ((int(st.lastseat[0]) % 2) == (seat % 2)))
@@ -139,9 +135,8 @@ class Phase1Bot:
             segments.append({"name": name, "values": x[i:i + n]})
             i += n
         assert i == len(x), (i, len(x))
-        pick = max((qi, c) for c, qi in enumerate(q) if legal[c])[1]
         return {
-            "primary": "q", "q": q, "policy": None, "pick": pick,
+            "primary": "q", "q": q, "policy": None, "pick": d["pick"],
             "input": {"size": len(x), "scalars": list(zip(self.SCALARS, x[-len(self.SCALARS):])),
                       "segments": segments,
                       "note": "Bids and doubles go in as sums of learned 48-d rung codes, so those "
@@ -181,12 +176,10 @@ class FourSeatBot:
     explains = True
 
     def features(self, history, seats):
-        """(B, width) inputs for B rows, each row's own seat on turn."""
-        if self.competitive:
-            return competitive_features(history, seats)
+        """(B, width) inputs for B rows, each row's own seat on turn (dealer North, no vul)."""
         z = torch.zeros(len(history))
-        return features_from_history(history, torch.zeros(len(history), dtype=torch.long),
-                                     z, z, seats, self.doubles)
+        return engine.fourseat_features(self, history, torch.zeros(len(history), dtype=torch.long),
+                                        z, z, seats)
 
     def log_probs(self, out, mask):
         return (competitive_log_probs(out, mask) if self.competitive
@@ -194,36 +187,28 @@ class FourSeatBot:
 
     def mask(self, st):
         """This model's legal calls in an AuctionState (X/XX rules can be narrower)."""
-        m = st.legal_mask().copy()
-        if not self.doubles:
-            m[DOUBLE] = False
-        if not self.redouble:
-            m[REDOUBLE] = False
-        if self.final_only and not (st.last_contract >= 0 and st.pass_count == 2):
-            m[DOUBLE] = m[REDOUBLE] = False
-        return m
+        return np.array(engine.legal_calls(self, st))
+
+    @torch.no_grad()
+    def decide(self, hand, calls, dealer, vul, legal):
+        hist = torch.tensor([calls], dtype=torch.long) if calls else torch.zeros(1, 0, dtype=torch.long)
+        seat = (dealer + len(calls)) % 4
+        feats = engine.fourseat_features(self, hist, torch.tensor([dealer]),
+                                         torch.tensor([float(vul[0])]), torch.tensor([float(vul[1])]),
+                                         torch.tensor([seat]))
+        out = self.net(hand, feats)
+        n = self.net.n_actions
+        probs = self.log_probs(out, torch.tensor([legal[:n]]))[0].exp()
+        pad = [0.0] * (N_CALLS - n)
+        return {"policy": probs.tolist() + pad, "q": out["contract_q"][0].tolist() + pad,
+                "pick": int(probs.argmax()), "out": out, "feats": feats}
 
     @torch.no_grad()
     def view(self, game, legal):
-        calls = game["calls"]
-        seat = len(calls) % 4
-        hist = torch.tensor([calls], dtype=torch.long)
-        z = torch.zeros(1)
-        if self.competitive:
-            feats = competitive_features(hist, torch.tensor([seat]))
-        else:
-            feats = features_from_history(hist, torch.zeros(1, dtype=torch.long), z, z,
-                                          torch.tensor([seat]), self.doubles)
-        hand = torch.tensor(game["bitmaps"][seat], dtype=torch.float32)[None]
-        out = self.net(hand, feats)
-        n = self.net.n_actions
-        mask = torch.tensor([legal[:n]])
-        probs = policy_log_probs(out, mask)[0].exp()
-        pad = [0.0] * (N_CALLS - n)
-        policy = probs.tolist() + pad
-        q = out["contract_q"][0].tolist() + pad
-        pick = int(probs.argmax())
-        f = feats[0].tolist()
+        seat = len(game["calls"]) % 4
+        d = self.decide(hand_tensor(game, seat), game["calls"], 0, (False, False), legal)
+        out, policy, q, pick = d["out"], d["policy"], d["q"], d["pick"]
+        f = d["feats"][0].tolist()
         tricks = torch.softmax(out["trick_logits"][0], -1)          # (2 declarers, 5 strains, 14)
         expected = (tricks * torch.arange(14)).sum(-1).tolist()
         heads = {"tricks": {"me": expected[0], "partner": expected[1],
@@ -285,20 +270,24 @@ class BrlBot:
                      "WBridge5) · policy only, no Q or trick head · 480-d pgx input")
 
     @torch.no_grad()
-    def view(self, game, legal):
+    def decide(self, hand, calls, dealer, vul, legal):
         from emergent.brl_player import encode, _PGX_TO_OURS
-        calls = game["calls"]
-        seat = len(calls) % 4
-        hand = torch.tensor(game["bitmaps"][seat], dtype=torch.float32)[None]
+        seat = (dealer + len(calls)) % 4
         hist = torch.tensor([calls], dtype=torch.long) if calls else torch.zeros(1, 0, dtype=torch.long)
-        z = torch.zeros(1, dtype=torch.long)
-        x = encode(hand, hist, z, z, z, torch.tensor([seat]))
+        x = encode(hand, hist, torch.tensor([dealer]), torch.tensor([bool(vul[0])]),
+                   torch.tensor([bool(vul[1])]), torch.tensor([seat]))
         logits_pgx = self.net(x)[0]
         logits = torch.empty(N_CALLS)
         logits[_PGX_TO_OURS] = logits_pgx                  # our call order: bids, P, X, XX
         mask = torch.tensor(legal[:N_CALLS])
         probs = torch.softmax(logits.masked_fill(~mask, -torch.inf), -1)
-        f = x[0].tolist()
+        return {"policy": probs.tolist(), "q": logits.tolist(), "pick": int(probs.argmax()), "x": x}
+
+    @torch.no_grad()
+    def view(self, game, legal):
+        seat = len(game["calls"]) % 4
+        d = self.decide(hand_tensor(game, seat), game["calls"], 0, (False, False), legal)
+        f = d["x"][0].tolist()
         rel = ["me", "LHO", "partner", "RHO"]
         segments = [{"name": "vulnerability", "values": f[0:4]},
                     {"name": "passed before any bid (me/L/P/R)", "values": f[4:8]}]
@@ -308,8 +297,7 @@ class BrlBot:
                                  "values": [f[8 + 12 * b + 4 * k + r] for b in range(L)]})
         segments.append({"name": "my hand (OpenSpiel card order)", "values": f[428:480]})
         return {
-            "primary": "policy", "q": logits.tolist(), "policy": probs.tolist(),
-            "pick": int(probs.argmax()),
+            "primary": "policy", "q": d["q"], "policy": d["policy"], "pick": d["pick"],
             "input": {"size": len(f), "scalars": list(zip(self.SCALARS, f[:8])), "segments": segments,
                       "note": "External brl net: every input is a 0/1 bit of the pgx observation, "
                               "hand included. It has no Q head, so the Q view shows raw policy logits."},
@@ -345,7 +333,7 @@ def new_game(owners=None, model=None):
     tricks = np.array([[table[d, p] for d in DENOMS] for p in PLAYERS], dtype=np.int64)  # (4,5)
     return {"owners": owners, "bitmaps": owners_to_bitmaps(owners), "tricks": tricks,
             "par": dd_par_score(tricks, False, False), "calls": [],
-            "model": model if model in MODELS else next(iter(MODELS))}
+            "model": model if model in MODELS else engine.default_bid_model()}
 
 
 def auction(game):
@@ -354,16 +342,7 @@ def auction(game):
 
 def legal_calls(game):
     """38 bools: AuctionState legality, limited to the calls this model can make."""
-    st = auction(game)
-    bot = MODELS[game["model"]]
-    mask = st.legal_mask()[:N_CALLS].tolist()
-    if not bot.doubles:
-        mask[DOUBLE] = False
-    if not bot.redouble:
-        mask[REDOUBLE] = False
-    if bot.final_only and not (st.last_contract >= 0 and st.pass_count == 2):
-        mask[DOUBLE] = mask[REDOUBLE] = False
-    return mask
+    return engine.legal_calls(MODELS[game["model"]], auction(game))
 
 
 def add_call(game, call):
@@ -458,8 +437,8 @@ def state_dump(game):
 
 
 def net_pick(game):
-    legal = legal_calls(game)
-    return MODELS[game["model"]].view(game, legal)["pick"]
+    seat = len(game["calls"]) % 4
+    return engine.choose_call(MODELS[game["model"]], game["bitmaps"][seat], game["calls"])[0]
 
 
 # ------------------------------------------------------------------- routes

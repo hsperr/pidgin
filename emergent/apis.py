@@ -27,13 +27,10 @@ import hashlib
 from xml.sax.saxutils import quoteattr
 
 import numpy as np
-import torch
 from flask import Response, jsonify, request
 
 from bridgezero.bridge.auction import AuctionState
 from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
-from bridgezero.fourseat.model import competitive_log_probs, policy_log_probs
-from bridgezero.fourseat.state import features_from_history
 from emergent import engine, playdesk
 from emergent.deck import RANKS, SUITS, call_token, card_name, trick_best
 
@@ -143,8 +140,8 @@ def check_auction(calls: list[int]) -> AuctionState:
 # ------------------------------------------------------------------ bidding
 
 def bid_model(model_id: str | None):
-    models = DESK.MODELS
-    mid = model_id or next(iter(models))
+    models = engine.BID_MODELS
+    mid = model_id or engine.default_bid_model()
     bot = models.get(mid)
     if bot is None:
         raise ApiError(f"unknown model {mid!r}; known: {', '.join(models)}")
@@ -153,42 +150,13 @@ def bid_model(model_id: str | None):
     return mid, bot
 
 
-def auction_features(bot, calls: list[int], dealer: int, vul_ns: bool, vul_ew: bool) -> torch.Tensor:
-    """The net's auction input with the real dealer and vulnerability."""
-    hist = torch.tensor([calls], dtype=torch.long) if calls else torch.zeros(1, 0, dtype=torch.long)
-    actor = torch.tensor([(dealer + len(calls)) % 4])
-    feats = features_from_history(hist, torch.tensor([dealer]), torch.tensor([float(vul_ns)]),
-                                  torch.tensor([float(vul_ew)]), actor, doubles=bot.doubles)
-    if not bot.competitive:
-        return feats
-    extra = torch.zeros(1, 2)
-    if calls:
-        pos = torch.arange(hist.shape[1])[None]
-        none = torch.full_like(hist, -1)
-        last_bid = torch.where(hist < PASS, pos, none).max(1).values
-        last_active = torch.where(hist != PASS, pos, none).max(1).values
-        last_xx = torch.where(hist == REDOUBLE, pos, none).max(1).values
-        extra[:, 0] = ((last_bid >= 0) & (len(calls) - 1 - last_active == 2)).float()
-        extra[:, 1] = (last_xx > last_bid).float()
-    return torch.cat((feats, extra), 1)
-
-
-@torch.no_grad()
-def choose_call(bot, hand: list[int], calls: list[int], dealer: int, vul: tuple[bool, bool]):
-    """(call, [(call, prob), ...] best first) — greedy, as in every match."""
-    st = check_auction(calls)
-    if st.ended:
+def api_call(bot, hand: list[int], calls: list[int], dealer: int, vul: tuple[bool, bool]):
+    """(call, [(call, prob), ...] best first) from `engine.choose_call`, after the checks."""
+    if check_auction(calls).ended:
         raise ApiError("the auction is already over")
-    bitmap = torch.zeros(1, 52)
-    bitmap[0, hand] = 1.0
-    out = bot.net(bitmap, auction_features(bot, calls, dealer, *vul))
-    n = bot.net.n_actions
-    mask = torch.tensor([bot.mask(st)[:n].tolist()])
-    probs = (competitive_log_probs(out, mask) if bot.competitive
-             else policy_log_probs(out, mask))[0].exp()
-    order = probs.argsort(descending=True).tolist()
-    top = [(c, float(probs[c])) for c in order if mask[0, c]][:4]
-    return top[0][0], top
+    bitmap = np.zeros(52, dtype=np.float32)
+    bitmap[hand] = 1.0
+    return engine.choose_call(bot, bitmap, calls, dealer, vul)
 
 
 def meaning(model_id: str, calls: list[int], call: int) -> tuple[str, bool]:
@@ -385,7 +353,7 @@ def register(app):
                     raise ApiError(f"it is {SEATS[(dealer + len(calls)) % 4]}'s call, not {SEATS[pov]}'s")
                 hand = parse_hand(a.get("nesw"[pov], ""), "nesw"[pov])
                 mid, bot = bid_model(a.get("model"))
-                call, _ = choose_call(bot, hand, calls, dealer, vul)
+                call, _ = api_call(bot, hand, calls, dealer, vul)
                 text, _alert = meaning(mid, calls, call)
                 answer = f'<r type="bid" bid="{bid_token(call, "bbo")}" meaning={quoteattr(text)}/>'
             else:
@@ -417,7 +385,7 @@ def register(app):
     @app.get("/apis/brill/")
     def api_brill_root():
         return jsonify(ok=True, api="Brill Seat Robot API (BEN-compatible)",
-                       bid_models=list(DESK.MODELS), play_models=list(playdesk.MODELS),
+                       bid_models=list(engine.BID_MODELS), play_models=list(engine.PLAY_MODELS),
                        endpoints=["/apis/brill/bid", "/apis/brill/lead", "/apis/brill/play"])
 
     def brill_common(a):
@@ -440,7 +408,7 @@ def register(app):
                 raise ApiError(f"seat {SEATS[seat]} disagrees with dealer + ctx "
                                f"({SEATS[(dealer + len(calls)) % 4]} is to call)")
             mid, bot = bid_model(request.args.get("model"))
-            call, top = choose_call(bot, hand, calls, dealer, vul)
+            call, top = api_call(bot, hand, calls, dealer, vul)
             text, alert = meaning(mid, calls, call)
         except ApiError as exc:
             return error(str(exc))

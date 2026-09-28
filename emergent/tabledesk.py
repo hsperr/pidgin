@@ -25,9 +25,9 @@ The bidding net comes from `models/models.json`, the E48 card-play net from
 on the other two desks, because the offline "what this call means" corpus was
 built under those conditions.
 
-Nothing here reimplements a net. The auction runs through `bidserver.MODELS`,
-the play through `playdesk.MODELS` and a `playdesk`-shaped game dict, so a board
-played here is played by the same code the other desks use.
+Nothing here reimplements a net. Every call and card the nets make comes from
+`emergent.engine` (the play on a `playdesk`-shaped game dict), so a board played
+here is played by the same code the other desks and the APIs use.
 
 What the hints are allowed to say is the whole point of this file. Three sources,
 kept apart in the payload and on the page:
@@ -93,15 +93,11 @@ DESK = None      # the bid desk module itself, handed over by `load`
 
 
 def bid_models():
-    return DESK.MODELS if DESK is not None else OrderedDict()
+    return engine.BID_MODELS
 
 
 def play_models():
-    return playdesk.MODELS
-
-
-def first_id(models):
-    return next(iter(models)) if models else None
+    return engine.PLAY_MODELS
 
 
 def new_board(user_seat=2, model=None, play_model=None, hints=False, peek=False,
@@ -115,7 +111,7 @@ def new_board(user_seat=2, model=None, play_model=None, hints=False, peek=False,
         "bitmaps": owners_to_bitmaps(owners),
         "user_seat": int(user_seat) % 4,
         "calls": [],
-        "model": model if model in bm else first_id(bm),
+        "model": model if model in bm else engine.default_bid_model(),
         "play_model": play_model if play_model in pm else engine.default_play_model(),
         "hints": bool(hints),
         "peek": bool(peek),
@@ -147,16 +143,16 @@ def legal_calls(game):
     """38 bools: the rules, narrowed to the calls this bidding model can make."""
     st = auction_of(game)
     bot = bid_bot(game)
-    mask = st.legal_mask()[:N_CALLS].tolist()
+    return st.legal_mask()[:N_CALLS].tolist() if bot is None else engine.legal_calls(bot, st)
+
+
+def net_call(game):
+    """The bidding bot's call for the seat on turn, or None without a model."""
+    bot = bid_bot(game)
     if bot is None:
-        return mask
-    if not bot.doubles:
-        mask[DOUBLE] = False
-    if not getattr(bot, "redouble", False):
-        mask[REDOUBLE] = False
-    if getattr(bot, "final_only", False) and not (st.last_contract >= 0 and st.pass_count == 2):
-        mask[DOUBLE] = mask[REDOUBLE] = False
-    return mask
+        return None
+    seat = auction_of(game).turn
+    return engine.choose_call(bot, game["bitmaps"][seat], game["calls"], DEALER)[0]
 
 
 def bid_view(game):
@@ -272,8 +268,8 @@ def advance(game, limit=60):
         if ph == "auction":
             if auction_of(game).turn == game["user_seat"]:
                 return acted
-            view, legal = bid_view(game)
-            if view is None or not add_call(game, view["pick"]):
+            call = net_call(game)
+            if call is None or not add_call(game, call):
                 return acted
             acted += 1
             continue
