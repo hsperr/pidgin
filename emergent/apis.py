@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from xml.sax.saxutils import quoteattr
 
 import numpy as np
@@ -36,6 +37,8 @@ from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
 from bridgezero.fourseat.model import competitive_log_probs, policy_log_probs
 from bridgezero.fourseat.state import features_from_history
 from emergent import playdesk
+
+SEARCH_LOCK = threading.Lock()
 
 DESK = None                      # the live bid desk module, set by load()
 SEATS = "NESW"
@@ -300,8 +303,14 @@ def fill_owners(known: dict[int, int], need: dict[int, int], voids: dict[int, se
 
 @torch.no_grad()
 def choose_card(bot, *, seat: int, hand: list[int], dummy: list[int] | None, played: list[int],
-                calls: list[int], dealer: int, vul: tuple[bool, bool], seed_text: str):
-    """(card, [(card, prob), ...]) for the card this seat owes (dummy's when declarer asks)."""
+                calls: list[int], dealer: int, vul: tuple[bool, bool], seed_text: str,
+                search: bool = True):
+    """(card, [(card, prob), ...]) for the card this seat owes (dummy's when declarer asks).
+
+    The card comes from the same PIMC search /table plays with (declarer always, defence
+    from trick SEARCH_DEFENCE_FROM); the probabilities are the plain net's, for context.
+    The search never reads the filled-in hidden hands: it samples its own layouts from
+    what this seat can see."""
     check_auction(calls)
     contract = playdesk.contract_from_calls(calls, dealer)
     if contract is None:
@@ -358,6 +367,11 @@ def choose_card(bot, *, seat: int, hand: list[int], dummy: list[int] | None, pla
     probs = torch.tensor(view["probs"])
     order = [int(i) for i in probs.argsort(descending=True) if legal[int(i)]]
     card = order[0]
+    if search:
+        with SEARCH_LOCK:                     # the searcher keeps the auction between calls
+            player = bot.searcher()
+            player.start(c)
+            card = int(player.choose(batch, c, batch.legal(), len(played))[0])
     return card, [(i, float(probs[i])) for i in order[:4]]
 
 

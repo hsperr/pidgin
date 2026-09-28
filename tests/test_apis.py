@@ -154,14 +154,34 @@ def test_filler_never_changes_the_card(client):
         asked = declarer if turn == dummy else turn
         card, _ = apis.choose_card(bot, seat=asked, hand=hands[asked],
                                    dummy=hands[dummy] if ctx_play else None, played=ctx_play,
-                                   calls=calls, dealer=0, vul=(False, False), seed_text="x")
+                                   calls=calls, dealer=0, vul=(False, False), seed_text="x",
+                                   search=False)
         ctx_play.append(card)
     _, turn = apis.trick_seats(ctx_play, leader, 0)
     asked = declarer if turn == dummy else turn
     answers = {apis.choose_card(bot, seat=asked, hand=hands[asked], dummy=hands[dummy],
                                 played=ctx_play, calls=calls, dealer=0, vul=(False, False),
-                                seed_text=f"filler{k}")[1][0] for k in range(6)}
+                                seed_text=f"filler{k}", search=False)[1][0]
+               for k in range(6)}
     assert len({round(p, 6) for _, p in answers}) == 1 and len({c for c, _ in answers}) == 1
+
+
+def test_declarer_card_comes_from_search(client):
+    """Declarer's cards go through the PIMC search, as on /table, and stay legal."""
+    _, bot = apis.play_model(None)
+    hands = deal(11)
+    calls = [apis.parse_call(t) for t in ("1S", "--", "2S", "--", "4S", "--", "--", "--")]
+    declarer = apis.playdesk.contract_from_calls(calls, 0)["declarer"]
+    dummy = (declarer + 2) % 4
+    played = [apis.choose_card(bot, seat=(declarer + 1) % 4, hand=hands[(declarer + 1) % 4],
+                               dummy=None, played=[], calls=calls, dealer=0,
+                               vul=(False, False), seed_text="x")[0]]
+    before = bot.searcher().solves
+    card, _ = apis.choose_card(bot, seat=declarer, hand=hands[declarer], dummy=hands[dummy],
+                               played=played, calls=calls, dealer=0, vul=(False, False),
+                               seed_text="x")
+    assert bot.searcher().solves > before
+    assert card in hands[dummy]
 
 
 def test_errors_are_400_json(client):
