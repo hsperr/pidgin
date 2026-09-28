@@ -60,7 +60,7 @@ from flask import jsonify, request, send_from_directory
 from bridgezero.bridge.auction import AuctionState
 from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
 from bridgezero.bridge.scoring import contract_score, dd_par_score, imps
-from emergent import playdesk
+from emergent import engine, playdesk
 from emergent.deck import (HCP_W, N_CALLS, NAMES, RANKS, SEAT_NAMES, STRAINS, SUITS,
                            TRUMP_TO_BID_STRAIN, beats, call_name, call_token, card_name, trick_best)
 from emergent.deck import deal_owners, owners_to_bitmaps
@@ -116,10 +116,10 @@ def new_board(user_seat=2, model=None, play_model=None, hints=False, peek=False,
         "user_seat": int(user_seat) % 4,
         "calls": [],
         "model": model if model in bm else first_id(bm),
-        "play_model": play_model if play_model in pm else first_id(pm),
+        "play_model": play_model if play_model in pm else engine.default_play_model(),
         "hints": bool(hints),
         "peek": bool(peek),
-        "search": True,      # PIMC for the bot's declarer play; see playdesk.net_card
+        "search": engine.CONFIG.search,     # the page's toggle; see engine.choose_card
 
         "board_no": int(board_no),
         "pg": None,          # the playdesk game dict, built when the auction ends
@@ -185,7 +185,7 @@ def begin_play(game):
     game["pg"] = playdesk.new_game(owners=game["owners"], calls=list(game["calls"]),
                                    dealer=DEALER, vul=(False, False),
                                    model=game["play_model"])
-    game["pg"]["search"] = game.get("search", True)
+    game["pg"]["search"] = game.get("search", engine.CONFIG.search)
     game["tricks"] = game["pg"]["tricks"]
 
 
@@ -455,7 +455,7 @@ def state_dump(game):
         "last_trick": last,
         "trick_no": 0 if batch is None else batch.trick_no,
         "tricks_won": None,
-        "hints": game["hints"], "peek": game["peek"], "search": game.get("search", True),
+        "hints": game["hints"], "peek": game["peek"], "search": game.get("search", engine.CONFIG.search),
         "model": game["model"], "play_model": game["play_model"],
         "models": [{"id": b.id, "label": b.label} for b in bm.values()],
         "play_models": [{"id": b.id, "label": b.label} for b in pmd.values()],
@@ -1390,7 +1390,7 @@ def board_from_link(body, prev):
                      model=model or prev["model"], play_model=play_model or prev["play_model"],
                      hints=hints, peek=prev["peek"], owners=owners,
                      board_no=prev["board_no"] + 1)
-    game["search"] = prev.get("search", True)
+    game["search"] = prev.get("search", engine.CONFIG.search)
 
     for i, ch in enumerate(text("auction", 400)):
         call = DESK.CALL_CHARS.find(ch)

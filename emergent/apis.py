@@ -24,7 +24,6 @@ tests/test_apis.py checks that the chosen card does not change when the filler d
 from __future__ import annotations
 
 import hashlib
-import threading
 from xml.sax.saxutils import quoteattr
 
 import numpy as np
@@ -35,10 +34,8 @@ from bridgezero.bridge.auction import AuctionState
 from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
 from bridgezero.fourseat.model import competitive_log_probs, policy_log_probs
 from bridgezero.fourseat.state import features_from_history
-from emergent import playdesk
+from emergent import engine, playdesk
 from emergent.deck import RANKS, SUITS, call_token, card_name, trick_best
-
-SEARCH_LOCK = threading.Lock()
 
 DESK = None                      # the live bid desk module, set by load()
 SEATS = "NESW"
@@ -240,10 +237,10 @@ def meaning(model_id: str, calls: list[int], call: int) -> tuple[str, bool]:
 # ------------------------------------------------------------------ card play
 
 def play_model(model_id: str | None):
-    models = playdesk.MODELS
+    models = engine.PLAY_MODELS
     if not models:
         raise ApiError("no card-play model is loaded")
-    mid = model_id or next(iter(models))
+    mid = model_id or engine.default_play_model()
     if mid not in models:
         raise ApiError(f"unknown play model {mid!r}; known: {', '.join(models)}")
     return mid, models[mid]
@@ -289,16 +286,15 @@ def fill_owners(known: dict[int, int], need: dict[int, int], voids: dict[int, se
     raise ApiError("could not place the unseen cards consistently with the play so far")
 
 
-@torch.no_grad()
-def choose_card(bot, *, seat: int, hand: list[int], dummy: list[int] | None, played: list[int],
-                calls: list[int], dealer: int, vul: tuple[bool, bool], seed_text: str,
-                search: bool = True):
+def api_card(bot, *, seat: int, hand: list[int], dummy: list[int] | None, played: list[int],
+             calls: list[int], dealer: int, vul: tuple[bool, bool], seed_text: str,
+             search: bool | None = None):
     """(card, [(card, prob), ...]) for the card this seat owes (dummy's when declarer asks).
 
-    The card comes from the same PIMC search /table plays with (declarer always, defence
-    from trick SEARCH_DEFENCE_FROM); the probabilities are the plain net's, for context.
-    The search never reads the filled-in hidden hands: it samples its own layouts from
-    what this seat can see."""
+    The position is rebuilt from what this seat sees, then `engine.choose_card` picks,
+    as for /table: search per engine.CONFIG unless ``search`` says otherwise; the
+    probabilities are the plain net's, for context. The search never reads the
+    filled-in hidden hands: it samples its own layouts from what this seat can see."""
     check_auction(calls)
     contract = playdesk.contract_from_calls(calls, dealer)
     if contract is None:
@@ -349,17 +345,7 @@ def choose_card(bot, *, seat: int, hand: list[int], dummy: list[int] | None, pla
     batch = playdesk.batch_of(game, c)
     if int(batch.to_play()[0]) != turn:
         raise ApiError("internal: play engine disagrees about whose turn it is")
-    legal = batch.legal()[0]
-    view = bot.view(c, batch, len(played))
-    probs = torch.tensor(view["probs"])
-    order = [int(i) for i in probs.argsort(descending=True) if legal[int(i)]]
-    card = order[0]
-    if search:
-        with SEARCH_LOCK:                     # the searcher keeps the auction between calls
-            player = bot.searcher()
-            player.start(c)
-            card = int(player.choose(batch, c, batch.legal(), len(played))[0])
-    return card, [(i, float(probs[i])) for i in order[:4]]
+    return engine.choose_card(bot, c, batch, search)
 
 
 # ------------------------------------------------------------------ routes
@@ -416,8 +402,8 @@ def register(app):
                     dummy = parse_hand(a.get("nesw"[other], ""), "nesw"[other])
                 mid, bot = play_model(a.get("play_model"))
                 seed_text = "|".join(a.get(k, "") for k in ("d", "v", "pov", "n", "e", "s", "w", "h"))
-                card, _ = choose_card(bot, seat=seat, hand=hand, dummy=dummy, played=played,
-                                      calls=calls, dealer=dealer, vul=vul, seed_text=seed_text)
+                card, _ = api_card(bot, seat=seat, hand=hand, dummy=dummy, played=played,
+                                   calls=calls, dealer=dealer, vul=vul, seed_text=seed_text)
                 answer = f'<r type="play" card="{card_name(card)}"/>'
         except ApiError as exc:
             body = f'<?xml version="1.0" encoding="UTF-8"?>\n<sc_bm error={quoteattr(str(exc))}/>\n'
@@ -477,8 +463,8 @@ def register(app):
             dummy = parse_hand(a["dummy"], "dummy") if a.get("dummy") else None
             mid, bot = play_model(a.get("play_model"))
             seed_text = "|".join(a.get(k, "") for k in ("board", "dealer", "vul", "seat", "hand", "dummy", "ctx", "played"))
-            card, top = choose_card(bot, seat=seat, hand=hand, dummy=dummy, played=played,
-                                    calls=calls, dealer=dealer, vul=vul, seed_text=seed_text)
+            card, top = api_card(bot, seat=seat, hand=hand, dummy=dummy, played=played,
+                                 calls=calls, dealer=dealer, vul=vul, seed_text=seed_text)
         except ApiError as exc:
             return error(str(exc))
         return jsonify(card=card_name(card), model=mid,

@@ -38,7 +38,8 @@ from bridgezero.bridge.deals import deal_to_pbn
 from bridgezero.bridge.play import PlayBatch
 from bridgezero.bridge.scoring import contract_score
 from bridgezero.play.data import N_CALLS, Contracts, load_contracts
-from bridgezero.play.model import PLAY_FEATURES, PlayNet, encode
+from bridgezero.play.model import PLAY_FEATURES, PlayNet
+from emergent import engine
 from emergent.deck import (CALL_CHARS, HCP_W, RANKS, SEAT_NAMES, STRAINS, SUITS,
                            TRUMP_TO_BID_STRAIN, call_name, card_name, deal_owners, decode_cards,
                            decode_deal, encode_cards, encode_deal)
@@ -49,18 +50,8 @@ STATIC_DIR = os.path.join(HERE, "bidserver_static")
 MODELS_DIR = os.path.join(os.path.dirname(HERE), "models")
 BENCH_FILE = os.path.join(MODELS_DIR, "bench_100k.npz")
 BENCH_LIMIT = int(os.environ.get("PLAY_BENCH_LIMIT", "4000"))
-# PIMC at the table. 20 layouts is where the offline gain flattens (+0.99 IMP a
-# board over the plain net); the budget is what keeps the opening lead bearable on
-# a one-core box, where a trick-one solve costs ~290 ms against a laptop's 6 ms.
-SEARCH_SAMPLES = int(os.environ.get("PLAY_SEARCH_SAMPLES", "20"))
-SEARCH_BUDGET_MS = float(os.environ.get("PLAY_SEARCH_BUDGET_MS", "900"))
-# Defence searches too, but not before trick 2. Measured on 600 boards, starting at
-# trick 2 gives the same defence regret as searching every turn (0.537) for 45% of the
-# cost -- tricks 0 and 1 add nothing, and on this box they are nearly all of the price.
-SEARCH_DEFENCE = os.environ.get("PLAY_SEARCH_DEFENCE", "all")
-SEARCH_DEFENCE_FROM = int(os.environ.get("PLAY_SEARCH_DEFENCE_FROM", "2"))
 
-MODELS = OrderedDict()    # id -> PlayBot
+MODELS = engine.PLAY_MODELS    # id -> PlayBot
 GAMES = OrderedDict()     # game id -> game dict, separate from the bid desk's
 MAX_GAMES = 300
 LOCK = threading.Lock()
@@ -115,32 +106,12 @@ class PlayBot:
         cfg = state["config"]
         self.info = (f"PlayNet {cfg['width']}x{cfg['depth']} · {PLAY_FEATURES} inputs · "
                      f"policy over 52 cards + belief head")
-        self._searcher = None
-
-    def searcher(self):
-        """PIMC over this bot's own net, built on first use.
-
-        Built late because the solver's tables cost ~120 MB and most requests never
-        search. The budget matters more than the sample count here: a solve is ~300x
-        dearer at trick one than at trick seven, so a fixed count would stall the
-        opening and waste effort at the end.
-        """
-        if self._searcher is None:
-            from bridgezero.play.search import PIMCPlayer
-            self._searcher = PIMCPlayer.from_net(self.net, SEARCH_SAMPLES,
-                                                 budget_ms=SEARCH_BUDGET_MS,
-                                                 defence=SEARCH_DEFENCE,
-                                                 defence_from_trick=SEARCH_DEFENCE_FROM)
-        return self._searcher
 
     @torch.no_grad()
     def view(self, contracts, batch, step):
         """Everything the net computes for the seat on turn, ready for the page."""
-        auction = self.net.auction(contracts.calls, contracts.n_calls, contracts.dealer)
-        enc = encode(batch, contracts, step > 0, auction)
+        probs, out, enc = engine.card_policy(self, contracts, batch)
         legal = batch.legal()
-        out = self.net(enc["features"], legal)
-        probs = out["log_probs"][0].exp()
         belief = torch.softmax(out["belief"][0], -1)        # (52, 4) over relative seats
         turn = int(batch.to_play()[0])
         pick = int(probs.argmax())
@@ -319,8 +290,11 @@ def new_game(owners=None, contract=None, calls=None, dealer=0, vul=(False, False
         "level": int(contract["level"]), "doubled": int(contract["doubled"]),
         "vul_ns": bool(vul[0]), "vul_ew": bool(vul[1]),
         "played": [], "seat_mode": ["net"] * 4,
+        # This desk shows the net itself, so its cards are the net's own; /table
+        # sets its own search setting on the games it builds from here.
+        "search": False,
         "tricks": dd_table(owners), "bench_index": bench_index, "bench_dd": bench_dd,
-        "model": model if model in MODELS else (next(iter(MODELS)) if MODELS else None),
+        "model": model if model in MODELS else engine.default_play_model(),
     }
 
 
@@ -404,19 +378,13 @@ def play_card(game, card, batch=None):
 
 
 def net_card(game, contracts=None, batch=None):
+    """The bot's card for the seat on turn, searching per the game's `search` setting."""
     bot = MODELS.get(game["model"])
     if bot is None:
         return None
     c = contracts if contracts is not None else contracts_of(game)
     b = batch if batch is not None else batch_of(game, c)
-    step = len(game["played"])
-    if game.get("search"):
-        # Declarer always searches; defence per SEARCH_DEFENCE / SEARCH_DEFENCE_FROM.
-        # Turns the searcher skips fall back to the net by themselves.
-        player = bot.searcher()
-        player.start(c)
-        return int(player.choose(b, c, b.legal(), step)[0])
-    return bot.view(c, b, step)["pick"]
+    return engine.choose_card(bot, c, b, game.get("search"))[0]
 
 
 # ------------------------------------------------------------- double dummy
