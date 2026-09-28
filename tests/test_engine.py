@@ -55,7 +55,7 @@ def table_board(client, gid, owners, seat, model, auction="", search=False):
     return [bidserver.CALL_CHARS.find(ch) for ch in s["code"]["a"]], decode_cards(s["code"]["p"])
 
 
-@pytest.mark.parametrize("model", ["D_cw_s75k", "E21_last"])
+@pytest.mark.parametrize("model", ["D_cw_s75k", "E46_s40k"])
 def test_same_calls_everywhere(client, model):
     """Dealer North, nobody vulnerable: bid desk, /table and the Brill API bid alike."""
     if model not in engine.BID_MODELS:

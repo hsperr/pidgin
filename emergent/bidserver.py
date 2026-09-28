@@ -10,9 +10,9 @@ runs it under gunicorn, one worker, via `create_app` -- see deploy.sh.
 
 Two model families, each through the exact code it was trained with:
 
-- phase 1 `SeatNet` (emergent/phase1.py): Q for each call, 694-d input;
-- four-seat bridgezero nets (E18, E20b, E21; bridgezero/fourseat): policy,
-  Q, trick head, double value/gate, 147 or 149 readable input bits.
+- four-seat bridgezero nets (D, E46; bridgezero/fourseat): policy, Q, trick head,
+  double value/gate, 147 or 149 readable input bits;
+- brl FSP (emergent/brl_player.py), the external baseline.
 
 The auction rules and all scores come from bridgezero/bridge (AuctionState,
 contract_score, dd_par_score). Redouble is never offered: no model has it.
@@ -68,77 +68,6 @@ LOCK = threading.Lock()
 
 def hand_tensor(game, seat):
     return torch.tensor(game["bitmaps"][seat], dtype=torch.float32)[None]
-
-
-class Phase1Bot:
-    """Phase 1 SeatNet: one Q per call, argmax Q."""
-
-    family = "phase1"
-    redouble = False
-    final_only = False
-    SCALARS = ["turn / 10", "last bid / L", "passes / 3", "doubled", "last bid is ours", "any bid yet"]
-
-    def __init__(self, path):
-        from emergent.phase1 import SeatNet
-        ck = torch.load(path, map_location="cpu", weights_only=False)
-        cfg = ck["config"]
-        self.net = SeatNet(L, cfg["hidden"], cfg["d_hand"], cfg["d_rung"], cfg["layers"],
-                           dbl_head=cfg.get("dbl_head", False))
-        self.net.load_state_dict(ck["net"])
-        self.net.eval()
-        self.step = ck.get("step")
-        self.doubles = not cfg.get("no_double", False) and not cfg.get("own_bid", False)
-        self.info = "phase 1 SeatNet · Q per call · 694-d input"
-
-    def _state(self, calls):
-        from emergent.phase1 import St, apply_call_
-        st = St.empty(1)
-        for i, c in enumerate(calls):
-            apply_call_(st, torch.tensor([c]), i % 4)
-        return st
-
-    @torch.no_grad()
-    def decide(self, hand, calls, dealer, vul, legal):
-        if dealer or any(vul):
-            raise ValueError("a phase 1 net only knows dealer North, nobody vulnerable")
-        seat, t = len(calls) % 4, len(calls)
-        st = self._state(calls)
-        hv = self.net.hand_enc(hand)
-        q = self.net._base_q(self.net._trunk(hand, st, seat, t, hv))[0].tolist()
-        q += [0.0] * (N_CALLS - len(q))         # no XX row
-        pick = max((qi, c) for c, qi in enumerate(q) if legal[c])[1]
-        return {"q": q, "policy": None, "pick": pick, "st": st, "hv": hv}
-
-    @torch.no_grad()
-    def view(self, game, legal):
-        calls, seat, t = game["calls"], len(game["calls"]) % 4, len(game["calls"])
-        d = self.decide(hand_tensor(game, seat), calls, 0, (False, False), legal)
-        net, st, hv, q = self.net, d["st"], d["hv"], d["q"]
-        # rebuild the exact input vector _trunk made, for the dump
-        lastv = net.rung(st.last.clamp(min=0)) if st.last[0] >= 0 else net.no_bid.unsqueeze(0)
-        mine = float((st.lastseat[0] >= 0) and ((int(st.lastseat[0]) % 2) == (seat % 2)))
-        scal = torch.tensor([[t / 10.0, float(st.last[0]) / L, float(st.npass[0]) / 3.0,
-                              float(st.dblflag[0]), mine, float(st.last[0] >= 0)]])
-        rmap = net._rung_map(seat)
-        x = torch.cat([hv, net._sums(st.bid, seat, rmap), net._sums(st.dbl, seat, rmap),
-                       lastv, scal], -1)[0].tolist()
-        dh, dr = net.hand_enc.out_dim // 4, net.d
-        segs = [(f"hand enc {s}", dh) for s in "♠♥♦♣"]
-        segs += [(f"bids: {r}", dr) for r in REL_NAMES] + [(f"doubles: {r}", dr) for r in REL_NAMES]
-        segs += [("last bid", dr), ("scalars", len(self.SCALARS))]
-        segments, i = [], 0
-        for name, n in segs:
-            segments.append({"name": name, "values": x[i:i + n]})
-            i += n
-        assert i == len(x), (i, len(x))
-        return {
-            "primary": "q", "q": q, "policy": None, "pick": d["pick"],
-            "input": {"size": len(x), "scalars": list(zip(self.SCALARS, x[-len(self.SCALARS):])),
-                      "segments": segments,
-                      "note": "Bids and doubles go in as sums of learned 48-d rung codes, so those "
-                              "strips are learned codes, not readable bits."},
-            "heads": None,
-        }
 
 
 class FourSeatBot:
@@ -309,8 +238,7 @@ def load_models(models_dir=MODELS_DIR):
         if m.get("family") == "brl":
             bot = BrlBot(path)
         else:
-            ck = torch.load(path, map_location="cpu", weights_only=False)
-            bot = FourSeatBot(path) if "model_kind" in ck else Phase1Bot(path)
+            bot = FourSeatBot(path)
         bot.id, bot.label, bot.file = m["id"], m["label"], m["file"]
         MODELS[bot.id] = bot
 

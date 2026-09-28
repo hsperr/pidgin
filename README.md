@@ -37,7 +37,7 @@ and never searches.
 
 ## Update to the newest snapshots, then deploy
 
-    ./sync_models.sh      # bridgezero code + E21/E20b/E18 snapshots from ~/code/bridge_new
+    ./sync_models.sh      # bridgezero code + E46/play snapshots from ~/code/bridge_new
     ./deploy.sh
 
 Server config (nginx, systemd) lives in `~/code/infra` (app `bridge`, port 3500).
@@ -46,20 +46,18 @@ The unit still passes `ck.pt` to `create_app`; that argument is ignored now.
 ## Models
 
 `models/models.json` lists what the dropdown shows; the first entry is the
-default. Two families are supported:
+default. Kept: D (default), E46 and brl. Two families are supported:
 
-- bridgezero four-seat checkpoints (`bridgezero-fourseat-0.1`: E18, E20b, E21),
-  copied by `sync_models.sh` without the critic. Edit its `copy` lines to add runs.
-- phase 1 `SeatNet` checkpoints (`models/own_s16_step5250.pt`).
+- bridgezero four-seat checkpoints (D, E46), copied without the critic. E46 comes
+  from `sync_models.sh` (edit its `copy` lines to add runs); D was trained in
+  `~/code/bridge_public` and copied by hand.
+- brl FSP (`brl_fsp_weights.npz`), the external baseline.
 
 ## Frozen copies
 
 `bridgezero/` is copied by `sync_models.sh`. E28's classes (D5OWN4XC) are only on
 branch `integrate-fast-xxsac`, so it copies from that worktree by default; after the
 merge run `CODE=~/code/bridge_new ./sync_models.sh`.
-`emergent/phase1.py` is the inference half of the phase 1 net from
-`~/code/bridge/emergent/` (`exp11four.SeatNet`, `exp10four.St`, `fullinfo.SuitEncoder`),
-with the same parameter names so its checkpoints load; the experiment scripts are gone.
 
 ## Machine APIs (`/apis/…`) — seat our bots at other sites' tables
 

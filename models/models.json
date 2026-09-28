@@ -5,44 +5,14 @@
   "label": "D simple + strong (step 75000) — +0.27 IMP vs E46, beats SAYC/2-1/Acol/Polish/Precision by +0.6–+0.7, 10 code words/100 (E46: 14)"
  },
  {
-  "id": "E49B_s60k",
-  "file": "E49B_s60k.pt",
-  "label": "E49B scratch self-play + auction loss (step 60000) — best vs E46 +0.08 IMP"
- },
- {
   "id": "E46_s40k",
   "file": "E46_s40k.pt",
   "label": "E46 league + table reward (step 40000) — best vs E28 +0.89 IMP"
- },
- {
-  "id": "E44_l1_s10k",
-  "file": "E44_l1_s10k.pt",
-  "label": "E44 table reward λ=1.0 (step 10000)"
  },
  {
   "id": "brl_fsp",
   "file": "brl_fsp_weights.npz",
   "family": "brl",
   "label": "brl FSP — external (Kita et al. 2024, +1.24 vs WBridge5)"
- },
- {
-  "id": "E28_s50k",
-  "file": "E28_s50k.pt",
-  "label": "E28 best (X/XX/sacrifice)"
- },
- {
-  "id": "E21_last",
-  "file": "E21_last.pt",
-  "label": "E21 latest (four-seat, doubles)"
- },
- {
-  "id": "E18_best",
-  "file": "E18_best.pt",
-  "label": "E18 best (four-seat, no doubles)"
- },
- {
-  "id": "phase1",
-  "file": "own_s16_step5250.pt",
-  "label": "Phase 1 (own_s16, Q only)"
  }
 ]
