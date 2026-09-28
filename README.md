@@ -17,6 +17,24 @@ Three pages at https://bridge.localgeek.jp, one Flask app in one process:
 
     python3 -m emergent.bidserver                           # http://127.0.0.1:8787, /play and /table too
 
+## The bot engine
+
+`emergent/engine.py` is how the bots bid and play, for every page and API:
+`choose_call(bot, hand, calls, dealer, vul)` and `choose_card(bot, contracts, batch, search)`.
+Its `CONFIG` is read from the environment once, at start:
+
+| env | default | |
+|---|---|---|
+| `BOT_BID_MODEL` / `BOT_PLAY_MODEL` | first entry of `models/models.json` / `play_models.json` | default models |
+| `PLAY_SEARCH` | `1` | PIMC card-play search on |
+| `PLAY_SEARCH_SAMPLES` | `20` | layouts per decision |
+| `PLAY_SEARCH_BUDGET_MS` | `900` | wall clock cap per decision |
+| `PLAY_SEARCH_DEFENCE` | `all` | `off` / `lead` / `all` / `only`; declarer always searches |
+| `PLAY_SEARCH_DEFENCE_FROM` | `2` | defence searches from this trick index (the third trick) |
+
+/table's search toggle overrides `PLAY_SEARCH` for that game; /play shows the plain net
+and never searches.
+
 ## Update to the newest snapshots, then deploy
 
     ./sync_models.sh      # bridgezero code + E21/E20b/E18 snapshots from ~/code/bridge_new
