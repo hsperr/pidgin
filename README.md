@@ -147,6 +147,46 @@ The board is scored with duplicate scoring and compared against `dd_par_score`,
 in points and in IMPs. `result.par` is that par from your side; `par_ns` and
 `par_mine` are the same numbers under the older names.
 
+### Sharing a board
+
+The address bar always holds the position on screen, so copying it (or pressing
+**Copy link** in the header) shares exactly that board:
+
+    /table#d=<deal>&a=<calls>&dr=0&v=none&p=<cards>&s=<N|E|S|W>&m=<bid model>&pm=<play model>&h=<0|1>
+    /table#d=WsFp3_tWPNyvIKiARQ&a=AD&dr=0&v=none&s=S&m=D_cw_s75k&pm=E48_wideleagueH&h=0
+
+- `d`, `a`, `dr`, `v` and `m` are the bid desk's (`bidserver.encode_deal`, one
+  `CALL_CHARS` character per call) and `p` is the play desk's (one `CARD_CHARS`
+  character per card, in play order), so the same link also opens on `/` and `/play`.
+  `a` and `p` are left out while empty. `dr` and `v` are always `0` and `none` here.
+- `s` is your chair, `pm` the card-play model id, `h` hints on/off. Speed, search
+  and the solver peek are the viewer's own settings and are not in the link.
+
+The page keeps the hash in sync with `history.replaceState` (no reload, no history
+entry per card; `state_dump` sends the pieces as `code`). While the nets' moves are
+still being played out on screen, `a` and `p` are cut back to the frame being
+drawn, not to where the server already is.
+
+Opening a link posts it to `POST /api/table/load`, which builds a new game in the
+visitor's own `X-Game` — nothing is shared between people. Everything is checked
+(`board_from_link`): the deal code, the chair, that both models exist on this
+server, every call legal in turn by the rules, every card legal in turn and only
+after an auction that produced a contract. Anything wrong is a JSON 400 naming the
+first bad piece; the page then says the link could not be opened and deals a fresh
+board.
+
+The board stops exactly at the link's position, even when a net is on turn there:
+`load` never calls `advance`, and the page holds its auto-advance and shows
+**Continue from here** until the visitor presses it (or plays, or starts something
+new). From there the nets act as usual. With search on, a net's next card may
+differ from the one the sharer saw — the link is the position, not its future.
+
+**The link contains all four hands** — it has to, to rebuild the board — and so
+does the `code` in every state payload. The page still draws only what the
+visitor's chair may see, exactly as in normal play: their own hand, dummy after
+the opening lead, all four once the board is over. Anyone who decodes the URL
+knows the deal, so share mid-board links with people who won't.
+
 ### Playing the nets' moves out
 
 `advance` can answer with a whole trick, or with the rest of the deal when the

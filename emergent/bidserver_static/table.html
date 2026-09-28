@@ -63,6 +63,14 @@ header .grow{flex:1 1 0; min-width:0}
 header .meta{color:var(--dim); font-size:14px; margin-top:8px; height:21px;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 #skip.off{visibility:hidden}
+/* Both labels share one grid cell, so "Copied" never changes the button's width. */
+#share{display:inline-grid; align-items:center; justify-items:center}
+#share > span{grid-area:1/1}
+#share .ok{visibility:hidden; color:var(--pos); font-weight:600}
+#share.done .ok{visibility:visible}
+#share.done .lbl{visibility:hidden}
+.sr{position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden;
+  clip:rect(0 0 0 0); white-space:nowrap; border:0}
 #err{position:fixed; left:50%; top:14px; transform:translateX(-50%); z-index:30; max-width:min(640px,calc(100vw - 32px));
   background:var(--neg); color:#fff; font-size:15px; padding:10px 16px; border-radius:10px;
   box-shadow:0 8px 24px rgba(0,0,0,.2)}
@@ -326,6 +334,10 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
       <a class="btn" href="/" title="Bid against the net and see its outputs">Bid desk</a>
       <a class="btn" href="/play" title="Watch the card-play net">Play desk</a>
     </span>
+    <button id="share" type="button"
+            title="Copy a link to exactly this position. It holds all four hands, but whoever opens it only sees what your chair may see."
+            aria-label="Copy a link to this position"><span class="lbl">Copy link</span><span class="ok" aria-hidden="true">Copied ✓</span></button>
+    <span class="sr" id="share-status" role="status" aria-live="polite"></span>
     <button id="new-board" class="primary">New board</button>
   </div>
   <div class="meta" id="meta">dealing…</div>
@@ -411,6 +423,13 @@ function contractHTML(c){
 }
 const suitWord = l => ({S:"spades", H:"hearts", D:"diamonds", C:"clubs"})[l] || l;
 
+/* A board opened from a link stops exactly where the link does, even when a net is
+   on turn there: nothing auto-advances until the visitor presses Continue, or
+   plays, or starts something new. Any of those requests releases the hold. */
+let HOLD = false;
+const PROCEEDS = /\/api\/table\/(call|card|advance|finish|new_board|restart)$/;
+let NOTICE_UNTIL = 0;          // a message about a bad link outlives the next request
+
 let GAME_ID = null;
 try { GAME_ID = sessionStorage.getItem("table-game"); } catch(e) {}
 if(!GAME_ID){
@@ -434,7 +453,8 @@ async function post(url, body, opts){
   try { j = text ? JSON.parse(text) : null; }
   catch(e){ throw new Error(`${url} → ${r.status} ${r.statusText}, not JSON: ${text.slice(0,120)}`); }
   if(!r.ok) throw new Error((j && j.error) || `${url} → ${r.status} ${r.statusText}`);
-  $("err").textContent = "";
+  if(Date.now() > NOTICE_UNTIL) $("err").textContent = "";
+  if(PROCEEDS.test(url)) HOLD = false;
   return j;
 }
 
@@ -547,6 +567,7 @@ function render(d){
 function paint(){
   const full = atTarget();
   D = frameOf(SRV, VIEW.calls, VIEW.cards, full);
+  syncLink();
   renderTable(D); renderPanel(D); renderAdvice(D); renderNext(D); renderSettings(D);
   renderNumbers(D);
   // Hidden, not removed: the header keeps its width while the others play.
@@ -619,7 +640,7 @@ function schedule(){
     return;
   }
   // Caught up. Let the nets take their next turn, if it is not the user's.
-  if(!SRV.your_turn && SRV.phase !== "over")
+  if(!SRV.your_turn && SRV.phase !== "over" && !HOLD)
     TIMER = setTimeout(tickAdvance, SPEED === "off" ? 0 : 140);
 }
 
@@ -746,15 +767,20 @@ function backsHTML(left){
 }
 
 function auctionTable(d){
+  // Columns W N E S, as in bridge books and on BBO; the dealer's first call sits
+  // under the dealer's column and the cells before it stay empty.
+  const COLS = [3, 0, 1, 2];
+  const lead = (d.dealer + 1) % 4;                    // column of the dealer
   const n = d.auction.length;
-  const rows = Math.max(1, Math.ceil((n + (d.auction_over ? 0 : 1)) / 4));
+  const rows = Math.max(1, Math.ceil((lead + n + (d.auction_over ? 0 : 1)) / 4));
   let body = "";
   for(let r=0;r<rows;r++){
     body += "<tr>";
     for(let k=0;k<4;k++){
-      const i = r*4+k, seat = (d.dealer + i) % 4;
+      const i = r*4 + k - lead, seat = COLS[k];
       const me = seat === d.user_seat ? " me" : "";
-      if(i < n){
+      if(i < 0){ body += `<td class="${me}"></td>`; }
+      else if(i < n){
         const nm = d.auction[i].name, special = nm==="Pass"||nm==="X"||nm==="XX";
         const s = strainOf(nm);
         body += `<td class="${!special&&isRed(s)?'redc':''}${me}${i===FRESH?" fresh":""}">` +
@@ -764,11 +790,8 @@ function auctionTable(d){
     }
     body += "</tr>";
   }
-  // columns in seat order starting from the dealer, so a row is one round of bidding
-  const head = [0,1,2,3].map(k => {
-    const seat = (d.dealer + k) % 4;
-    return `<th style="color:${seat===d.user_seat?"var(--pick)":"inherit"}">${SEATS[seat][0]}</th>`;
-  }).join("");
+  const head = COLS.map(seat =>
+    `<th style="color:${seat===d.user_seat?"var(--pick)":"inherit"}">${SEATS[seat][0]}</th>`).join("");
   return `<div class="aqwrap"><table class="aq"><thead><tr>${head}</tr></thead>` +
          `<tbody>${body}</tbody></table></div>`;
 }
@@ -803,9 +826,10 @@ function renderPanel(d){
   B.innerHTML = ""; A.innerHTML = "";
 
   if(d.phase === "auction"){
-    T.innerHTML = d.your_turn ? "Your call" : `${SEATS[d.to_play]} is thinking…`;
+    T.innerHTML = d.your_turn ? "Your call" : HOLD ? `${SEATS[d.to_play]} calls next`
+                                                   : `${SEATS[d.to_play]} is thinking…`;
     H.innerHTML = !d.your_turn
-      ? `Waiting for ${SEATS[d.to_play]}. ${d.to_play === d.partner_seat ? "That is your partner." : "That is an opponent."}`
+      ? `${HOLD ? "Opened from a link. Press Continue to go on." : "Waiting for " + SEATS[d.to_play] + "."} ${d.to_play === d.partner_seat ? "That is your partner." : "That is an opponent."}`
       : d.suggest ? `${d.dealer_name} dealt, nobody vulnerable. Pick a call, or take the ringed one.`
                   : `${d.dealer_name} dealt, nobody vulnerable. Pick a call in the box.`;
     B.innerHTML = biddingBox(d);
@@ -836,6 +860,9 @@ function renderPanel(d){
       : d.to_play === ct.dummy
         ? `You declare ${contractHTML(ct)}. It is <b>dummy's</b> turn: pick a card from dummy, face up opposite you.`
         : `You declare ${contractHTML(ct)}. Pick a card from <b>your own hand</b>.`;
+  } else if(HOLD){
+    T.innerHTML = `${SEATS[d.to_play]} plays next`;
+    H.innerHTML = `Opened from a link. Press Continue to let the net play.`;
   } else {
     T.innerHTML = `${SEATS[d.to_play]} is playing…`;
     H.innerHTML = role === "dummy"
@@ -872,6 +899,10 @@ function renderNext(d){
   if(d.phase === "over"){
     label = "Next board ▸";
     act = () => goNow(() => post("/api/table/new_board"));
+  } else if(HOLD && !d.your_turn){
+    label = "Continue from here ▸";
+    kbd = "the others play on from the shared position · Enter";
+    act = () => { HOLD = false; goNow(() => post("/api/table/advance")); };
   } else if(d.your_turn && d.suggest){
     label = `Next: ${d.suggest.kind === "call" ? pretty(d.suggest.name) : cardHTML(d.suggest.action)}`;
     kbd = d.suggest.kind === "call" ? "plays the ringed call · Enter"
@@ -1313,10 +1344,99 @@ $("speedseg").querySelectorAll("button").forEach(b => b.onclick = () => {
   applySpeed();
   if(SPEED === "off") skip(); else schedule();
 });
+/* ------------------------------------------------ the shared link
+
+The address bar always holds the position on screen:
+  #d=<deal>&a=<calls>&dr=0&v=none&p=<cards>&s=<seat>&m=<bid model>&pm=<play model>&h=<hints>
+`d`, `a` and `p` are the bid desk's and play desk's own codecs; the server sends
+them in `code`, and the page cuts `a` and `p` back to the frame it is drawing (one
+character per call, one per card), so a link copied mid-animation is exactly what
+is on the table. replaceState: no reload, no history entry per card. */
+function linkHash(){
+  const c = SRV && SRV.code;
+  if(!c || !c.d) return null;
+  const q = new URLSearchParams();
+  q.set("d", c.d);
+  const a = c.a.slice(0, VIEW.calls), p = c.p.slice(0, VIEW.cards);
+  if(a) q.set("a", a);
+  q.set("dr", c.dr); q.set("v", c.v);
+  if(p) q.set("p", p);
+  q.set("s", c.s);
+  if(c.m) q.set("m", c.m);
+  if(c.pm) q.set("pm", c.pm);
+  q.set("h", c.h);
+  return "#" + q.toString();
+}
+function syncLink(){
+  const h = linkHash();
+  if(!h) return;
+  document.body.dataset.code = h;
+  if(location.hash !== h) history.replaceState(history.state, "", h);
+}
+
+function copyFallback(text){
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.setAttribute("readonly", "");
+  ta.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0";
+  document.body.appendChild(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch(e) {}
+  ta.remove();
+  return ok;
+}
+let SHARE_T = null;
+$("share").onclick = async () => {
+  const b = $("share");
+  syncLink();
+  const url = location.href;
+  let ok = false;
+  try { await navigator.clipboard.writeText(url); ok = true; } catch(e) { ok = copyFallback(url); }
+  b.focus({preventScroll: true});
+  if(!ok){ prompt("Copy this link:", url); return; }
+  b.classList.add("done");
+  $("share-status").textContent = "Link copied";
+  clearTimeout(SHARE_T);
+  SHARE_T = setTimeout(() => { b.classList.remove("done"); $("share-status").textContent = ""; }, 1600);
+};
+
+function notice(msg){
+  NOTICE_UNTIL = Date.now() + 9000;
+  $("err").textContent = msg;
+  setTimeout(() => { if(Date.now() >= NOTICE_UNTIL && $("err").textContent === msg) $("err").textContent = ""; }, 9100);
+}
+
+function linkBody(p){
+  return {deal: p.get("d"), auction: p.get("a") || "", played: p.get("p") || "",
+          seat: p.get("s") || "", model: p.get("m") || "", play_model: p.get("pm") || "",
+          hints: p.get("h"), dealer: p.get("dr") || "", vul: p.get("v") || ""};
+}
+
+function boot(){
+  const p = new URLSearchParams(location.hash.slice(1));
+  if(p.get("d") !== null){
+    return goNow(async () => {
+      try {
+        const d = await post("/api/table/load", linkBody(p));
+        HOLD = true;             // stop exactly at the shared position; Continue goes on
+        return d;
+      } catch(e){
+        const d = await post("/api/table/new_board");
+        notice(`That link could not be opened — ${e.message}. Here is a fresh board instead.`);
+        return d;
+      }
+    });
+  }
+  return goNow(() => fetch("/api/table/state", {headers:{"X-Game": GAME_ID}})
+    .then(r => r.ok ? r.json() : r.text().then(t => { throw new Error(`state → ${r.status}: ${t.slice(0,120)}`); })));
+}
+// A different link pasted into the same tab opens it; our own replaceState never fires this.
+window.addEventListener("hashchange", () => {
+  const p = new URLSearchParams(location.hash.slice(1));
+  if(p.get("d") !== null && ("#" + p.toString()) !== document.body.dataset.code) boot();
+});
+
 applySpeed();
-fetch("/api/table/state", {headers:{"X-Game": GAME_ID}})
-  .then(r => r.ok ? r.json() : r.text().then(t => { throw new Error(`state → ${r.status}: ${t.slice(0,120)}`); }))
-  .then(render).catch(fail);
+boot();
 </script>
 </body>
 </html>

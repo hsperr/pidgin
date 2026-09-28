@@ -6,6 +6,7 @@ process serves all three pages:
     GET  /table                 the page
     GET  /api/table/state       everything the page draws
     POST /api/table/new_board   deal again (optionally from a different chair)
+    POST /api/table/load        open a shared link: that deal, chair, models, calls, cards
     POST /api/table/restart     same cards, auction from the top
     POST /api/table/call        the user's call
     POST /api/table/card        the user's card
@@ -483,6 +484,7 @@ def state_dump(game):
                       + " · "
                       + (pmd[game["play_model"]].info if game["play_model"] in pmd else "no play model")),
         "hint": None, "suggest": None,
+        "code": link_code(game),
         "result": result_view(game),
         "review": None,
     }
@@ -1351,6 +1353,124 @@ def _explain_worker():
                 EXPLAIN["jobs"].popitem(last=False)
 
 
+# ----------------------------------------------------------------- shared links
+#
+# A link carries the whole position, in the bid desk's and play desk's own codecs:
+#
+#     #d=<deal>&a=<calls>&dr=0&v=none&p=<cards>&s=<N|E|S|W>&m=<bid model>&pm=<play model>&h=<0|1>
+#
+# `d` is `bidserver.encode_deal`, `a` one `bidserver.CALL_CHARS` character per call,
+# `p` one `playdesk.CARD_CHARS` character per card in play order, `m` the bid desk's
+# model key. So the same link opens on `/` (the auction) and `/play` (the cards).
+# The deal is all four hands: it has to be, to rebuild the board. The page still
+# only draws what the chair in `s` may see.
+
+SEAT_LETTERS = "NESW"
+
+
+def link_code(game):
+    """The pieces of the shared link for the position the server holds.
+
+    The page cuts `a` and `p` back to the frame it is drawing (one character per
+    call and per card), so a link copied mid-animation is the position on screen.
+    """
+    pg = game["pg"]
+    return {
+        "d": DESK.encode_deal(game["owners"]) if DESK is not None else None,
+        "a": "".join(DESK.CALL_CHARS[c] for c in game["calls"]) if DESK is not None else "",
+        "p": playdesk.encode_cards(pg["played"]) if pg is not None else "",
+        "dr": DEALER, "v": "none",
+        "s": SEAT_LETTERS[game["user_seat"]],
+        "m": game["model"], "pm": game["play_model"],
+        "h": int(bool(game["hints"])),
+    }
+
+
+class LinkError(ValueError):
+    pass
+
+
+def board_from_link(body, prev):
+    """A fresh game dict at exactly the position in `body`, or `LinkError`.
+
+    Everything is checked: the deal decodes to 13 cards a hand, the chair is one of
+    N/E/S/W, the models exist, every call is legal in turn (by the rules, not by
+    what the current bidding net may say), and every card is legal in turn once
+    the auction has produced a contract. Nothing is acted on past the last call or
+    card in the link, even when a net is on turn there: the caller does not
+    `advance`, and the page waits for the visitor before letting the nets go on.
+    """
+    def text(key, limit):
+        v = body.get(key, "")
+        if v is None:
+            v = ""
+        if not isinstance(v, (str, int)) or isinstance(v, bool):
+            raise LinkError(f"bad {key} in link")
+        v = str(v)
+        if len(v) > limit:
+            raise LinkError(f"{key} in link is too long")
+        return v
+
+    code = text("deal", 64)
+    owners = DESK.decode_deal(code) if (code and DESK is not None) else None
+    if owners is None:
+        raise LinkError("bad deal in link: it must be the 18-character code of a full deal")
+    seat = text("seat", 1).upper()
+    if seat == "" or seat not in SEAT_LETTERS:
+        raise LinkError("bad seat in link: it must be N, E, S or W")
+    if text("dealer", 2) not in ("", "0"):
+        raise LinkError("this table always has North dealing (dr=0)")
+    if text("vul", 8) not in ("", "none"):
+        raise LinkError("this table is always played with nobody vulnerable (v=none)")
+    model, play_model = text("model", 64), text("play_model", 64)
+    if model and model not in bid_models():
+        raise LinkError(f"bidding model {model!r} is not on this server")
+    if play_model and play_model not in play_models():
+        raise LinkError(f"card-play model {play_model!r} is not on this server")
+    hints = body.get("hints")
+    hints = prev["hints"] if hints is None or hints == "" else str(hints) in ("1", "true", "True")
+
+    game = new_board(user_seat=SEAT_LETTERS.index(seat),
+                     model=model or prev["model"], play_model=play_model or prev["play_model"],
+                     hints=hints, peek=prev["peek"], owners=owners,
+                     board_no=prev["board_no"] + 1)
+    game["search"] = prev.get("search", True)
+
+    for i, ch in enumerate(text("auction", 400)):
+        call = DESK.CALL_CHARS.find(ch)
+        st = auction_of(game)
+        if st.ended:
+            raise LinkError(f"call {i + 1} in link comes after the auction is over")
+        if not 0 <= call < N_CALLS:
+            raise LinkError(f"call {i + 1} in link ({ch!r}) is not a call")
+        if not bool(st.legal_mask()[call]):
+            raise LinkError(f"call {i + 1} in link, {call_name(call)} by "
+                            f"{SEAT_NAMES[st.turn]}, is not legal there")
+        game["calls"].append(call)
+        if auction_of(game).ended:
+            begin_play(game)
+
+    cards = text("played", 64)
+    if cards:
+        st = auction_of(game)
+        if not st.ended:
+            raise LinkError("the link has cards played before the auction is over")
+        if game["pg"] is None:
+            raise LinkError("the link has cards played on a passed-out board")
+    for i, ch in enumerate(cards):
+        card = playdesk.CARD_CHARS.find(ch)
+        if card < 0:
+            raise LinkError(f"card {i + 1} in link ({ch!r}) is not a card")
+        batch = batch_for(game)
+        if batch.done:
+            raise LinkError(f"card {i + 1} in link comes after the thirteenth trick")
+        if not playdesk.play_card(game["pg"], card, batch):
+            raise LinkError(f"card {i + 1} in link, {card_name(card)} by "
+                            f"{SEAT_NAMES[int(batch.to_play()[0])]}, is not legal there")
+        game.pop("_batch", None)
+    return game
+
+
 # ------------------------------------------------------------------- routes
 
 def body_of(request_):
@@ -1409,6 +1529,18 @@ def register(app):
         game.clear()
         game.update(fresh)
         advance(game)
+        return jsonify(state_dump(game))
+
+    @app.post("/api/table/load")
+    @with_game
+    def api_table_load(game):
+        """Open a shared link in this tab's own game. Stops exactly at the link's position."""
+        try:
+            fresh = board_from_link(body_of(request), game)
+        except LinkError as e:
+            return jsonify(error=str(e)), 400
+        game.clear()
+        game.update(fresh)
         return jsonify(state_dump(game))
 
     @app.post("/api/table/restart")
