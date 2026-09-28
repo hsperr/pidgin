@@ -436,7 +436,8 @@ def net_card(game, contracts=None, batch=None):
     b = batch if batch is not None else batch_of(game, c)
     step = len(game["played"])
     if game.get("search"):
-        # Declarer only; the searcher hands defence back to the net by itself.
+        # Declarer always searches; defence per SEARCH_DEFENCE / SEARCH_DEFENCE_FROM.
+        # Turns the searcher skips fall back to the net by themselves.
         player = bot.searcher()
         player.start(c)
         return int(player.choose(b, c, b.legal(), step)[0])
