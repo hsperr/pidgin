@@ -136,12 +136,12 @@ You hold one chair and the nets hold the other three. North deals and nobody is
 vulnerable, the same setting as the other two desks, because the "what this call
 means" corpus was built that way.
 
-**You play one hand, in every seat.** Real bridge hands declarer both of the
-declaring side's hands, but the job here is meant to be identical wherever you
-sit: the thirteen cards in front of you. So when you declare, the net plays dummy
-for you; when you are dummy, the net plays your hand. Dummy still comes face up
-after the opening lead, as at a real table — you just do not choose from it. Each
-hand on the page is labelled with who plays it.
+**The play follows a real table.** Declarer plays both of the declaring side's
+hands: when you declare, you pick the card for your own hand and for dummy's
+(face up opposite you after the opening lead). When you are dummy you play
+nothing — your partner, the net, declares and plays both hands while yours lies
+face up. As a defender you play your own hand. Each hand on the page is labelled
+with who plays it.
 
 The board is scored with duplicate scoring and compared against `dd_par_score`,
 in points and in IMPs. `result.par` is that par from your side; `par_ns` and

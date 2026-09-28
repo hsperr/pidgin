@@ -668,19 +668,21 @@ function renderTable(d){
     const el = document.createElement("div");
     const turn = s.seat === d.to_play;
     const mine = s.seat === d.user_seat;
-    // You hold one chair and play that hand only. Every other card on the table,
-    // dummy's included, belongs to a net.
-    const yours = mine && d.your_turn;
+    // As at a real table: you bid for your own chair, and in the play you pick the
+    // card for whichever hand is on turn when it is yours to play (as declarer that
+    // includes dummy; as dummy it is never).
+    const yours = d.your_turn && (d.phase === "play" ? turn : mine);
     el.className = `hand pos${slotOf(d, s.seat)}${turn && yours?" turn":""}` +
                    `${turn && !yours?" acting":""}${mine?" mine":""}`;
     const role = seatRole(d, s.seat);
-    // Spell out the one case that surprises people: you declare, and dummy is still
-    // played for you. Nobody needs telling that an opponent's dummy is not theirs.
-    const spell = role === "dummy" && !mine && d.role === "declarer" && d.phase === "play";
+    // Spell out who plays the two declaring hands: declarer plays both.
+    const youPlayIt = role === "dummy" && !mine && d.role === "declarer" && d.phase === "play";
+    const partnerPlaysYou = mine && d.role === "dummy" && d.phase === "play";
     const who = (mine ? "you"
-      : s.seat === d.partner_seat ? (spell ? "your partner" : "your partner · net") : "the net") +
-      (role ? " · " + role : "") + (spell ? " · net plays it" : "");
-    const badge = turn ? `<span class="go">${mine ? (d.phase==="auction"?"your bid":"your card")
+      : s.seat === d.partner_seat ? (youPlayIt ? "your partner" : "your partner · net") : "the net") +
+      (role ? " · " + role : "") + (youPlayIt ? " · you play it" : "") +
+      (partnerPlaysYou ? " · partner plays it" : "");
+    const badge = turn ? `<span class="go">${yours ? (d.phase==="auction"?"your bid":"your card")
                                           : (d.phase==="auction"?"bidding…":"playing…")}</span>` : "";
     el.innerHTML =
       `<div class="hd"><b style="color:${seatColor(s.seat)}">${s.name}</b>` +
@@ -829,20 +831,22 @@ function renderPanel(d){
     H.innerHTML = `${contractHTML(ct)} by ${ct.declarer_name} — the result is below.`;
   } else if(d.your_turn){
     T.innerHTML = `Your card`;
-    H.innerHTML = role === "declarer"
-      ? `You declare ${contractHTML(ct)}. Play from <b>your own hand</b>; the net plays dummy.`
-      : `You defend ${contractHTML(ct)} by ${ct.declarer_name}. Pick a card in your hand.`;
+    H.innerHTML = role !== "declarer"
+      ? `You defend ${contractHTML(ct)} by ${ct.declarer_name}. Pick a card in your hand.`
+      : d.to_play === ct.dummy
+        ? `You declare ${contractHTML(ct)}. It is <b>dummy's</b> turn: pick a card from dummy, face up opposite you.`
+        : `You declare ${contractHTML(ct)}. Pick a card from <b>your own hand</b>.`;
   } else {
     T.innerHTML = `${SEATS[d.to_play]} is playing…`;
     H.innerHTML = role === "dummy"
-      ? `You are dummy: your partner, the net, plays your hand. Watch this one.`
+      ? `You are dummy: your partner declares and plays both hands, yours face up. Watch this one.`
       : d.to_play === ct.dummy
         ? `The net is playing dummy.`
         : `Waiting for ${SEATS[d.to_play]}.`;
   }
   const need = ct.needs, tw = d.tricks_won || {declaring:0, defending:0};
-  const job = role === "dummy" ? "the net plays your hand"
-            : role === "declarer" ? "you play your own hand, the net plays dummy"
+  const job = role === "dummy" ? "your partner plays both hands"
+            : role === "declarer" ? "you play your own hand and dummy's"
             : "you play your own hand";
   B.innerHTML =
     `<div class="counts">` +

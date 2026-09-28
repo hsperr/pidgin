@@ -16,8 +16,9 @@ process serves all three pages:
     POST /api/table/explain     queue the "where does it go" rollout (newest wins)
     GET  /api/table/explain     collect it
 
-The user holds one chair and plays that one hand, in every seat: their partner
-and both opponents are nets, and the net plays dummy even when the user declares.
+The user holds one chair; their partner and both opponents are nets. The play
+follows a real table: a declaring user plays both their hand and dummy's, and a
+user who is dummy plays nothing while partner, the net, plays both hands.
 The bidding net comes from `models/models.json`, the E48 card-play net from
 `models/play_models.json`. Dealer is North and nobody is vulnerable, exactly as
 on the other two desks, because the offline "what this call means" corpus was
@@ -239,15 +240,21 @@ def declarer_dummy(game):
 
 
 def user_plays(game, seat):
-    """The user holds one chair and plays that hand only.
+    """Whether the user chooses the card for ``seat``, by the rules of a real table.
 
-    Real bridge gives declarer both of the declaring side's hands, but the job
-    here is meant to be the same in every seat: the thirteen cards in front of
-    you. So when the user declares, the net plays dummy for them; when the user
-    is dummy, the net plays it as usual. Dummy still comes face up after the
-    opening lead, as at a real table — the user simply does not choose from it.
+    Declarer plays both of the declaring side's hands, so a declaring user plays
+    dummy's cards too, and a user who is dummy plays none: partner, the net,
+    plays both hands while dummy lies face up. A defender plays their own hand.
     """
-    return seat == game["user_seat"]
+    me = game["user_seat"]
+    if game["pg"] is None:
+        return seat == me
+    declarer, dummy = declarer_dummy(game)
+    if me == declarer:
+        return seat in (declarer, dummy)
+    if me == dummy:
+        return False
+    return seat == me
 
 
 def user_on_turn(game):
@@ -1303,7 +1310,7 @@ def user_review(game):
     rows = playdesk.review(game["pg"])
     if rows is None:
         return None
-    yours = [r for r in rows["cards"] if r["seat"] == game["user_seat"]]
+    yours = [r for r in rows["cards"] if user_plays(game, r["seat"])]
     return {
         "available": True,
         "mine": [{**r, "name": card_text(r["card"]),
@@ -1355,6 +1362,14 @@ def body_of(request_):
     failure the caller has to parse out of HTML.
     """
     return request_.get_json(silent=True) or {}
+
+
+def int_field(body, key):
+    """An integer field of the JSON body, or -1 when it is missing or not a number."""
+    try:
+        return int(body.get(key, -1))
+    except (TypeError, ValueError):
+        return -1
 
 
 def with_game(fn):
@@ -1436,7 +1451,7 @@ def register(app):
             return jsonify(error="the auction is over"), 400
         if auction_of(game).turn != game["user_seat"]:
             return jsonify(error="it is not your turn to call"), 400
-        call = int((body_of(request)).get("call", -1))
+        call = int_field(body_of(request), "call")
         if not add_call(game, call):
             return jsonify(error=f"{call_name(call) if 0 <= call < N_CALLS else call} "
                                  f"is not a legal call here"), 400
@@ -1451,7 +1466,7 @@ def register(app):
         pg, batch = game["pg"], batch_for(game)
         if not user_plays(game, int(batch.to_play()[0])):
             return jsonify(error="it is not your card to play"), 400
-        card = int((body_of(request)).get("card", -1))
+        card = int_field(body_of(request), "card")
         if not playdesk.play_card(pg, card, batch):
             return jsonify(error=f"{card_name(card) if 0 <= card < 52 else card} "
                                  f"is not a legal card here"), 400
