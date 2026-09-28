@@ -10,16 +10,15 @@ runs it under gunicorn, one worker, via `create_app` -- see deploy.sh.
 
 Two model families, each through the exact code it was trained with:
 
-- phase 1 `SeatNet` (emergent/exp11four.py): Q for each call, 694-d input;
-- four-seat bridgezero nets (E18, E20b, E21; bridgezero/fourseat): policy,
-  Q, trick head, double value/gate, 147 or 149 readable input bits.
+- four-seat bridgezero nets (D, E46; bridgezero/fourseat): policy, Q, trick head,
+  double value/gate, 147 or 149 readable input bits;
+- brl FSP (emergent/brl_player.py), the external baseline.
 
 The auction rules and all scores come from bridgezero/bridge (AuctionState,
 contract_score, dd_par_score). Redouble is never offered: no model has it.
 Dealer is North, nobody vulnerable.
 """
 import argparse
-import base64
 import functools
 import json
 import os
@@ -32,130 +31,43 @@ import torch
 from flask import Flask, jsonify, request, send_from_directory
 
 from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import CONTRACTS, DOUBLE, PASS, REDOUBLE
+from bridgezero.bridge.calls import PASS
 from bridgezero.bridge.scoring import (contract_score, dd_par_score, own_contract_score,
                                        terminal_ns_score)
 from bridgezero.contract.environment import AUCTION_FEATURES
 from bridgezero.fourseat.model import (competitive_log_probs, load_fourseat_checkpoint,
                                        policy_log_probs)
-from bridgezero.fourseat.state import features_from_history
-from emergent import apis, playdesk, tabledesk
-from emergent.deck import deal_owners, owners_to_bitmaps, owners_to_pbn
+from emergent import apis, engine, playdesk, tabledesk
+from emergent.deck import (CALL_CHARS, HCP_W, N_CALLS, NAMES, RANKS, SEAT_NAMES, SUITS,
+                           TRUMP_TO_BID_STRAIN, call_name, call_token, deal_owners,
+                           decode_deal, encode_deal, owners_to_bitmaps, owners_to_pbn)
 
 from endplay.types import Deal, Denom, Player
 from endplay.dds import calc_all_tables
 
 L = 35
-NAMES = [c[0] for c in CONTRACTS]
-SEAT_NAMES = ["North", "East", "South", "West"]
 DENOMS = [Denom.spades, Denom.hearts, Denom.diamonds, Denom.clubs, Denom.nt]  # table order S H D C NT
 PLAYERS = [Player.north, Player.east, Player.south, Player.west]
-TABLE_TO_BID_STRAIN = (3, 2, 1, 0, 4)   # S H D C NT -> C D H S NT (its own inverse)
-HCP_W = np.array([4, 3, 2, 1] + [0] * 9)
 REL_NAMES = ["me", "LHO", "partner", "RHO"]
-N_CALLS = REDOUBLE + 1                  # 35 contracts + Pass + X + XX
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(HERE, "bidserver_static")
 MODELS_DIR = os.path.join(os.path.dirname(HERE), "models")
 
 app = Flask(__name__, static_folder=None)
-MODELS = OrderedDict()   # id -> bot
+MODELS = engine.BID_MODELS   # id -> bot
 GAMES = OrderedDict()    # game id -> game dict
 MAX_GAMES = 300
 LOCK = threading.Lock()
 
 
-def call_name(c):
-    return "Pass" if c == PASS else "X" if c == DOUBLE else "XX" if c == REDOUBLE else NAMES[c]
-
-
-def competitive_features(history, actor):
-    """E28 (D5OWN4XC) input: the 149 double bits + [149] Pass would end the auction +
-    [150] standing redoubled. Copy of fourseat/competitive.py, whose imports pull in the trainer."""
-    b = len(history)
-    z = torch.zeros(b)
-    feats = features_from_history(history, torch.zeros(b, dtype=torch.long), z, z, actor, doubles=True)
-    extra = torch.zeros(len(history), 2)
-    if history.shape[1]:
-        pos = torch.arange(history.shape[1])[None]
-        none = torch.full_like(history, -1)
-        valid = history >= 0
-        last_bid = torch.where(valid & (history < PASS), pos, none).max(1).values
-        last_active = torch.where(valid & (history != PASS), pos, none).max(1).values
-        last_xx = torch.where(history == REDOUBLE, pos, none).max(1).values
-        trailing = valid.sum(1) - 1 - last_active
-        extra[:, 0] = ((last_bid >= 0) & (trailing == 2)).float()
-        extra[:, 1] = (last_xx > last_bid).float()
-    return torch.cat((feats, extra), 1)
-
-
 # ------------------------------------------------------------------- models
+#
+# Each family's `decide(hand, calls, dealer, vul, legal)` is its one forward pass and
+# its greedy call: engine.choose_call reads it for every page and API, and `view`
+# draws the desk's panels from the same pass. `hand` is a (1, 52) float tensor.
 
-class Phase1Bot:
-    """Phase 1 SeatNet: one Q per call, argmax Q."""
-
-    family = "phase1"
-    redouble = False
-    final_only = False
-    SCALARS = ["turn / 10", "last bid / L", "passes / 3", "doubled", "last bid is ours", "any bid yet"]
-
-    def __init__(self, path):
-        from emergent.exp1 import FULL_CONTRACTS
-        from emergent.exp11four import SeatNet
-        ck = torch.load(path, map_location="cpu", weights_only=False)
-        cfg = ck["config"]
-        contracts = [c for c in FULL_CONTRACTS if c[1] is not None]
-        assert [c[0] for c in contracts] == NAMES, "phase 1 contract order differs"
-        self.net = SeatNet(L, cfg["hidden"], cfg["d_hand"], cfg["d_rung"], cfg["layers"],
-                           dbl_head=cfg.get("dbl_head", False))
-        self.net.load_state_dict(ck["net"])
-        self.net.eval()
-        self.step = ck.get("step")
-        self.doubles = not cfg.get("no_double", False) and not cfg.get("own_bid", False)
-        self.info = "phase 1 SeatNet · Q per call · 694-d input"
-
-    def _state(self, calls):
-        from emergent.exp10four import St
-        from emergent.exp11four import apply_call_
-        st = St.empty(torch.tensor([0]), L)
-        for i, c in enumerate(calls):
-            apply_call_(st, torch.tensor([c]), i % 4, L, False)
-        return st
-
-    @torch.no_grad()
-    def view(self, game, legal):
-        calls, seat, t = game["calls"], len(game["calls"]) % 4, len(game["calls"])
-        net, st = self.net, self._state(calls)
-        h = torch.tensor(game["bitmaps"][seat], dtype=torch.float32)[None]
-        hv = net.hand_enc(h)
-        q = net._base_q(net._trunk(h, st, seat, t, hv))[0].tolist()
-        q += [0.0] * (N_CALLS - len(q))         # no XX row
-        # rebuild the exact input vector _trunk made, for the dump
-        lastv = net.rung(st.last.clamp(min=0)) if st.last[0] >= 0 else net.no_bid.unsqueeze(0)
-        mine = float((st.lastseat[0] >= 0) and ((int(st.lastseat[0]) % 2) == (seat % 2)))
-        scal = torch.tensor([[t / 10.0, float(st.last[0]) / L, float(st.npass[0]) / 3.0,
-                              float(st.dblflag[0]), mine, float(st.last[0] >= 0)]])
-        rmap = net._rung_map(seat)
-        x = torch.cat([hv, net._sums(st.bid, seat, rmap), net._sums(st.dbl, seat, rmap),
-                       lastv, scal], -1)[0].tolist()
-        dh, dr = net.hand_enc.out_dim // 4, net.d
-        segs = [(f"hand enc {s}", dh) for s in "♠♥♦♣"]
-        segs += [(f"bids: {r}", dr) for r in REL_NAMES] + [(f"doubles: {r}", dr) for r in REL_NAMES]
-        segs += [("last bid", dr), ("scalars", len(self.SCALARS))]
-        segments, i = [], 0
-        for name, n in segs:
-            segments.append({"name": name, "values": x[i:i + n]})
-            i += n
-        assert i == len(x), (i, len(x))
-        pick = max((qi, c) for c, qi in enumerate(q) if legal[c])[1]
-        return {
-            "primary": "q", "q": q, "policy": None, "pick": pick,
-            "input": {"size": len(x), "scalars": list(zip(self.SCALARS, x[-len(self.SCALARS):])),
-                      "segments": segments,
-                      "note": "Bids and doubles go in as sums of learned 48-d rung codes, so those "
-                              "strips are learned codes, not readable bits."},
-            "heads": None,
-        }
+def hand_tensor(game, seat):
+    return torch.tensor(game["bitmaps"][seat], dtype=torch.float32)[None]
 
 
 class FourSeatBot:
@@ -189,12 +101,10 @@ class FourSeatBot:
     explains = True
 
     def features(self, history, seats):
-        """(B, width) inputs for B rows, each row's own seat on turn."""
-        if self.competitive:
-            return competitive_features(history, seats)
+        """(B, width) inputs for B rows, each row's own seat on turn (dealer North, no vul)."""
         z = torch.zeros(len(history))
-        return features_from_history(history, torch.zeros(len(history), dtype=torch.long),
-                                     z, z, seats, self.doubles)
+        return engine.fourseat_features(self, history, torch.zeros(len(history), dtype=torch.long),
+                                        z, z, seats)
 
     def log_probs(self, out, mask):
         return (competitive_log_probs(out, mask) if self.competitive
@@ -202,36 +112,28 @@ class FourSeatBot:
 
     def mask(self, st):
         """This model's legal calls in an AuctionState (X/XX rules can be narrower)."""
-        m = st.legal_mask().copy()
-        if not self.doubles:
-            m[DOUBLE] = False
-        if not self.redouble:
-            m[REDOUBLE] = False
-        if self.final_only and not (st.last_contract >= 0 and st.pass_count == 2):
-            m[DOUBLE] = m[REDOUBLE] = False
-        return m
+        return np.array(engine.legal_calls(self, st))
+
+    @torch.no_grad()
+    def decide(self, hand, calls, dealer, vul, legal):
+        hist = torch.tensor([calls], dtype=torch.long) if calls else torch.zeros(1, 0, dtype=torch.long)
+        seat = (dealer + len(calls)) % 4
+        feats = engine.fourseat_features(self, hist, torch.tensor([dealer]),
+                                         torch.tensor([float(vul[0])]), torch.tensor([float(vul[1])]),
+                                         torch.tensor([seat]))
+        out = self.net(hand, feats)
+        n = self.net.n_actions
+        probs = self.log_probs(out, torch.tensor([legal[:n]]))[0].exp()
+        pad = [0.0] * (N_CALLS - n)
+        return {"policy": probs.tolist() + pad, "q": out["contract_q"][0].tolist() + pad,
+                "pick": int(probs.argmax()), "out": out, "feats": feats}
 
     @torch.no_grad()
     def view(self, game, legal):
-        calls = game["calls"]
-        seat = len(calls) % 4
-        hist = torch.tensor([calls], dtype=torch.long)
-        z = torch.zeros(1)
-        if self.competitive:
-            feats = competitive_features(hist, torch.tensor([seat]))
-        else:
-            feats = features_from_history(hist, torch.zeros(1, dtype=torch.long), z, z,
-                                          torch.tensor([seat]), self.doubles)
-        hand = torch.tensor(game["bitmaps"][seat], dtype=torch.float32)[None]
-        out = self.net(hand, feats)
-        n = self.net.n_actions
-        mask = torch.tensor([legal[:n]])
-        probs = policy_log_probs(out, mask)[0].exp()
-        pad = [0.0] * (N_CALLS - n)
-        policy = probs.tolist() + pad
-        q = out["contract_q"][0].tolist() + pad
-        pick = int(probs.argmax())
-        f = feats[0].tolist()
+        seat = len(game["calls"]) % 4
+        d = self.decide(hand_tensor(game, seat), game["calls"], 0, (False, False), legal)
+        out, policy, q, pick = d["out"], d["policy"], d["q"], d["pick"]
+        f = d["feats"][0].tolist()
         tricks = torch.softmax(out["trick_logits"][0], -1)          # (2 declarers, 5 strains, 14)
         expected = (tricks * torch.arange(14)).sum(-1).tolist()
         heads = {"tricks": {"me": expected[0], "partner": expected[1],
@@ -293,20 +195,24 @@ class BrlBot:
                      "WBridge5) · policy only, no Q or trick head · 480-d pgx input")
 
     @torch.no_grad()
-    def view(self, game, legal):
+    def decide(self, hand, calls, dealer, vul, legal):
         from emergent.brl_player import encode, _PGX_TO_OURS
-        calls = game["calls"]
-        seat = len(calls) % 4
-        hand = torch.tensor(game["bitmaps"][seat], dtype=torch.float32)[None]
+        seat = (dealer + len(calls)) % 4
         hist = torch.tensor([calls], dtype=torch.long) if calls else torch.zeros(1, 0, dtype=torch.long)
-        z = torch.zeros(1, dtype=torch.long)
-        x = encode(hand, hist, z, z, z, torch.tensor([seat]))
+        x = encode(hand, hist, torch.tensor([dealer]), torch.tensor([bool(vul[0])]),
+                   torch.tensor([bool(vul[1])]), torch.tensor([seat]))
         logits_pgx = self.net(x)[0]
         logits = torch.empty(N_CALLS)
         logits[_PGX_TO_OURS] = logits_pgx                  # our call order: bids, P, X, XX
         mask = torch.tensor(legal[:N_CALLS])
         probs = torch.softmax(logits.masked_fill(~mask, -torch.inf), -1)
-        f = x[0].tolist()
+        return {"policy": probs.tolist(), "q": logits.tolist(), "pick": int(probs.argmax()), "x": x}
+
+    @torch.no_grad()
+    def view(self, game, legal):
+        seat = len(game["calls"]) % 4
+        d = self.decide(hand_tensor(game, seat), game["calls"], 0, (False, False), legal)
+        f = d["x"][0].tolist()
         rel = ["me", "LHO", "partner", "RHO"]
         segments = [{"name": "vulnerability", "values": f[0:4]},
                     {"name": "passed before any bid (me/L/P/R)", "values": f[4:8]}]
@@ -316,8 +222,7 @@ class BrlBot:
                                  "values": [f[8 + 12 * b + 4 * k + r] for b in range(L)]})
         segments.append({"name": "my hand (OpenSpiel card order)", "values": f[428:480]})
         return {
-            "primary": "policy", "q": logits.tolist(), "policy": probs.tolist(),
-            "pick": int(probs.argmax()),
+            "primary": "policy", "q": d["q"], "policy": d["policy"], "pick": d["pick"],
             "input": {"size": len(f), "scalars": list(zip(self.SCALARS, f[:8])), "segments": segments,
                       "note": "External brl net: every input is a 0/1 bit of the pgx observation, "
                               "hand included. It has no Q head, so the Q view shows raw policy logits."},
@@ -333,8 +238,7 @@ def load_models(models_dir=MODELS_DIR):
         if m.get("family") == "brl":
             bot = BrlBot(path)
         else:
-            ck = torch.load(path, map_location="cpu", weights_only=False)
-            bot = FourSeatBot(path) if "model_kind" in ck else Phase1Bot(path)
+            bot = FourSeatBot(path)
         bot.id, bot.label, bot.file = m["id"], m["label"], m["file"]
         MODELS[bot.id] = bot
 
@@ -346,30 +250,6 @@ def models_list():
 
 # ------------------------------------------------------------------- games
 
-CALL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-
-
-def encode_deal(owners):
-    """52 owners x 2 bits = 13 bytes = 18 url-safe chars."""
-    n = 0
-    for o in owners:
-        n = (n << 2) | int(o)
-    return base64.urlsafe_b64encode(n.to_bytes(13, "big")).decode().rstrip("=")
-
-
-def decode_deal(code):
-    """Inverse of encode_deal; None unless it is a real deal (13 cards each)."""
-    try:
-        raw = base64.urlsafe_b64decode(code + "=" * (-len(code) % 4))
-    except Exception:
-        return None
-    if len(raw) != 13:
-        return None
-    n = int.from_bytes(raw, "big")
-    owners = np.array([(n >> (2 * (51 - i))) & 3 for i in range(52)], dtype=np.int64)
-    return owners if all((owners == s).sum() == 13 for s in range(4)) else None
-
-
 def new_game(owners=None, model=None):
     if owners is None:
         owners = deal_owners(np.random.default_rng())
@@ -377,7 +257,7 @@ def new_game(owners=None, model=None):
     tricks = np.array([[table[d, p] for d in DENOMS] for p in PLAYERS], dtype=np.int64)  # (4,5)
     return {"owners": owners, "bitmaps": owners_to_bitmaps(owners), "tricks": tricks,
             "par": dd_par_score(tricks, False, False), "calls": [],
-            "model": model if model in MODELS else next(iter(MODELS))}
+            "model": model if model in MODELS else engine.default_bid_model()}
 
 
 def auction(game):
@@ -386,16 +266,7 @@ def auction(game):
 
 def legal_calls(game):
     """38 bools: AuctionState legality, limited to the calls this model can make."""
-    st = auction(game)
-    bot = MODELS[game["model"]]
-    mask = st.legal_mask()[:N_CALLS].tolist()
-    if not bot.doubles:
-        mask[DOUBLE] = False
-    if not bot.redouble:
-        mask[REDOUBLE] = False
-    if bot.final_only and not (st.last_contract >= 0 and st.pass_count == 2):
-        mask[DOUBLE] = mask[REDOUBLE] = False
-    return mask
+    return engine.legal_calls(MODELS[game["model"]], auction(game))
 
 
 def add_call(game, call):
@@ -430,9 +301,8 @@ def with_game(fn):
 
 def hand_info(bitmap52):
     sh = bitmap52.reshape(4, 13)
-    ranks, suits = "AKQJT98765432", "SHDC"
     return {"hcp": int((sh * HCP_W).sum()), "shape": [int(x) for x in sh.sum(1)],
-            "cards": {suits[s]: [ranks[r] for r in range(13) if sh[s, r]] for s in range(4)}}
+            "cards": {SUITS[s]: [RANKS[r] for r in range(13) if sh[s, r]] for s in range(4)}}
 
 
 def dd_scores(tricks):
@@ -441,7 +311,7 @@ def dd_scores(tricks):
     for p in range(4):
         row = []
         for d in range(5):
-            t, strain = int(tricks[p, d]), TABLE_TO_BID_STRAIN[d]
+            t, strain = int(tricks[p, d]), TRUMP_TO_BID_STRAIN[d]
             best = None
             for lvl in range(1, 8):
                 sc = contract_score(lvl, strain, t, 0, False)
@@ -491,8 +361,8 @@ def state_dump(game):
 
 
 def net_pick(game):
-    legal = legal_calls(game)
-    return MODELS[game["model"]].view(game, legal)["pick"]
+    seat = len(game["calls"]) % 4
+    return engine.choose_call(MODELS[game["model"]], game["bitmaps"][seat], game["calls"])[0]
 
 
 # ------------------------------------------------------------------- routes
@@ -604,8 +474,7 @@ def meaning(game):
     table = CORPUS.get(game["model"])
     if table is None:
         return None
-    token = lambda c: "P" if c == PASS else "X" if c == DOUBLE else "XX" if c == REDOUBLE else NAMES[c]
-    key = "-".join(token(c) for c in game["calls"])
+    key = "-".join(call_token(c) for c in game["calls"])
     hit = table.get(key)
     return None if hit is None else {"position": key or "(opening)", **hit}
 

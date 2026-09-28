@@ -33,41 +33,25 @@ import numpy as np
 import torch
 from flask import jsonify, request, send_from_directory
 
-from bridgezero.bridge.calls import CONTRACTS, DOUBLE, PASS, REDOUBLE
+from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
 from bridgezero.bridge.deals import deal_to_pbn
 from bridgezero.bridge.play import PlayBatch
 from bridgezero.bridge.scoring import contract_score
 from bridgezero.play.data import N_CALLS, Contracts, load_contracts
-from bridgezero.play.model import PLAY_FEATURES, PlayNet, encode
-from emergent.deck import deal_owners
+from bridgezero.play.model import PLAY_FEATURES, PlayNet
+from emergent import engine
+from emergent.deck import (CALL_CHARS, HCP_W, RANKS, SEAT_NAMES, STRAINS, SUITS,
+                           TRUMP_TO_BID_STRAIN, call_name, card_name, deal_owners, decode_cards,
+                           decode_deal, encode_cards, encode_deal)
+from emergent.deck import CARD_CHARS  # noqa: F401  (tabledesk reads the links' codec from here)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(HERE, "bidserver_static")
 MODELS_DIR = os.path.join(os.path.dirname(HERE), "models")
 BENCH_FILE = os.path.join(MODELS_DIR, "bench_100k.npz")
 BENCH_LIMIT = int(os.environ.get("PLAY_BENCH_LIMIT", "4000"))
-# PIMC at the table. 20 layouts is where the offline gain flattens (+0.99 IMP a
-# board over the plain net); the budget is what keeps the opening lead bearable on
-# a one-core box, where a trick-one solve costs ~290 ms against a laptop's 6 ms.
-SEARCH_SAMPLES = int(os.environ.get("PLAY_SEARCH_SAMPLES", "20"))
-SEARCH_BUDGET_MS = float(os.environ.get("PLAY_SEARCH_BUDGET_MS", "900"))
-# Defence searches too, but not before trick 2. Measured on 600 boards, starting at
-# trick 2 gives the same defence regret as searching every turn (0.537) for 45% of the
-# cost -- tricks 0 and 1 add nothing, and on this box they are nearly all of the price.
-SEARCH_DEFENCE = os.environ.get("PLAY_SEARCH_DEFENCE", "all")
-SEARCH_DEFENCE_FROM = int(os.environ.get("PLAY_SEARCH_DEFENCE_FROM", "2"))
 
-RANKS = "AKQJT98765432"          # rank 0 = ace, 12 = two
-SUITS = "SHDC"                   # card index = suit * 13 + rank
-STRAINS = ["S", "H", "D", "C", "NT"]
-SEAT_NAMES = ["North", "East", "South", "West"]
-NAMES = [c[0] for c in CONTRACTS]
-TRUMP_TO_BID_STRAIN = (3, 2, 1, 0, 4)     # cards are S,H,D,C,NT; bids are C,D,H,S,NT
-BID_STRAIN_TO_TRUMP = (3, 2, 1, 0, 4)     # its own inverse
-HCP_W = np.array([4, 3, 2, 1] + [0] * 9)
-CARD_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"   # 52, one per card
-
-MODELS = OrderedDict()    # id -> PlayBot
+MODELS = engine.PLAY_MODELS    # id -> PlayBot
 GAMES = OrderedDict()     # game id -> game dict, separate from the bid desk's
 MAX_GAMES = 300
 LOCK = threading.Lock()
@@ -88,26 +72,8 @@ except Exception as exc:                                   # pragma: no cover
 
 # ------------------------------------------------------------------- cards
 
-def card_name(card):
-    return SUITS[card // 13] + RANKS[card % 13]
-
-
 def card_parts(card):
     return {"card": int(card), "suit": SUITS[card // 13], "rank": RANKS[card % 13]}
-
-
-def encode_cards(cards):
-    return "".join(CARD_CHARS[c] for c in cards)
-
-
-def decode_cards(code):
-    out = []
-    for ch in str(code)[:52]:
-        i = CARD_CHARS.find(ch)
-        if i < 0:
-            break
-        out.append(i)
-    return out
 
 
 def hand_info(owners, seat, unplayed=None):
@@ -140,32 +106,12 @@ class PlayBot:
         cfg = state["config"]
         self.info = (f"PlayNet {cfg['width']}x{cfg['depth']} · {PLAY_FEATURES} inputs · "
                      f"policy over 52 cards + belief head")
-        self._searcher = None
-
-    def searcher(self):
-        """PIMC over this bot's own net, built on first use.
-
-        Built late because the solver's tables cost ~120 MB and most requests never
-        search. The budget matters more than the sample count here: a solve is ~300x
-        dearer at trick one than at trick seven, so a fixed count would stall the
-        opening and waste effort at the end.
-        """
-        if self._searcher is None:
-            from bridgezero.play.search import PIMCPlayer
-            self._searcher = PIMCPlayer.from_net(self.net, SEARCH_SAMPLES,
-                                                 budget_ms=SEARCH_BUDGET_MS,
-                                                 defence=SEARCH_DEFENCE,
-                                                 defence_from_trick=SEARCH_DEFENCE_FROM)
-        return self._searcher
 
     @torch.no_grad()
     def view(self, contracts, batch, step):
         """Everything the net computes for the seat on turn, ready for the page."""
-        auction = self.net.auction(contracts.calls, contracts.n_calls, contracts.dealer)
-        enc = encode(batch, contracts, step > 0, auction)
+        probs, out, enc = engine.card_policy(self, contracts, batch)
         legal = batch.legal()
-        out = self.net(enc["features"], legal)
-        probs = out["log_probs"][0].exp()
         belief = torch.softmax(out["belief"][0], -1)        # (52, 4) over relative seats
         turn = int(batch.to_play()[0])
         pick = int(probs.argmax())
@@ -295,7 +241,7 @@ def contract_from_calls(calls, dealer):
     first = next(i for i, c in bids if c % 5 == bid_strain and (dealer + i) % 4 % 2 == side)
     tail = calls[last_i + 1:]
     return {
-        "trump": BID_STRAIN_TO_TRUMP[bid_strain],
+        "trump": TRUMP_TO_BID_STRAIN[bid_strain],     # its own inverse
         "declarer": (dealer + first) % 4,
         "level": last // 5 + 1,
         "doubled": 2 if REDOUBLE in tail else (1 if DOUBLE in tail else 0),
@@ -344,8 +290,11 @@ def new_game(owners=None, contract=None, calls=None, dealer=0, vul=(False, False
         "level": int(contract["level"]), "doubled": int(contract["doubled"]),
         "vul_ns": bool(vul[0]), "vul_ew": bool(vul[1]),
         "played": [], "seat_mode": ["net"] * 4,
+        # This desk shows the net itself, so its cards are the net's own; /table
+        # sets its own search setting on the games it builds from here.
+        "search": False,
         "tricks": dd_table(owners), "bench_index": bench_index, "bench_dd": bench_dd,
-        "model": model if model in MODELS else (next(iter(MODELS)) if MODELS else None),
+        "model": model if model in MODELS else engine.default_play_model(),
     }
 
 
@@ -429,19 +378,13 @@ def play_card(game, card, batch=None):
 
 
 def net_card(game, contracts=None, batch=None):
+    """The bot's card for the seat on turn, searching per the game's `search` setting."""
     bot = MODELS.get(game["model"])
     if bot is None:
         return None
     c = contracts if contracts is not None else contracts_of(game)
     b = batch if batch is not None else batch_of(game, c)
-    step = len(game["played"])
-    if game.get("search"):
-        # Declarer always searches; defence per SEARCH_DEFENCE / SEARCH_DEFENCE_FROM.
-        # Turns the searcher skips fall back to the net by themselves.
-        player = bot.searcher()
-        player.start(c)
-        return int(player.choose(b, c, b.legal(), step)[0])
-    return bot.view(c, b, step)["pick"]
+    return engine.choose_card(bot, c, b, game.get("search"))[0]
 
 
 # ------------------------------------------------------------- double dummy
@@ -572,7 +515,7 @@ def state_dump(game):
         "seat_mode": game["seat_mode"],
         "model": game["model"], "models": models_list(),
         "bench_size": (len(bench()) if bench() is not None else 0),
-        "code": {"d": deal_code(game["owners"]), "p": encode_cards(game["played"]),
+        "code": {"d": encode_deal(game["owners"]), "p": encode_cards(game["played"]),
                  "a": auction_code(game["calls"]), "dr": game["dealer"],
                  "v": vul_code(game["vul_ns"], game["vul_ew"]),
                  "b": game["bench_index"], "m": game["model"]},
@@ -599,17 +542,7 @@ def state_dump(game):
     return out
 
 
-def call_name(c):
-    return "Pass" if c == PASS else "X" if c == DOUBLE else "XX" if c == REDOUBLE else NAMES[c]
-
-
-def deal_code(owners):
-    from emergent.bidserver import encode_deal
-    return encode_deal(owners)
-
-
 def auction_code(calls):
-    from emergent.bidserver import CALL_CHARS
     return "".join(CALL_CHARS[c] for c in calls)
 
 
@@ -667,14 +600,12 @@ def register(app):
         else:
             owners = None
             if body.get("deal"):
-                from emergent.bidserver import decode_deal
                 owners = decode_deal(str(body["deal"]))
                 if owners is None:
                     return jsonify(error="bad deal in link"), 400
             calls = None
             dealer = int(body.get("dealer", 0)) % 4
             if body.get("auction"):
-                from emergent.bidserver import CALL_CHARS
                 calls = [CALL_CHARS.find(ch) for ch in str(body["auction"])[:250]]
                 calls = [c for c in calls if 0 <= c <= REDOUBLE]
             contract = None

@@ -17,9 +17,27 @@ Three pages at https://bridge.localgeek.jp, one Flask app in one process:
 
     python3 -m emergent.bidserver                           # http://127.0.0.1:8787, /play and /table too
 
+## The bot engine
+
+`emergent/engine.py` is how the bots bid and play, for every page and API:
+`choose_call(bot, hand, calls, dealer, vul)` and `choose_card(bot, contracts, batch, search)`.
+Its `CONFIG` is read from the environment once, at start:
+
+| env | default | |
+|---|---|---|
+| `BOT_BID_MODEL` / `BOT_PLAY_MODEL` | first entry of `models/models.json` / `play_models.json` | default models |
+| `PLAY_SEARCH` | `1` | PIMC card-play search on |
+| `PLAY_SEARCH_SAMPLES` | `20` | layouts per decision |
+| `PLAY_SEARCH_BUDGET_MS` | `900` | wall clock cap per decision |
+| `PLAY_SEARCH_DEFENCE` | `all` | `off` / `lead` / `all` / `only`; declarer always searches |
+| `PLAY_SEARCH_DEFENCE_FROM` | `2` | defence searches from this trick index (the third trick) |
+
+/table's search toggle overrides `PLAY_SEARCH` for that game; /play shows the plain net
+and never searches.
+
 ## Update to the newest snapshots, then deploy
 
-    ./sync_models.sh      # bridgezero code + E21/E20b/E18 snapshots from ~/code/bridge_new
+    ./sync_models.sh      # bridgezero code + E46/play snapshots from ~/code/bridge_new
     ./deploy.sh
 
 Server config (nginx, systemd) lives in `~/code/infra` (app `bridge`, port 3500).
@@ -28,23 +46,18 @@ The unit still passes `ck.pt` to `create_app`; that argument is ignored now.
 ## Models
 
 `models/models.json` lists what the dropdown shows; the first entry is the
-default. Two families are supported:
+default. Kept: D (default), E46 and brl. Two families are supported:
 
-- bridgezero four-seat checkpoints (`bridgezero-fourseat-0.1`: E18, E20b, E21),
-  copied by `sync_models.sh` without the critic. Edit its `copy` lines to add runs.
-- phase 1 `SeatNet` checkpoints (`models/own_s16_step5250.pt`).
+- bridgezero four-seat checkpoints (D, E46), copied without the critic. E46 comes
+  from `sync_models.sh` (edit its `copy` lines to add runs); D was trained in
+  `~/code/bridge_public` and copied by hand.
+- brl FSP (`brl_fsp_weights.npz`), the external baseline.
 
 ## Frozen copies
 
 `bridgezero/` is copied by `sync_models.sh`. E28's classes (D5OWN4XC) are only on
 branch `integrate-fast-xxsac`, so it copies from that worktree by default; after the
 merge run `CODE=~/code/bridge_new ./sync_models.sh`.
-Everything in `emergent/` except `bidserver.py` and `bidserver_static/` is copied
-from `~/code/bridge/emergent/` (phase 1 net). If a new checkpoint needs newer
-classes, copy again:
-
-    cd ~/code/bridge/emergent && cp exp1.py exp3.py exp3q.py exp10four.py \
-      exp11four.py scoring.py scoring4.py deck.py fullinfo.py ~/code/bridge_server/emergent/
 
 `emergent/teaching/` (`situations.py`, `rules.json`; numpy only) is a frozen copy of
 `~/code/bridge_new/experiments/teaching_D/`, D's 15 teaching rules with their SAYC
