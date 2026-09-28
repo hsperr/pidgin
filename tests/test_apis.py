@@ -54,7 +54,7 @@ def play_board(client, hands, dealer, vul, board="1"):
         return ctx, None
     declarer = contract["declarer"]
     dummy = (declarer + 2) % 4
-    trump = None if contract["trump"] == 4 else contract["trump"]
+    trump = contract["trump"]
     leader = (declarer + 1) % 4
     r = client.get("/apis/brill/lead", query_string={
         "seat": SEATS[leader], "dealer": SEATS[dealer], "vul": vul, "ctx": ctx,
@@ -70,7 +70,7 @@ def play_board(client, hands, dealer, vul, board="1"):
         r = client.get("/apis/brill/play", query_string={
             "seat": SEATS[asked], "dealer": SEATS[dealer], "vul": vul, "ctx": ctx,
             "hand": hand_text(hands[asked]), "dummy": hand_text(hands[dummy]),
-            "played": "".join(apis.card_token(c) for c in played), "board": board})
+            "played": "".join(apis.card_name(c) for c in played), "board": board})
         assert r.status_code == 200, r.json
         card = apis.parse_card(r.json["card"])
         assert card in left[turn], f"{r.json['card']} not held by {SEATS[turn]}"
@@ -239,13 +239,13 @@ def test_bbo_php_full_board(client):
         return
     declarer = contract["declarer"]
     dummy = (declarer + 2) % 4
-    trump = None if contract["trump"] == 4 else contract["trump"]
+    trump = contract["trump"]
     played, left = [], {s: set(hands[s]) for s in range(4)}
     while len(played) < 52:
         _, turn = apis.trick_seats(played, (declarer + 1) % 4, trump)
         pov = declarer if turn == dummy else turn
         r = client.get("/apis/bbo.php", query_string={**q, "pov": SEATS[pov],
-                                                      "h": "-".join(h + [apis.card_token(c) for c in played])})
+                                                      "h": "-".join(h + [apis.card_name(c) for c in played])})
         assert r.status_code == 200, r.get_data(as_text=True)
         card = apis.parse_card(re.search(r'card="([^"]*)"', r.get_data(as_text=True)).group(1))
         assert card in left[turn]

@@ -58,23 +58,17 @@ import torch
 from flask import jsonify, request, send_from_directory
 
 from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import CONTRACTS, DOUBLE, PASS, REDOUBLE
+from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
 from bridgezero.bridge.scoring import contract_score, dd_par_score, imps
 from emergent import playdesk
+from emergent.deck import (HCP_W, N_CALLS, NAMES, RANKS, SEAT_NAMES, STRAINS, SUITS,
+                           TRUMP_TO_BID_STRAIN, beats, call_name, call_token, card_name, trick_best)
 from emergent.deck import deal_owners, owners_to_bitmaps
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(HERE, "bidserver_static")
 
-SEAT_NAMES = ["North", "East", "South", "West"]
-NAMES = [c[0] for c in CONTRACTS]
-N_CALLS = REDOUBLE + 1
-RANKS = "AKQJT98765432"
-SUITS = "SHDC"
 SUIT_WORDS = {"S": "spade", "H": "heart", "D": "diamond", "C": "club"}
-STRAINS = ["S", "H", "D", "C", "NT"]
-TRUMP_TO_BID_STRAIN = (3, 2, 1, 0, 4)     # card order S H D C NT -> bid order C D H S NT
-HCP_W = np.array([4, 3, 2, 1] + [0] * 9)
 DEALER = 0                                 # North, like both other desks
 MAX_GAMES = 300
 
@@ -82,18 +76,6 @@ GAMES = OrderedDict()
 LOCK = threading.Lock()
 EXPLAIN = {"lock": threading.Lock(), "jobs": OrderedDict(), "next": None, "worker": None}
 MAX_EXPLAIN_JOBS = 40
-
-
-def call_name(c):
-    return "Pass" if c == PASS else "X" if c == DOUBLE else "XX" if c == REDOUBLE else NAMES[c]
-
-
-def corpus_token(c):
-    return "P" if c == PASS else "X" if c == DOUBLE else "XX" if c == REDOUBLE else NAMES[c]
-
-
-def card_name(card):
-    return SUITS[card // 13] + RANKS[card % 13]
 
 
 def rank_text(card):
@@ -519,7 +501,7 @@ def corpus_at(game, calls):
     table = corpus_table(game)
     if table is None:
         return None
-    return table.get("-".join(corpus_token(c) for c in calls))
+    return table.get("-".join(call_token(c) for c in calls))
 
 
 def modal_call(entry):
@@ -547,7 +529,7 @@ def partner_reply(game, candidate):
     if partner is None:
         return None
     return {"assumed": {"call": lho_call, "share": lho_stats["share"], "n": lho_stats["n"]},
-            "position": "-".join(corpus_token(c) for c in nxt),
+            "position": "-".join(call_token(c) for c in nxt),
             "n": partner["n"], "calls": partner["calls"]}
 
 
@@ -569,13 +551,13 @@ def partner_last(game):
         if (DEALER + i) % 4 != partner:
             continue
         entry = corpus_at(game, game["calls"][:i])
-        token = corpus_token(game["calls"][i])
+        token = call_token(game["calls"][i])
         if entry is None or token not in entry["calls"]:
             return {"call": call_name(game["calls"][i]), "stats": None,
-                    "position": "-".join(corpus_token(c) for c in game["calls"][:i]) or "(opening)",
+                    "position": "-".join(call_token(c) for c in game["calls"][:i]) or "(opening)",
                     "n": None}
         return {"call": call_name(game["calls"][i]), "stats": entry["calls"][token],
-                "position": "-".join(corpus_token(c) for c in game["calls"][:i]) or "(opening)",
+                "position": "-".join(call_token(c) for c in game["calls"][:i]) or "(opening)",
                 "n": entry["n"]}
     return None
 
@@ -757,14 +739,14 @@ def recent_calls(game, limit=2):
                 continue
             before = game["calls"][:i]
             entry = corpus_at(game, before)
-            token = corpus_token(game["calls"][i])
+            token = call_token(game["calls"][i])
             stats = (entry or {}).get("calls", {}).get(token)
             opened = game["calls"][i] < PASS and not any(c < PASS for c in before)
             if stats:
                 out.append({
                     "seat": seat, "seat_name": SEAT_NAMES[seat],
                     "call": call_name(game["calls"][i]),
-                    "position": "-".join(corpus_token(c) for c in before) or "(opening)",
+                    "position": "-".join(call_token(c) for c in before) or "(opening)",
                     "stats": stats, "n": entry["n"],
                     "sentence": showed_sentence(who, call_name(game["calls"][i]), stats, opened),
                 })
@@ -878,7 +860,7 @@ def nearest_position(game, legal, facts):
     for calls, change in nearby_auctions(game["calls"], game["user_seat"]):
         if not any(c != PASS for c in calls):
             continue                          # all passes: nothing left that says anything
-        key = "-".join(corpus_token(c) for c in calls)
+        key = "-".join(call_token(c) for c in calls)
         entry = table.get(key)
         if entry is None:
             continue
@@ -943,7 +925,7 @@ def auction_hint(game):
         "nearest_advice": (near or {}).get("says"),
         "nearest_fit": (near or {}).get("yours"),
         "told": recent_calls(game),
-        "position": "-".join(corpus_token(c) for c in game["calls"]) or "(opening)",
+        "position": "-".join(call_token(c) for c in game["calls"]) or "(opening)",
         "corpus_n": here["n"] if here else None,
         "corpus": rows,
         "partner_last": partner_last(game),
@@ -964,32 +946,6 @@ def seen_cards(game, seen):
     for c in game["pg"]["played"]:
         known[c] = True
     return known
-
-
-def trick_best(cards, trump):
-    """Index into `cards` of the card winning so far. `cards` is in play order."""
-    if not cards:
-        return None
-    best = 0
-    for i, c in enumerate(cards):
-        b = cards[best]
-        if c // 13 == b // 13:
-            if c % 13 < b % 13:         # rank 0 is the ace, so a lower index wins
-                best = i
-        elif trump < 4 and c // 13 == trump and b // 13 != trump:
-            best = i
-    return best
-
-
-def beats(card, best_card, trump):
-    """Would `card` be winning the trick if it were played now?"""
-    if best_card is None:
-        return True
-    if card // 13 == best_card // 13:
-        return card % 13 < best_card % 13
-    if trump < 4 and card // 13 == trump and best_card // 13 != trump:
-        return True
-    return False
 
 
 def position_facts(game, batch, turn, seen):

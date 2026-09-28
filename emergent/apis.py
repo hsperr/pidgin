@@ -24,7 +24,6 @@ tests/test_apis.py checks that the chosen card does not change when the filler d
 from __future__ import annotations
 
 import hashlib
-import json
 import threading
 from xml.sax.saxutils import quoteattr
 
@@ -37,14 +36,13 @@ from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
 from bridgezero.fourseat.model import competitive_log_probs, policy_log_probs
 from bridgezero.fourseat.state import features_from_history
 from emergent import playdesk
+from emergent.deck import RANKS, SUITS, call_token, card_name, trick_best
 
 SEARCH_LOCK = threading.Lock()
 
 DESK = None                      # the live bid desk module, set by load()
 SEATS = "NESW"
-SUITS = "SHDC"                   # card = suit * 13 + rank, rank 0 = ace
-RANKS = "AKQJT98765432"
-STRAINS = "CDHSN"                # bid index = (level - 1) * 5 + strain
+STRAINS = "CDHSN"                # bid index = (level - 1) * 5 + strain (cards are S H D C)
 
 
 class ApiError(ValueError):
@@ -72,10 +70,6 @@ def parse_hand(text: str, name: str = "hand") -> list[int]:
     if len(cards) != 13 or len(set(cards)) != 13:
         raise ApiError(f"'{name}' must hold 13 different cards, got {len(set(cards))}")
     return cards
-
-
-def card_token(card: int) -> str:
-    return SUITS[card // 13] + RANKS[card % 13]
 
 
 def parse_card(token: str) -> int:
@@ -208,8 +202,7 @@ def meaning(model_id: str, calls: list[int], call: int) -> tuple[str, bool]:
     (text, alert): alert when the named suit is usually not held 4+ long (artificial).
     """
     table = DESK.CORPUS.get(model_id) or {}
-    name = lambda c: "P" if c == PASS else "X" if c == DOUBLE else "XX" if c == REDOUBLE else DESK.NAMES[c]
-    entry = (table.get("-".join(name(c) for c in calls)) or {}).get("calls", {}).get(name(call))
+    entry = (table.get("-".join(call_token(c) for c in calls)) or {}).get("calls", {}).get(call_token(call))
     if call == PASS:
         return ("", False) if not entry else (f"{entry['hcp'][0]:.0f}-{entry['hcp'][2]:.0f} HCP", False)
     if not entry:
@@ -256,19 +249,14 @@ def play_model(model_id: str | None):
     return mid, models[mid]
 
 
-def trick_seats(played: list[int], leader: int, trump_suit: int | None) -> tuple[list[int], int]:
-    """Seat that played each card (from the trick rules), and the seat on turn now."""
-    seats, turn, trick = [], leader, []
-    for card in played:
+def trick_seats(played: list[int], leader: int, trump: int) -> tuple[list[int], int]:
+    """Seat that played each card (from the trick rules), and the seat on turn now.
+    ``trump`` in card order S H D C, 4 = notrump."""
+    seats, turn = [], leader
+    for i, card in enumerate(played):
         seats.append(turn)
-        trick.append((turn, card))
-        if len(trick) == 4:
-            led = trick[0][1] // 13
-
-            def strength(tc):
-                suit, rank = tc[1] // 13, tc[1] % 13
-                return (2 if suit == trump_suit else 1 if suit == led else 0, -rank)
-            turn, trick = max(trick, key=strength)[0], []
+        if i % 4 == 3:
+            turn = (turn + 1 + trick_best(played[i - 3:i + 1], trump)) % 4
         else:
             turn = (turn + 1) % 4
     return seats, turn
@@ -317,13 +305,12 @@ def choose_card(bot, *, seat: int, hand: list[int], dummy: list[int] | None, pla
         raise ApiError("the auction was passed out: there is no play")
     declarer = contract["declarer"]
     dummy_seat = (declarer + 2) % 4
-    trump_suit = None if contract["trump"] == 4 else int(contract["trump"])   # cards S H D C, 4 = NT
     leader = (declarer + 1) % 4
     if len(set(played)) != len(played):
         raise ApiError("'played' repeats a card")
     if len(played) >= 52:
         raise ApiError("all 52 cards are already played")
-    seats, turn = trick_seats(played, leader, trump_suit)
+    seats, turn = trick_seats(played, leader, int(contract["trump"]))
     if turn != seat and not (seat == declarer and turn == dummy_seat):
         raise ApiError(f"it is {SEATS[turn]}'s card, not {SEATS[seat]}'s "
                        f"(declarer {SEATS[declarer]}, {len(played)} cards played)")
@@ -341,7 +328,7 @@ def choose_card(bot, *, seat: int, hand: list[int], dummy: list[int] | None, pla
     voids: dict[int, set] = {}
     for i, (card, who) in enumerate(zip(played, seats)):
         if card in known and known[card] != who:
-            raise ApiError(f"{card_token(card)} was played by {SEATS[who]} but belongs to "
+            raise ApiError(f"{card_name(card)} was played by {SEATS[who]} but belongs to "
                            f"{SEATS[known[card]]}")
         known[card] = who
         start = i - i % 4
@@ -431,7 +418,7 @@ def register(app):
                 seed_text = "|".join(a.get(k, "") for k in ("d", "v", "pov", "n", "e", "s", "w", "h"))
                 card, _ = choose_card(bot, seat=seat, hand=hand, dummy=dummy, played=played,
                                       calls=calls, dealer=dealer, vul=vul, seed_text=seed_text)
-                answer = f'<r type="play" card="{card_token(card)}"/>'
+                answer = f'<r type="play" card="{card_name(card)}"/>'
         except ApiError as exc:
             body = f'<?xml version="1.0" encoding="UTF-8"?>\n<sc_bm error={quoteattr(str(exc))}/>\n'
             return Response(body, status=400, mimetype="text/xml")
@@ -494,8 +481,8 @@ def register(app):
                                     calls=calls, dealer=dealer, vul=vul, seed_text=seed_text)
         except ApiError as exc:
             return error(str(exc))
-        return jsonify(card=card_token(card), model=mid,
-                       candidates=[{"card": card_token(c), "score": round(p, 4)} for c, p in top])
+        return jsonify(card=card_name(card), model=mid,
+                       candidates=[{"card": card_name(c), "score": round(p, 4)} for c, p in top])
 
     @app.get("/apis/brill/lead")
     def api_brill_lead():

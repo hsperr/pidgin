@@ -19,7 +19,6 @@ contract_score, dd_par_score). Redouble is never offered: no model has it.
 Dealer is North, nobody vulnerable.
 """
 import argparse
-import base64
 import functools
 import json
 import os
@@ -32,7 +31,7 @@ import torch
 from flask import Flask, jsonify, request, send_from_directory
 
 from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import CONTRACTS, DOUBLE, PASS, REDOUBLE
+from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
 from bridgezero.bridge.scoring import (contract_score, dd_par_score, own_contract_score,
                                        terminal_ns_score)
 from bridgezero.contract.environment import AUCTION_FEATURES
@@ -40,20 +39,17 @@ from bridgezero.fourseat.model import (competitive_log_probs, load_fourseat_chec
                                        policy_log_probs)
 from bridgezero.fourseat.state import features_from_history
 from emergent import apis, playdesk, tabledesk
-from emergent.deck import deal_owners, owners_to_bitmaps, owners_to_pbn
+from emergent.deck import (CALL_CHARS, HCP_W, N_CALLS, NAMES, RANKS, SEAT_NAMES, SUITS,
+                           TRUMP_TO_BID_STRAIN, call_name, call_token, deal_owners,
+                           decode_deal, encode_deal, owners_to_bitmaps, owners_to_pbn)
 
 from endplay.types import Deal, Denom, Player
 from endplay.dds import calc_all_tables
 
 L = 35
-NAMES = [c[0] for c in CONTRACTS]
-SEAT_NAMES = ["North", "East", "South", "West"]
 DENOMS = [Denom.spades, Denom.hearts, Denom.diamonds, Denom.clubs, Denom.nt]  # table order S H D C NT
 PLAYERS = [Player.north, Player.east, Player.south, Player.west]
-TABLE_TO_BID_STRAIN = (3, 2, 1, 0, 4)   # S H D C NT -> C D H S NT (its own inverse)
-HCP_W = np.array([4, 3, 2, 1] + [0] * 9)
 REL_NAMES = ["me", "LHO", "partner", "RHO"]
-N_CALLS = REDOUBLE + 1                  # 35 contracts + Pass + X + XX
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(HERE, "bidserver_static")
 MODELS_DIR = os.path.join(os.path.dirname(HERE), "models")
@@ -63,10 +59,6 @@ MODELS = OrderedDict()   # id -> bot
 GAMES = OrderedDict()    # game id -> game dict
 MAX_GAMES = 300
 LOCK = threading.Lock()
-
-
-def call_name(c):
-    return "Pass" if c == PASS else "X" if c == DOUBLE else "XX" if c == REDOUBLE else NAMES[c]
 
 
 def competitive_features(history, actor):
@@ -346,30 +338,6 @@ def models_list():
 
 # ------------------------------------------------------------------- games
 
-CALL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-
-
-def encode_deal(owners):
-    """52 owners x 2 bits = 13 bytes = 18 url-safe chars."""
-    n = 0
-    for o in owners:
-        n = (n << 2) | int(o)
-    return base64.urlsafe_b64encode(n.to_bytes(13, "big")).decode().rstrip("=")
-
-
-def decode_deal(code):
-    """Inverse of encode_deal; None unless it is a real deal (13 cards each)."""
-    try:
-        raw = base64.urlsafe_b64decode(code + "=" * (-len(code) % 4))
-    except Exception:
-        return None
-    if len(raw) != 13:
-        return None
-    n = int.from_bytes(raw, "big")
-    owners = np.array([(n >> (2 * (51 - i))) & 3 for i in range(52)], dtype=np.int64)
-    return owners if all((owners == s).sum() == 13 for s in range(4)) else None
-
-
 def new_game(owners=None, model=None):
     if owners is None:
         owners = deal_owners(np.random.default_rng())
@@ -430,9 +398,8 @@ def with_game(fn):
 
 def hand_info(bitmap52):
     sh = bitmap52.reshape(4, 13)
-    ranks, suits = "AKQJT98765432", "SHDC"
     return {"hcp": int((sh * HCP_W).sum()), "shape": [int(x) for x in sh.sum(1)],
-            "cards": {suits[s]: [ranks[r] for r in range(13) if sh[s, r]] for s in range(4)}}
+            "cards": {SUITS[s]: [RANKS[r] for r in range(13) if sh[s, r]] for s in range(4)}}
 
 
 def dd_scores(tricks):
@@ -441,7 +408,7 @@ def dd_scores(tricks):
     for p in range(4):
         row = []
         for d in range(5):
-            t, strain = int(tricks[p, d]), TABLE_TO_BID_STRAIN[d]
+            t, strain = int(tricks[p, d]), TRUMP_TO_BID_STRAIN[d]
             best = None
             for lvl in range(1, 8):
                 sc = contract_score(lvl, strain, t, 0, False)
@@ -604,8 +571,7 @@ def meaning(game):
     table = CORPUS.get(game["model"])
     if table is None:
         return None
-    token = lambda c: "P" if c == PASS else "X" if c == DOUBLE else "XX" if c == REDOUBLE else NAMES[c]
-    key = "-".join(token(c) for c in game["calls"])
+    key = "-".join(call_token(c) for c in game["calls"])
     hit = table.get(key)
     return None if hit is None else {"position": key or "(opening)", **hit}
 

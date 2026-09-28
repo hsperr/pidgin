@@ -16,15 +16,9 @@ import numpy as np
 import torch
 
 from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import CONTRACTS, DOUBLE, PASS, REDOUBLE
+from emergent.deck import NAMES, call_name
 
-NAMES = [c[0] for c in CONTRACTS]
-N_CALLS = REDOUBLE + 1
 MAX_CONTINUATION = 16          # safety stop for the played-out auction
-
-
-def call_name(c):
-    return "Pass" if c == PASS else "X" if c == DOUBLE else "XX" if c == REDOUBLE else NAMES[c]
 
 
 def sample_owners(bitmaps, actor_seat, n, rng):
