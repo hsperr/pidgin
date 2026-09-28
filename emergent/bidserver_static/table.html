@@ -236,6 +236,32 @@ button.cd:disabled{opacity:1; cursor:default}
 .advice.quiet{border-left-color:var(--line); background:var(--bg); color:var(--dim)}
 .advice .tag{margin-right:4px}
 
+/* ---- rule of thumb (experimental): a second, separate source next to the advice.
+   While hints are on during the auction its box keeps a fixed height -- hidden, not
+   removed, when it is not your call -- and every line in the folded view is clamped,
+   so nothing below it moves from one call to the next. Opening it is the only thing
+   that changes its height. */
+#rulecard{display:none}
+#rulecard.on{display:block; margin-top:14px}
+#rulecard.on.idle{visibility:hidden}
+.rule{border:1px dashed var(--line); border-radius:11px; background:var(--card); font-size:15px; line-height:1.5}
+.rule > summary{list-style:none; cursor:pointer; padding:10px 14px; display:block;
+  height:calc(6 * 1.5em + 20px); overflow:hidden}
+.rule > summary::-webkit-details-marker{display:none}
+.rule .rh{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--dim); height:1.5em;
+  white-space:nowrap; overflow:hidden}
+.rule .rh::before{content:"▸"} .rule[open] .rh::before{content:"▾"}
+.rule .rh b{font-weight:600; color:var(--text); overflow:hidden; text-overflow:ellipsis}
+.rule .rt{font-weight:600; height:1.5em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.rule .rl{height:3em; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical}
+.rule .rl .pick{font-family:var(--mono); font-weight:700; padding:0 6px; border-radius:6px;
+  background:var(--accent-bg); outline:2px dashed var(--glow); outline-offset:-2px; margin-left:4px}
+.rule .rm{color:var(--dim); font-size:13.5px; height:1.5em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.rule .rb{padding:0 14px 12px}
+.rule .rb p{margin:6px 0}
+.rule .sayc{color:var(--dim); font-size:13.5px; font-style:italic}
+.rule .none-note{color:var(--dim); height:calc(5 * 1.5em); overflow:hidden}
+
 /* ---- disclosures: the rigour is still here, just folded away */
 details.discl > summary{list-style:none; cursor:pointer; font-size:17px; font-weight:600; min-height:32px;
   display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--text)}
@@ -256,6 +282,7 @@ details.discl > .body{margin-top:16px}
   /* Which checkpoints are playing is not what you need on a phone, and it costs a
      whole row above the table. It is one tap away in the settings disclosure. */
   header .meta{display:none}
+  header .meta.chal{display:block}          /* the match score stays, even on a phone */
 }
 .phone-links{display:none}
 @media (max-width:640px){
@@ -305,6 +332,19 @@ details.discl > .body{margin-top:16px}
 .ddc{font-family:var(--mono); font-size:14px; padding:4px 8px; border-radius:7px; border:1px solid var(--line)}
 .ddc.best{background:var(--pos-bg); border-color:var(--pos)}
 .rvwrap{overflow-x:auto}
+/* challenge: the header's meta line becomes the match score, so nothing moves */
+.chip{display:inline-block; min-width:22px; padding:0 6px; margin-left:4px; border-radius:6px;
+  background:var(--bg); border:1px solid var(--line); font-size:12px; line-height:18px; text-align:center;
+  font-variant-numeric:tabular-nums}
+.chip.now{border-color:var(--accent); color:var(--accent)}
+.chip.pos{background:var(--pos-bg); border-color:transparent} .chip.neg{background:var(--neg-bg); border-color:transparent}
+.vs{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); gap:10px}
+.vs .stat{margin:0}
+.vs .auc{font-family:var(--mono); font-size:14px; margin-top:6px; word-spacing:2px}
+table.match{border-collapse:collapse; width:100%; font-size:15px; margin-top:10px; font-variant-numeric:tabular-nums}
+table.match th{font-size:13px; color:var(--dim); font-weight:600; text-align:left; padding:4px 8px; border-bottom:1px solid var(--line)}
+table.match td{padding:6px 8px; border-bottom:1px solid var(--line)}
+table.match td.n{text-align:right}
 table.rv{border-collapse:separate; border-spacing:0 3px; width:100%; font-size:15px}
 table.rv th{font-size:13px; color:var(--dim); font-weight:600; text-align:left; padding:0 10px}
 table.rv td{background:var(--neg-bg); padding:6px 10px; font-family:var(--mono)}
@@ -338,6 +378,8 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
             title="Copy a link to exactly this position. It holds all four hands, but whoever opens it only sees what your chair may see."
             aria-label="Copy a link to this position"><span class="lbl">Copy link</span><span class="ok" aria-hidden="true">Copied ✓</span></button>
     <span class="sr" id="share-status" role="status" aria-live="polite"></span>
+    <button id="challenge" type="button"
+            title="Play four boards in South. Four bots play the same boards at another table, and you compare in IMPs.">Challenge</button>
     <button id="new-board" class="primary">New board</button>
   </div>
   <div class="meta" id="meta">dealing…</div>
@@ -353,12 +395,14 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
     <div id="panel-body"></div>
     <div id="nextbar"></div>
     <div id="advice" aria-live="polite"></div>
+    <div id="rulecard"></div>
     <div class="actions" id="panel-actions"></div>
   </div>
 </div>
 
 <div class="row" id="result-row" style="display:none">
   <div class="card">
+    <div id="res-chal"></div>
     <h2 id="res-title">Result</h2>
     <p class="hint" id="res-hint"></p>
     <div id="res-stats"></div>
@@ -427,7 +471,7 @@ const suitWord = l => ({S:"spades", H:"hearts", D:"diamonds", C:"clubs"})[l] || 
    on turn there: nothing auto-advances until the visitor presses Continue, or
    plays, or starts something new. Any of those requests releases the hold. */
 let HOLD = false;
-const PROCEEDS = /\/api\/table\/(call|card|advance|finish|new_board|restart)$/;
+const PROCEEDS = /\/api\/table\/(call|card|advance|finish|new_board|restart|challenge(\/next|\/load)?)$/;
 let NOTICE_UNTIL = 0;          // a message about a bad link outlives the next request
 
 let GAME_ID = null;
@@ -547,8 +591,12 @@ function render(d){
   if(fresh || back || SPEED === "off") VIEW = {calls: d.auction.length, cards: cardsIn(d)};
   const at = d.board_no + ":" + d.auction.length;
   if(WHY.at !== at){ WHY = {job:null, timer:null, lines:null, at}; }   // a rollout belongs to one position
-  $("meta").textContent = d.meta;
+  if(!d.challenge) $("meta").textContent = d.meta;
+  $("meta").classList.toggle("chal", !!d.challenge);
   $("meta").title = d.meta_long || d.meta;
+  const inChal = !!d.challenge;
+  $("hintseg").querySelectorAll("button").forEach(b => b.disabled = inChal);
+  $("searchseg").querySelectorAll("button").forEach(b => b.disabled = inChal);
   $("searchseg").querySelectorAll("button").forEach(b => {
     b.classList.toggle("on", (b.dataset.r === "1") === d.search);
     b.onclick = () => go(() => post("/api/table/hints", {search: b.dataset.r === "1"}));
@@ -558,7 +606,7 @@ function render(d){
     b.setAttribute("aria-pressed", String((b.dataset.h === "1") === d.hints));
     b.onclick = () => go(() => post("/api/table/hints", {hints: b.dataset.h === "1"}));
   });
-  $("restart").disabled = d.auction.length === 0;
+  $("restart").disabled = d.auction.length === 0 || inChal;
   LAND = null; FRESH = -1;
   paint();
   schedule();
@@ -568,7 +616,8 @@ function paint(){
   const full = atTarget();
   D = frameOf(SRV, VIEW.calls, VIEW.cards, full);
   syncLink();
-  renderTable(D); renderPanel(D); renderAdvice(D); renderNext(D); renderSettings(D);
+  if(SRV.challenge) renderChallengeMeta(SRV.challenge, full);
+  renderTable(D); renderPanel(D); renderAdvice(D); renderRule(D); renderNext(D); renderSettings(D);
   renderNumbers(D);
   // Hidden, not removed: the header keeps its width while the others play.
   $("skip").classList.toggle("off", full);
@@ -884,7 +933,7 @@ function renderPanel(d){
     `<div class="stat"><span>You are</span><b style="font-size:18px">${role}</b>` +
       `<span>${d.user_seat_name}, partner ${d.partner_name} — ${job}</span></div>`;
 
-  if(d.phase === "over"){
+  if(d.phase === "over" && !d.challenge){       // a challenge board is played once
     A.innerHTML = `<button id="replay">Replay this board</button>`;
     A.querySelector("#replay").onclick = () => goNow(() => post("/api/table/restart"));
   }
@@ -896,7 +945,11 @@ let NEXT_ACT = null;
 function renderNext(d){
   const bar = $("nextbar");
   let label, kbd = "", act = null, cls = "primary";
-  if(d.phase === "over"){
+  if(d.phase === "over" && d.challenge){
+    const c = d.challenge;
+    label = c.last ? "New challenge ▸" : `Board ${c.i + 2} of ${c.n} ▸`;
+    act = c.last ? startChallenge : () => goNow(() => post("/api/table/challenge/next"));
+  } else if(d.phase === "over"){
     label = "Next board ▸";
     act = () => goNow(() => post("/api/table/new_board"));
   } else if(HOLD && !d.your_turn){
@@ -986,6 +1039,64 @@ function auctionAdvice(h){
     out += `<p class="aside">Self-play never reached this auction (or fewer than 200 hands did), ` +
            `and nothing close to it either, so that is the net's own view of your cards.</p>`;
   return out;
+}
+
+/* Rule of thumb, D's style (experimental). A separate card from the advice above,
+   so the two can be compared: one of D's 15 teaching rules (bridge_new/experiments/
+   teaching_D), the line of it that fits these cards, and how often D itself makes
+   that call there. Folded, it has a fixed height; the reasoning and the SAYC notes
+   are one click away. */
+let RULE_OPEN = false;
+try { RULE_OPEN = localStorage.getItem("table-rule-open") === "1"; } catch(e) {}
+const escHTML = t => String(t).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
+// '1H-3H', '2C/2D' in the rule text -> suit symbols, hearts and diamonds in red
+const ruleText = t => escHTML(t).replace(/\b([1-7])([CDHS])\b/g, (m, l, s) =>
+  `<span class="${isRed(s)?'red':''}">${l}${SYM[s]}</span>`);
+const pct = v => v === null || v === undefined ? "?" : Math.round(v * 100) + "%";
+
+function renderRule(d){
+  const box = $("rulecard");
+  const on = !!d.hints && d.phase === "auction";
+  box.classList.toggle("on", on);
+  if(!on){ box.innerHTML = ""; return; }
+  const r = d.your_turn && d.hint && d.hint.kind === "auction" ? d.hint.rule : null;
+  box.classList.toggle("idle", !r);
+  const head = `<span class="rh"><b>Rule of thumb — D's style</b> <span class="tag approx">experimental</span></span>`;
+  if(!r){                                           // keeps the same height, invisible
+    box.innerHTML = `<details class="rule"><summary>${head}</summary></details>`;
+    return;
+  }
+  if(!r.covered){
+    box.innerHTML = `<details class="rule"><summary>${head}` +
+      `<div class="none-note">${escHTML(r.note)}</div></summary></details>`;
+    return;
+  }
+  const alts = (r.d_does || []).map(x => `${escHTML(x.what)} ${pct(x.share)}`).join(", ");
+  const cmp = r.net_call_name === null ? "" : r.same_as_net
+    ? `The net's top call here is the same.`
+    : `The net's top call here is ${pretty(r.net_call_name)}; the rule says ${pretty(r.suggested_name)}.`;
+  const body = [
+    `<p><b>When:</b> ${ruleText(r.when)}</p>`,
+    `<p><b>How to think:</b> ${ruleText(r.think)}</p>`,
+    r.sayc_rule ? `<p class="sayc">${ruleText(r.sayc_rule)}</p>` : "",
+    `<p><b>Your line${r.line_no ? " (" + r.line_no + ")" : ""}:</b> ${ruleText(r.line)} → ${pretty(r.suggested_name)}</p>`,
+    r.sayc_line ? `<p class="sayc">${ruleText(r.sayc_line)}</p>` : "",
+    `<p class="sayc" style="font-style:normal">On held-out self-play D makes exactly this line's call ` +
+      `${pct(r.agree_line)} of the time (D's calls here: ${alts}); the whole rule ${r.number ? "(rule " + r.number + ", " + r.id + ")" : r.id} ` +
+      `agrees ${pct(r.agree_rule)}.` + (r.notes ? ` ${ruleText(r.notes)}` : "") + `</p>`,
+    r.model_note ? `<p class="sayc" style="font-style:normal">${escHTML(r.model_note)}</p>` : "",
+  ].join("");
+  box.innerHTML = `<details class="rule"${RULE_OPEN ? " open" : ""}><summary>${head}` +
+    `<div class="rt">${ruleText(r.title)}</div>` +
+    `<div class="rl">${ruleText(r.line)} <span class="pick">${pretty(r.suggested_name)}</span></div>` +
+    `<div class="rm">D agrees ${pct(r.agree_line)} here. ${cmp}</div>` +
+    `<div class="rm sayc">${r.sayc_line || r.sayc_rule ? ruleText(r.sayc_line || r.sayc_rule) : ""}</div>` +
+    `</summary><div class="rb">${body}</div></details>`;
+  const det = box.querySelector("details");
+  det.addEventListener("toggle", () => {
+    RULE_OPEN = det.open;
+    try { localStorage.setItem("table-rule-open", RULE_OPEN ? "1" : "0"); } catch(e) {}
+  });
 }
 
 // Hovering a call: its measured meaning here, else at the nearest auction, and
@@ -1262,6 +1373,7 @@ function renderResult(d){
   const row = $("result-row"), r = d.result;
   if(d.phase !== "over" || !r){ row.style.display = "none"; return; }
   row.style.display = "";
+  $("res-chal").innerHTML = d.challenge ? challengeHTML(d.challenge) : "";
   const ct = d.contract;
   if(r.passed_out){
     $("res-title").textContent = "Passed out";
@@ -1325,16 +1437,89 @@ function renderResult(d){
     `${TAGS.solver}</p><p class="hint">${rv.note}</p>` + own + side;
 }
 
+/* ------------------------------------------------ challenge: you and three bots against four bots
+
+The other table's result for a board arrives only once your own board is over. */
+const signed = n => (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(n);
+const impWord = n => `${signed(n)} IMP${Math.abs(n) === 1 ? "" : "s"}`;
+
+function renderChallengeMeta(c, full){
+  // Until the last card of the board is on screen, its score stays hidden.
+  const shown = b => b.imps !== null && (full || b.no !== c.i + 1);
+  const total = c.boards.reduce((t, b) => t + (shown(b) ? b.imps : 0), 0);
+  const chips = c.boards.map(b => {
+    if(shown(b)) return `<span class="chip ${b.imps > 0 ? "pos" : b.imps < 0 ? "neg" : ""}" ` +
+                               `title="Board ${b.no}: ${impWord(b.imps)}">${signed(b.imps)}</span>`;
+    return `<span class="chip ${b.status === "playing" ? "now" : ""}" title="Board ${b.no}">${b.no}</span>`;
+  }).join("");
+  const played = c.boards.filter(shown).length;
+  $("meta").innerHTML = `<b>Challenge</b> · board ${c.i + 1} of ${c.n} · ` +
+    (played ? `you ${impWord(total)} against the bots` : `you sit South, four bots play the other table`) + chips;
+}
+
+function tableLine(t){
+  if(t.passed_out) return "Passed out";
+  const res = t.delta === 0 ? "made exactly" : t.delta > 0 ? `made ${t.tricks} (+${t.delta})` : `${-t.delta} down`;
+  return `${contractHTML(t.contract)} by ${t.contract.declarer_name}, ${res}`;
+}
+function auctionLine(t){
+  return t.auction.map(a => pretty(a.name)).join(" ");
+}
+
+function challengeHTML(c){
+  const b = c.boards[c.i];
+  if(!b || b.imps === null) return "";
+  const who = b.imps > 0 ? "You won this board" : b.imps < 0 ? "The bots won this board" : "A tie on this board";
+  let s = `<p class="sub">Challenge · board ${b.no} of ${c.n}</p>` +
+    `<h2>${who}: ${impWord(b.imps)}</h2>` +
+    `<div class="vs">` +
+      `<div class="stat ${b.imps>0?"good":b.imps<0?"bad":""}"><span>Your table — you in South</span>` +
+        `<b class="num">${signed(b.mine.ns_score)}</b><span>${tableLine(b.mine)}</span>` +
+        `<div class="auc">${auctionLine(b.mine)}</div></div>` +
+      `<div class="stat"><span>Other table — four bots</span>` +
+        `<b class="num">${signed(b.bot.ns_score)}</b><span>${tableLine(b.bot)}</span>` +
+        `<div class="auc">${auctionLine(b.bot)}</div></div>` +
+    `</div><p class="hint" style="margin-top:8px">Scores are for North–South. ` +
+    `The difference, ${signed(b.mine.ns_score - b.bot.ns_score)}, is ${impWord(b.imps)}.</p>`;
+  if(c.done){
+    const verdict = c.total > 0 ? `You beat the bots by ${c.total} IMP${c.total===1?"":"s"}`
+                  : c.total < 0 ? `The bots beat you by ${-c.total} IMP${c.total===-1?"":"s"}`
+                  : "A tie with the bots";
+    s += `<p class="sub" style="margin-top:14px">The match</p><h2>${verdict}</h2>` +
+      `<div class="rvwrap"><table class="match"><tr><th>Board</th><th>You</th><th class="n">N/S</th>` +
+      `<th>Bots</th><th class="n">N/S</th><th class="n">IMPs</th></tr>` +
+      c.boards.map(r => `<tr><td>${r.no}</td><td>${tableLine(r.mine)}</td><td class="n">${signed(r.mine.ns_score)}</td>` +
+        `<td>${tableLine(r.bot)}</td><td class="n">${signed(r.bot.ns_score)}</td>` +
+        `<td class="n"><b>${signed(r.imps)}</b></td></tr>`).join("") +
+      `<tr><td colspan="5"><b>Total</b></td><td class="n"><b>${signed(c.total)}</b></td></tr></table></div>` +
+      `<p class="hint" style="margin-top:8px">Send the challenge to a friend: <b>Copy link</b> gives them ` +
+      `the same four boards and the same bot table.</p>`;
+  }
+  return s + `<hr style="border:0;border-top:1px solid var(--line);margin:16px 0">`;
+}
+
+function startChallenge(){
+  if(SRV && SRV.challenge && !SRV.challenge.done &&
+     !confirm("Start a new challenge? The one you are playing ends.")) return;
+  $("meta").textContent = "Dealing four boards, and the bots play the other table… (a few seconds)";
+  return goNow(() => post("/api/table/challenge", {boards: 4}));
+}
+function leaveChallengeOk(){
+  return !(SRV && SRV.challenge && !SRV.challenge.done) ||
+         confirm("Leave the challenge? Your score so far is lost.");
+}
+
 function renderSettings(d){
   $("seats").innerHTML = SEATS.map((n,i) =>
     `<button data-seat="${i}" class="${i===d.user_seat?"primary":""}" style="flex:0 0 auto;min-width:0">` +
     `${n}${i===d.dealer?" (deals)":""}</button>`).join("");
   $("seats").querySelectorAll("button").forEach(b =>
-    b.onclick = () => goNow(() => post("/api/table/new_board", {seat: +b.dataset.seat})));
+    b.onclick = () => leaveChallengeOk() && goNow(() => post("/api/table/new_board", {seat: +b.dataset.seat})));
   $("setup-note").innerHTML = `Board #${d.board_no} · <span class="dim">${d.meta_long || d.meta}</span>`;
 }
 
-$("new-board").onclick = () => goNow(() => post("/api/table/new_board"));
+$("new-board").onclick = () => leaveChallengeOk() && goNow(() => post("/api/table/new_board"));
+$("challenge").onclick = startChallenge;
 $("restart").onclick = () => goNow(() => post("/api/table/restart"));
 $("skip").onclick = skip;
 $("table").addEventListener("click", e => { if(!e.target.closest("button")) skip(); });
@@ -1353,6 +1538,12 @@ them in `code`, and the page cuts `a` and `p` back to the frame it is drawing (o
 character per call, one per card), so a link copied mid-animation is exactly what
 is on the table. replaceState: no reload, no history entry per card. */
 function linkHash(){
+  if(SRV && SRV.challenge){        // a challenge link: every deal and the other table, never your own play
+    const k = SRV.challenge.code, q = new URLSearchParams();
+    q.set("c", k.c); q.set("ca", k.ca); q.set("cp", k.cp);
+    q.set("m", k.m); q.set("pm", k.pm); q.set("r", k.r);
+    return "#" + q.toString();
+  }
   const c = SRV && SRV.code;
   if(!c || !c.d) return null;
   const q = new URLSearchParams();
@@ -1394,7 +1585,7 @@ $("share").onclick = async () => {
   b.focus({preventScroll: true});
   if(!ok){ prompt("Copy this link:", url); return; }
   b.classList.add("done");
-  $("share-status").textContent = "Link copied";
+  $("share-status").textContent = SRV && SRV.challenge ? "Challenge link copied" : "Link copied";
   clearTimeout(SHARE_T);
   SHARE_T = setTimeout(() => { b.classList.remove("done"); $("share-status").textContent = ""; }, 1600);
 };
@@ -1413,6 +1604,24 @@ function linkBody(p){
 
 function boot(){
   const p = new URLSearchParams(location.hash.slice(1));
+  if(p.get("c") !== null){
+    return goNow(async () => {
+      // A reload of the same challenge keeps your place: this tab's game still holds it.
+      const r = await fetch("/api/table/state", {headers:{"X-Game": GAME_ID}});
+      const cur = r.ok ? await r.json() : null;
+      const k = cur && cur.challenge && cur.challenge.code;
+      if(k && k.c === p.get("c") && k.ca === p.get("ca") && k.cp === p.get("cp")) return cur;
+      try {
+        return await post("/api/table/challenge/load",
+          {deals: p.get("c"), auctions: p.get("ca") || "", played: p.get("cp") || "",
+           model: p.get("m") || "", play_model: p.get("pm") || "", search: p.get("r") || "1"});
+      } catch(e){
+        const d = await post("/api/table/new_board");
+        notice(`That challenge link could not be opened — ${e.message}. Here is a fresh board instead.`);
+        return d;
+      }
+    });
+  }
   if(p.get("d") !== null){
     return goNow(async () => {
       try {
@@ -1432,7 +1641,7 @@ function boot(){
 // A different link pasted into the same tab opens it; our own replaceState never fires this.
 window.addEventListener("hashchange", () => {
   const p = new URLSearchParams(location.hash.slice(1));
-  if(p.get("d") !== null && ("#" + p.toString()) !== document.body.dataset.code) boot();
+  if((p.get("d") !== null || p.get("c") !== null) && ("#" + p.toString()) !== document.body.dataset.code) boot();
 });
 
 applySpeed();

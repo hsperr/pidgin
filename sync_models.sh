@@ -30,6 +30,10 @@ for f in bridge/play.py play/__init__.py play/data.py play/model.py play/match.p
   cp "$SRC/bridgezero/$f" "bridgezero/$f"
 done
 
+echo "==> teaching rules (the /table rule-of-thumb card) from $SRC/experiments/teaching_D"
+mkdir -p emergent/teaching
+cp "$SRC/experiments/teaching_D/situations.py" "$SRC/experiments/teaching_D/rules.json" emergent/teaching/
+
 echo "==> snapshots"
 copy() {  # copy <run>/<file> <name>: actor weights only, no critic
   python3 - "$SRC/runs/$1" "models/$2" <<'PY'

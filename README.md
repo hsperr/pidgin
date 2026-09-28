@@ -46,6 +46,13 @@ classes, copy again:
     cd ~/code/bridge/emergent && cp exp1.py exp3.py exp3q.py exp10four.py \
       exp11four.py scoring.py scoring4.py deck.py fullinfo.py ~/code/bridge_server/emergent/
 
+`emergent/teaching/` (`situations.py`, `rules.json`; numpy only) is a frozen copy of
+`~/code/bridge_new/experiments/teaching_D/`, D's 15 teaching rules with their SAYC
+notes, used by the /table "rule of thumb" card. `sync_models.sh` refreshes it; by hand:
+
+    cp ~/code/bridge_new/experiments/teaching_D/{situations.py,rules.json} \
+      ~/code/bridge_server/emergent/teaching/ && python3 emergent/teaching/situations.py
+
 ## Machine APIs (`/apis/…`) — seat our bots at other sites' tables
 
 `emergent/apis.py`, on the same app. Stateless: every request carries the whole position.
@@ -187,6 +194,31 @@ visitor's chair may see, exactly as in normal play: their own hand, dummy after
 the opening lead, all four once the board is over. Anyone who decodes the URL
 knows the deal, so share mid-board links with people who won't.
 
+### Challenge: you against a table of bots
+
+The **Challenge** button starts a short team match. Four boards, you sit South with
+three nets. At the "other table" four nets play the same deals. As each of your
+boards ends, the page shows both tables side by side and scores the difference
+in IMPs; after the last board it shows the whole match.
+
+- The other table is played once, when the challenge starts (a few seconds), and
+  kept. With search on a net can pick a different card each time, so it is never
+  re-run.
+- Its result for a board is sent only once your own board is over.
+- Hints, the solver, search and the models are fixed for the match; Restart is
+  refused. **New board** or a chair change leaves the challenge.
+- `POST /api/table/challenge` starts one, `/api/table/challenge/next` moves on,
+  `/api/table/challenge/load` opens a link. `state.challenge` holds the match.
+
+While a challenge runs, the address bar holds the challenge link, not the position:
+
+    /table#c=<deal>.<deal>…&ca=<calls>.<calls>…&cp=<cards>.<cards>…&m=<bid model>&pm=<play model>&r=<search>
+
+`c` is every deal, `ca` and `cp` the other table's auction and play for each. A
+friend who opens it plays the same boards against the same other table: the moves
+are replayed and checked like a board link, not played again. Reloading the page
+on the same link keeps your place.
+
 ### Playing the nets' moves out
 
 `advance` can answer with a whole trick, or with the rest of the deal when the
@@ -289,6 +321,17 @@ not have. Every claim carries a tag saying where it came from:
   opening lead. The play advice line (`play_advice`) names the card, how often the
   net plays it here, one fact about it, and a second choice once that is at least
   10% likely; it never says *why* the net chose it, because the net cannot say.
+- **rule of thumb (experimental)** — during the auction, a separate card under the
+  advice box: which of D's 15 teaching rules owns this decision
+  (`emergent/teaching/`, see Frozen copies), its "how to think", the line of it that
+  fits the user's cards with the call it names, how often D itself made that call on
+  that line in held-out self-play, and how SAYC treats the same spot. It is in the
+  payload as `hint.rule` (`rule_hint`), next to and independent of the other hint
+  fields, and says neutrally when the rule's call and the net's top call differ.
+  Opening bids are not covered (`covered: false`). The rules were measured with
+  dealer North and nobody vulnerable, the table's own setting, and describe D
+  (`D_cw_s75k`); with another bidding model the card says so. Folded, the card has a
+  fixed height and is hidden (not removed) when it is not the user's call.
 - **solver** — double dummy, which looks at all four hands. Off by default,
   always labelled. It also drives the after-the-deal review, which re-solves the
   board card by card (`playdesk.review`) and lists the user's own cards that cost

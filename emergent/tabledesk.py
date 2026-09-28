@@ -62,6 +62,7 @@ from bridgezero.bridge.calls import CONTRACTS, DOUBLE, PASS, REDOUBLE
 from bridgezero.bridge.scoring import contract_score, dd_par_score, imps
 from emergent import playdesk
 from emergent.deck import deal_owners, owners_to_bitmaps
+from emergent.teaching import situations as teaching
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(HERE, "bidserver_static")
@@ -487,6 +488,7 @@ def state_dump(game):
         "code": link_code(game),
         "result": result_view(game),
         "review": None,
+        "challenge": challenge_view(game),
     }
     if pg is not None:
         declarer = pg["declarer"]
@@ -950,6 +952,94 @@ def auction_hint(game):
         "partner_next": replies,
         "your_hand": facts,
         "has_corpus": corpus_table(game) is not None,
+        "rule": rule_hint(game, net),
+    }
+
+
+# ------------------------------------------------- rule of thumb (experimental)
+# D's 15 teaching rules, a frozen copy of bridge_new/experiments/teaching_D
+# (emergent/teaching/: situations.py + rules.json, numpy only). A separate
+# source from `net` / `corpus`: a short rule distilled from D's self-play
+# (dealer North, nobody vulnerable -- the table's own setting), with how often D
+# itself makes the call the rule names, measured on held-out self-play.
+
+TEACH_RULES = teaching.load_rules()
+TEACH_MODEL = "D_cw_s75k"           # the net the rules were distilled from
+TEACH_ORDER = ["R1", "R2", "O1", "O2", "O3", "O4", "D1", "D3", "D4",
+               "C1", "P1", "P2", "P3", "G1", "G2"]          # README's teaching order
+ACT_WORDS = {"pass": "pass", "double": "double", "redouble": "redouble",
+             "support": "raise", "rebid": "rebid own suit", "new_suit": "new suit",
+             "nt": "notrump", "their_suit": "their suit"}
+KIND_WORDS = {"min": "", "jump": " (jump)", "game": " (game)", "slam": " (slam)"}
+
+
+def action_words(label):
+    """'support_min' -> 'raise', 'new_suit_jump' -> 'new suit (jump)'."""
+    for t, w in ACT_WORDS.items():
+        if label == t:
+            return w
+        if label.startswith(t + "_"):
+            return w + KIND_WORDS.get(label[len(t) + 1:], " " + label[len(t) + 1:])
+    return label.replace("_", " ")
+
+
+def rule_hint(game, net):
+    """The rule of thumb that owns this decision, or a note that none does.
+
+    Never touches the other hint fields; `net_call` is copied from `net` only so
+    the page can say, neutrally, when the rule and the net disagree.
+    """
+    seat = game["user_seat"]
+    cards = [c for c in range(52) if int(game["owners"][c]) == seat]
+    net_top = net["calls"][0] if net and net.get("calls") else None
+    base = {"model": game["model"], "rules_model": TEACH_MODEL,
+            "model_note": (None if game["model"] == TEACH_MODEL else
+                           f"These rules describe D ({TEACH_MODEL}); the bidding model at "
+                           f"this table is {game['model']}."),
+            "net_call": call_glyph(net_top["call"]) if net_top else None,
+            "net_call_name": net_top["call"] if net_top else None,
+            "net_action": net_top["action"] if net_top else None}
+    try:
+        out = teaching.advise(list(game["calls"]), DEALER, seat, cards, TEACH_RULES)
+    except Exception as e:                       # experimental: never break the hint
+        return {**base, "covered": False, "note": f"The rule of thumb failed here ({e})."}
+    if out is None:
+        return {**base, "covered": False,
+                "note": "The rules of thumb start after the opening bid; opening bids are "
+                        "not covered."}
+    r, b = out["rule"], out["branch"]
+    bs, rs = b.get("stats") or {}, r.get("stats") or {}
+    f = out["facts"]
+    call = int(out["call"])
+    lines = [x for x in r["branches"] if (x.get("stats") or {}).get("share")]
+    return {
+        **base,
+        "covered": True,
+        "id": r["id"],
+        "number": TEACH_ORDER.index(r["id"]) + 1 if r["id"] in TEACH_ORDER else None,
+        "title": r["title"],
+        "when": r["when"],
+        "think": r["think"],
+        "line": b["say"],
+        "line_no": (lines.index(b) + 1) if b in lines else None,
+        "suggested": call_glyph(call_name(call)),
+        "suggested_name": call_name(call),
+        "suggested_action": call,
+        "same_as_net": net_top is not None and net_top["action"] == call,
+        # measured on held-out self-play of D: share of all post-opening decisions,
+        # and how often D made exactly the call this line / this rule names
+        "agree_line": bs.get("agree_call"),
+        "line_share": bs.get("share"),
+        "d_does": [{"what": action_words(k), "share": v} for k, v in (bs.get("d_does") or {}).items()][:3],
+        "agree_rule": rs.get("agree_call"),
+        "agree_rule_d_sure": rs.get("agree_when_d_sure"),
+        "notes": r.get("notes") or None,
+        "sayc_rule": r.get("sayc"),
+        "sayc_line": b.get("sayc"),
+        "facts": {"hcp": f["hcp"], "partner_mid": f["partner_mid"] if f["partner_bids"] else None,
+                  "total": f["total"] if f["partner_bids"] else None,
+                  "support": f["support"] if f["partner_suit"] else None,
+                  "fit_cards": f["fit_cards"] if f["partner_suit"] else None},
     }
 
 
@@ -1436,7 +1526,14 @@ def board_from_link(body, prev):
                      board_no=prev["board_no"] + 1)
     game["search"] = prev.get("search", True)
 
-    for i, ch in enumerate(text("auction", 400)):
+    replay_moves(game, text("auction", 400), text("played", 64))
+    return game
+
+
+def replay_moves(game, auction, cards):
+    """Play `auction` (one CALL_CHARS character a call) and `cards` (one CARD_CHARS
+    character a card) onto a fresh game, checking each is legal in turn."""
+    for i, ch in enumerate(auction):
         call = DESK.CALL_CHARS.find(ch)
         st = auction_of(game)
         if st.ended:
@@ -1450,7 +1547,6 @@ def board_from_link(body, prev):
         if auction_of(game).ended:
             begin_play(game)
 
-    cards = text("played", 64)
     if cards:
         st = auction_of(game)
         if not st.ended:
@@ -1468,7 +1564,155 @@ def board_from_link(body, prev):
             raise LinkError(f"card {i + 1} in link, {card_name(card)} by "
                             f"{SEAT_NAMES[int(batch.to_play()[0])]}, is not legal there")
         game.pop("_batch", None)
+
+
+# ---------------------------------------------------------------- challenge
+#
+# A short team match against the nets. The user sits South with three nets, and
+# at the "other table" four nets play the same deals. Each board is compared in
+# IMPs as it ends. The other table is played once, when the challenge starts, and
+# kept: with search on a net may pick a different card each time, so replaying it
+# would change the score under the user. The challenge link carries those results,
+# so a friend who opens it plays against exactly the same other table.
+
+CHALLENGE_BOARDS = 4
+CHALLENGE_MAX = 8
+CHALLENGE_SEAT = 2          # South
+
+
+def robot_board(owners, model, play_model, search):
+    """The other table: all four chairs are nets. Returns the finished game dict."""
+    game = new_board(user_seat=CHALLENGE_SEAT, model=model, play_model=play_model, owners=owners)
+    game["search"] = search
+    for _ in range(100):
+        if auction_of(game).ended:
+            break
+        view, _ = bid_view(game)
+        if view is None or not add_call(game, view["pick"]):
+            raise RuntimeError("the bidding net could not bid at the other table")
+    while phase(game) == "play":
+        pg, batch = game["pg"], batch_for(game)
+        card = playdesk.net_card(pg, playdesk.contracts_of(pg), batch)
+        if card is None or not playdesk.play_card(pg, card, batch):
+            raise RuntimeError("the card-play net could not play at the other table")
+        game.pop("_batch", None)
     return game
+
+
+def board_summary(game):
+    """One finished board, as the comparison shows it. N/S score, South's view."""
+    r = result_view(game)
+    ct = contract_view(game)
+    return {
+        "auction": [{"seat": (DEALER + i) % 4, "name": call_name(c)}
+                    for i, c in enumerate(game["calls"])],
+        "contract": ct,
+        "passed_out": r["passed_out"],
+        "tricks": r["tricks"], "delta": r.get("delta"),
+        "ns_score": r["ns_score"],
+    }
+
+
+def moves_code(game):
+    pg = game["pg"]
+    return ("".join(DESK.CALL_CHARS[c] for c in game["calls"]),
+            playdesk.encode_cards(pg["played"]) if pg is not None else "")
+
+
+def new_challenge(model, play_model, search, n=CHALLENGE_BOARDS):
+    rng = np.random.default_rng()
+    deals, bots = [], []
+    for _ in range(n):
+        owners = np.asarray(deal_owners(rng), dtype=np.int64)
+        deals.append(owners)
+        game = robot_board(owners, model, play_model, search)
+        bots.append(dict(board_summary(game), code=moves_code(game)))
+    return {"deals": deals, "bot": bots, "mine": [None] * n, "i": 0,
+            "model": model, "play_model": play_model, "search": bool(search)}
+
+
+def challenge_from_link(body, prev):
+    """A challenge from its link, or `LinkError`. The other table is replayed, not re-run."""
+    def parts(key):
+        v = body.get(key) or ""
+        if not isinstance(v, str) or len(v) > 2000:
+            raise LinkError(f"bad {key} in challenge link")
+        return v.split(".")
+    deals = parts("deals")
+    auctions, played = parts("auctions"), parts("played")
+    if not 1 <= len(deals) <= CHALLENGE_MAX or deals == [""]:
+        raise LinkError(f"a challenge has 1 to {CHALLENGE_MAX} boards")
+    if len(auctions) != len(deals) or len(played) != len(deals):
+        raise LinkError("the challenge link needs one auction and one play per board")
+    model = body.get("model") or prev["model"]
+    play_model = body.get("play_model") or prev["play_model"]
+    if model not in bid_models():
+        raise LinkError(f"bidding model {model!r} is not on this server")
+    if play_model not in play_models():
+        raise LinkError(f"card-play model {play_model!r} is not on this server")
+    search = str(body.get("search", "1")) in ("1", "true", "True")
+    out, bots = [], []
+    for k, code in enumerate(deals):
+        owners = DESK.decode_deal(code) if code else None
+        if owners is None:
+            raise LinkError(f"board {k + 1} in challenge link has a bad deal")
+        owners = np.asarray(owners, dtype=np.int64)
+        game = new_board(user_seat=CHALLENGE_SEAT, model=model, play_model=play_model, owners=owners)
+        try:
+            replay_moves(game, auctions[k], played[k])
+        except LinkError as e:
+            raise LinkError(f"board {k + 1}, other table: {e}")
+        if phase(game) != "over":
+            raise LinkError(f"board {k + 1}, other table: the board is not finished")
+        out.append(owners)
+        bots.append(dict(board_summary(game), code=(auctions[k], played[k])))
+    return {"deals": out, "bot": bots, "mine": [None] * len(out), "i": 0,
+            "model": model, "play_model": play_model, "search": search}
+
+
+def challenge_board(ch, prev_board_no):
+    """A game dict for the challenge's current board, the user in South."""
+    game = new_board(user_seat=CHALLENGE_SEAT, model=ch["model"], play_model=ch["play_model"],
+                     hints=False, peek=False, owners=ch["deals"][ch["i"]],
+                     board_no=prev_board_no + 1)
+    game["search"] = ch["search"]
+    game["challenge"] = ch
+    return game
+
+
+def challenge_code(ch):
+    """The pieces of the challenge link: every deal and the other table's moves."""
+    return {
+        "c": ".".join(DESK.encode_deal(o) for o in ch["deals"]),
+        "ca": ".".join(b["code"][0] for b in ch["bot"]),
+        "cp": ".".join(b["code"][1] for b in ch["bot"]),
+        "m": ch["model"], "pm": ch["play_model"], "r": int(ch["search"]),
+    }
+
+
+def challenge_view(game):
+    """What the page shows about the match. The other table's result for a board is
+    sent only once the user's own board is over, so it cannot be peeked at."""
+    ch = game.get("challenge")
+    if ch is None:
+        return None
+    i = ch["i"]
+    if ch["mine"][i] is None and phase(game) == "over":
+        ch["mine"][i] = board_summary(game)
+    boards, total = [], 0
+    for k, bot in enumerate(ch["bot"]):
+        mine = ch["mine"][k]
+        row = {"no": k + 1, "status": "done" if mine else "playing" if k == i else "waiting",
+               "mine": mine, "bot": None, "imps": None}
+        if mine:
+            row["bot"] = {x: bot[x] for x in bot if x != "code"}
+            row["imps"] = imps(mine["ns_score"] - bot["ns_score"])
+            total += row["imps"]
+        boards.append(row)
+    return {"n": len(ch["bot"]), "i": i, "boards": boards, "total": total,
+            "done": all(m is not None for m in ch["mine"]),
+            "last": i == len(ch["bot"]) - 1,
+            "code": challenge_code(ch)}
 
 
 # ------------------------------------------------------------------- routes
@@ -1543,9 +1787,56 @@ def register(app):
         game.update(fresh)
         return jsonify(state_dump(game))
 
+    @app.post("/api/table/challenge")
+    @with_game
+    def api_table_challenge(game):
+        """Start a challenge: deal the boards and play the other table now."""
+        n = int_field(body_of(request), "boards")
+        n = CHALLENGE_BOARDS if n < 1 else min(n, CHALLENGE_MAX)
+        ch = new_challenge(game["model"], game["play_model"], game.get("search", True), n)
+        fresh = challenge_board(ch, game["board_no"])
+        game.clear()
+        game.update(fresh)
+        advance(game)
+        return jsonify(state_dump(game))
+
+    @app.post("/api/table/challenge/load")
+    @with_game
+    def api_table_challenge_load(game):
+        """Open a challenge link: the same deals and the same other table, from board 1."""
+        try:
+            ch = challenge_from_link(body_of(request), game)
+        except LinkError as e:
+            return jsonify(error=str(e)), 400
+        fresh = challenge_board(ch, game["board_no"])
+        game.clear()
+        game.update(fresh)
+        advance(game)
+        return jsonify(state_dump(game))
+
+    @app.post("/api/table/challenge/next")
+    @with_game
+    def api_table_challenge_next(game):
+        ch = game.get("challenge")
+        if ch is None:
+            return jsonify(error="no challenge is running"), 400
+        if phase(game) != "over":
+            return jsonify(error="finish this board first"), 400
+        challenge_view(game)                       # records this board if not yet
+        if ch["i"] + 1 >= len(ch["deals"]):
+            return jsonify(error="that was the last board"), 400
+        ch["i"] += 1
+        fresh = challenge_board(ch, game["board_no"])
+        game.clear()
+        game.update(fresh)
+        advance(game)
+        return jsonify(state_dump(game))
+
     @app.post("/api/table/restart")
     @with_game
     def api_table_restart(game):
+        if game.get("challenge"):
+            return jsonify(error="a challenge board cannot be replayed"), 400
         reset_board(game)
         advance(game)
         return jsonify(state_dump(game))
@@ -1554,6 +1845,8 @@ def register(app):
     @with_game
     def api_table_hints(game):
         body = body_of(request)
+        if game.get("challenge") and any(k in body for k in ("hints", "peek", "search")):
+            return jsonify(error="hints, the solver and search are fixed during a challenge"), 400
         if "hints" in body:
             game["hints"] = bool(body["hints"])
         if "peek" in body:
@@ -1568,6 +1861,8 @@ def register(app):
     @with_game
     def api_table_models(game):
         body = body_of(request)
+        if game.get("challenge"):
+            return jsonify(error="the models are fixed during a challenge"), 400
         if body.get("model") in bid_models():
             game["model"] = body["model"]
         if body.get("play_model") in play_models():
