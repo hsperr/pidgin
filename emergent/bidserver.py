@@ -10,7 +10,7 @@ runs it under gunicorn, one worker, via `create_app` -- see deploy.sh.
 
 Two model families, each through the exact code it was trained with:
 
-- phase 1 `SeatNet` (emergent/exp11four.py): Q for each call, 694-d input;
+- phase 1 `SeatNet` (emergent/phase1.py): Q for each call, 694-d input;
 - four-seat bridgezero nets (E18, E20b, E21; bridgezero/fourseat): policy,
   Q, trick head, double value/gate, 147 or 149 readable input bits.
 
@@ -79,12 +79,9 @@ class Phase1Bot:
     SCALARS = ["turn / 10", "last bid / L", "passes / 3", "doubled", "last bid is ours", "any bid yet"]
 
     def __init__(self, path):
-        from emergent.exp1 import FULL_CONTRACTS
-        from emergent.exp11four import SeatNet
+        from emergent.phase1 import SeatNet
         ck = torch.load(path, map_location="cpu", weights_only=False)
         cfg = ck["config"]
-        contracts = [c for c in FULL_CONTRACTS if c[1] is not None]
-        assert [c[0] for c in contracts] == NAMES, "phase 1 contract order differs"
         self.net = SeatNet(L, cfg["hidden"], cfg["d_hand"], cfg["d_rung"], cfg["layers"],
                            dbl_head=cfg.get("dbl_head", False))
         self.net.load_state_dict(ck["net"])
@@ -94,11 +91,10 @@ class Phase1Bot:
         self.info = "phase 1 SeatNet · Q per call · 694-d input"
 
     def _state(self, calls):
-        from emergent.exp10four import St
-        from emergent.exp11four import apply_call_
-        st = St.empty(torch.tensor([0]), L)
+        from emergent.phase1 import St, apply_call_
+        st = St.empty(1)
         for i, c in enumerate(calls):
-            apply_call_(st, torch.tensor([c]), i % 4, L, False)
+            apply_call_(st, torch.tensor([c]), i % 4)
         return st
 
     @torch.no_grad()

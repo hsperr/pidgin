@@ -39,12 +39,9 @@ default. Two families are supported:
 `bridgezero/` is copied by `sync_models.sh`. E28's classes (D5OWN4XC) are only on
 branch `integrate-fast-xxsac`, so it copies from that worktree by default; after the
 merge run `CODE=~/code/bridge_new ./sync_models.sh`.
-Everything in `emergent/` except `bidserver.py` and `bidserver_static/` is copied
-from `~/code/bridge/emergent/` (phase 1 net). If a new checkpoint needs newer
-classes, copy again:
-
-    cd ~/code/bridge/emergent && cp exp1.py exp3.py exp3q.py exp10four.py \
-      exp11four.py scoring.py scoring4.py deck.py fullinfo.py ~/code/bridge_server/emergent/
+`emergent/phase1.py` is the inference half of the phase 1 net from
+`~/code/bridge/emergent/` (`exp11four.SeatNet`, `exp10four.St`, `fullinfo.SuitEncoder`),
+with the same parameter names so its checkpoints load; the experiment scripts are gone.
 
 ## Machine APIs (`/apis/…`) — seat our bots at other sites' tables
 

@@ -82,14 +82,6 @@ def owners_to_bitmaps(owners):
     return out
 
 
-def hcp(hand52):
-    return int((hand52.reshape(4, 13) * HCP_W).sum())
-
-
-def suit_lengths(hand52):
-    return hand52.reshape(4, 13).sum(axis=1)
-
-
 # ---- link codes, shared by /, /play and /table
 
 CALL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
