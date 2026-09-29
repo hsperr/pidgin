@@ -11,12 +11,12 @@
   --tw:42px; --th:56px;            /* a card on the trick */
   --hand-hd:22px; --hand-pad:6px;
   --ch:40px; --cw:42px;            /* a face-up hand that is not yours (dummy) */
-  --me-ch:44px; --me-cw:46px;      /* yours: the cards you tap */
-  --me-ch-bid:36px;                /* ... smaller during the auction, where the box needs the room */
+  --me-ch:38px; --me-cw:40px;      /* yours: the cards you tap */
+  --me-ch-bid:31px;                /* ... smaller during the auction, where the box needs the room */
   --top-down:62px;                 /* partner face down: a name and a small fan */
 }
 @media (max-width:360px), (max-height:760px){
-  :root{ --side:80px; --tw:40px; --th:50px; --ch:36px; --cw:38px; --me-ch:40px; --me-cw:42px; --me-ch-bid:32px; --top-down:52px }
+  :root{ --side:80px; --tw:40px; --th:50px; --ch:36px; --cw:38px; --me-ch:34px; --me-cw:36px; --me-ch-bid:28px; --top-down:52px }
 }
 
 html{-webkit-tap-highlight-color:transparent; overflow-x:hidden}
@@ -92,13 +92,14 @@ html.menu .tools{transform:none; visibility:visible; transition:transform .25s e
 .cd{font-size:19px; border-radius:6px}
 .cd.ten{font-size:16px}
 
-/* Yours: the biggest cards on the screen, the ones you tap. */
-.hand.pos0{--ch:var(--me-ch); --cw:var(--me-cw)}
+/* Yours: the biggest cards on the screen, the ones you tap. A little air above it,
+   so the side fans never seem to reach into your hand. */
+.hand.pos0{--ch:var(--me-ch); --cw:var(--me-cw); margin-top:8px}
 .table[data-phase=auction] .hand.pos0{--ch:var(--me-ch-bid)}
-.hand.pos0 .cd{font-size:22px}
-.hand.pos0 .cd.ten{font-size:18px}
-.table[data-phase=auction] .hand.pos0 .cd{font-size:19px}
-.table[data-phase=auction] .hand.pos0 .cd.ten{font-size:16px}
+.hand.pos0 .cd{font-size:19px}
+.hand.pos0 .cd.ten{font-size:16px}
+.table[data-phase=auction] .hand.pos0 .cd{font-size:17px}
+.table[data-phase=auction] .hand.pos0 .cd.ten{font-size:14px}
 button.cd.play{box-shadow:0 2px 0 var(--face-line); border-color:var(--accent)}
 button.cd.play:active{transform:translateY(1px); background:var(--accent-bg)}
 
