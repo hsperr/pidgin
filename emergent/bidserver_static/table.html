@@ -2,8 +2,17 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Play a board</title>
+<!-- Phones get their own design, in table.mobile.css. The desktop never loads a rule from it. -->
+<meta name="theme-color" content="#ffffff" media="(max-width:640px) and (prefers-color-scheme:light)">
+<meta name="theme-color" content="#1b1e23" media="(max-width:640px) and (prefers-color-scheme:dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Bridge">
+<link rel="manifest" href="/table.webmanifest">
+<link rel="icon" href="/table-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/table-icon-180.png">
 <style>
 :root{
   --bg:#f6f5f1; --card:#ffffff; --line:#d9d5cb; --text:#1d1f23; --dim:#5f636b; --faint:#9a9da4;
@@ -69,6 +78,9 @@ header .meta{color:var(--dim); font-size:14px; margin-top:8px; height:21px;
 #share .ok{visibility:hidden; color:var(--pos); font-weight:600}
 #share.done .ok{visibility:visible}
 #share.done .lbl{visibility:hidden}
+/* The phone's menu sheet and extras. On the desktop the tools are ordinary header items. */
+.tools{display:contents}
+#more,#scrim,.sheet-hd,.nb-x,.bblv{display:none}
 .sr{position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden;
   clip:rect(0 0 0 0); white-space:nowrap; border:0}
 #err{position:fixed; left:50%; top:14px; transform:translateX(-50%); z-index:30; max-width:min(640px,calc(100vw - 32px));
@@ -229,24 +241,6 @@ html[data-deck=champion] .cd.back::after{content:""; position:absolute; inset:0;
 .corner.tl{grid-column:1; grid-row:1} .corner.tr{grid-column:3; grid-row:1; text-align:right}
 .corner.bl{grid-column:1; grid-row:3; align-self:end} .corner.br{grid-column:3; grid-row:3; align-self:end; text-align:right}
 
-/* ---- phone: partner on top, the opponents side by side, the trick, then you */
-@media (max-width:640px){
-  :root{ --cw:34px; --ch:38px; --hand-hd:24px; --hand-pad:7px; --tw:46px; --th:62px }
-  body{padding:12px 12px 96px}
-  .card{padding:14px}
-  .table{grid-template-columns:repeat(2,minmax(0,1fr));
-    grid-template-rows:var(--hand-h) var(--hand-h) calc(3 * var(--th) + 22px) var(--hand-h);
-    gap:8px; padding:8px; border-radius:12px}
-  .corner{display:none}
-  .pos2{grid-column:1/-1; grid-row:1} .pos1{grid-column:1; grid-row:2}
-  .pos3{grid-column:2; grid-row:2} .pos0{grid-column:1/-1; grid-row:4}
-  .center{grid-column:1/-1; grid-row:3; height:auto; align-self:stretch}
-  .cd{font-size:18px}
-  .cd.ten{font-size:15px}
-  .hand .hd b{font-size:16px}
-  .hand .hd .who{font-size:12px}
-}
-
 /* ---- panel. Title and status line have fixed heights; the controls sit above the
    prose, so text of any length never pushes a button. */
 #panel-hint{min-height:calc(2 * 1.5em)}
@@ -360,9 +354,6 @@ table.match td a{white-space:nowrap}
   header .meta{display:none}
   header .meta.chal{display:block}          /* the match score stays, even on a phone */
 }
-@media (max-width:640px){
-  header h1{font-size:19px; flex:1 0 100%}
-}
 
 /* ---- hints */
 .tag{display:inline-block; font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; line-height:1.5;
@@ -423,6 +414,7 @@ table.rv th{font-size:13px; color:var(--dim); font-weight:600; text-align:left; 
 table.rv td{background:var(--neg-bg); padding:6px 10px; font-family:var(--mono)}
 table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border-radius:0 7px 7px 0}
 </style>
+<link rel="stylesheet" href="/table.mobile.css" media="(max-width:640px)">
 </head>
 <body>
 <div class="wrap">
@@ -430,6 +422,8 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
 <header>
   <div class="bar">
     <h1>Play a board</h1>
+    <div class="tools" id="tools" role="group" aria-label="Menu">
+    <p class="sheet-hd">Menu</p>
     <span class="seg" id="hintseg" role="group" aria-label="Hints"
           title="Teaching notes, and the net's suggestion, before every call and every card">
       <button data-h="1" aria-pressed="false">hints on</button><button data-h="0" aria-pressed="true">hints off</button>
@@ -451,11 +445,14 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
     <button id="challenge" type="button"
             title="Play four boards in South. Four bots play the same boards at another table, and you compare in IMPs.">Challenge</button>
     <button id="new-board" class="primary">New board</button>
+    </div>
     <button id="rank" type="button" title="Your challenge rating. Opens the leaderboard." aria-label="Leaderboard">🏆 …</button>
     <button id="gear" type="button" title="Settings: card theme, your chair" aria-label="Settings">⚙</button>
+    <button id="more" type="button" aria-label="Menu" aria-expanded="false" aria-controls="tools">⋯</button>
   </div>
   <div class="meta" id="meta">dealing…</div>
 </header>
+<div id="scrim"></div>
 <div id="err" role="alert"></div>
 
 <div class="row top">
@@ -634,6 +631,15 @@ function go(make){
                .then(d => { if(d && gen === GEN) render(d); })
                .catch(e => { if(gen === GEN) fail(e); });
   return CHAIN;
+}
+
+// The user's own call or card. A second tap while the first is on its way is dropped:
+// queued, it would reach the server after the turn has passed and be refused.
+let MOVING = false;
+function move(make){
+  if(MOVING) return CHAIN;
+  MOVING = true;
+  return go(make).finally(() => { MOVING = false; });
 }
 
 // Starting something new wins outright: drop the pending tick, abandon the queue.
@@ -846,6 +852,7 @@ function seatRole(d, seat){
 function renderTable(d){
   const t = $("table"); t.innerHTML = "";
   t.classList.toggle("clickskip", !atTarget());
+  t.dataset.phase = d.phase;
   for(const s of d.seats){
     const el = document.createElement("div");
     const turn = s.seat === d.to_play;
@@ -857,6 +864,9 @@ function renderTable(d){
     el.className = `hand pos${slotOf(d, s.seat)}${turn && yours?" turn":""}${d.phase === "play" ? " inplay" : ""}` +
                    `${turn && !yours?" acting":""}${mine?" mine":""}`;
     const role = seatRole(d, s.seat);
+    // The phone sizes a hand by these: dummy keeps its face-up room from the first card.
+    if(s.hidden) el.classList.add("down");
+    if(role === "dummy") el.classList.add("dummy");
     // Spell out who plays the two declaring hands: declarer plays both.
     const youPlayIt = role === "dummy" && !mine && d.role === "declarer" && d.phase === "play";
     const partnerPlaysYou = mine && d.role === "dummy" && d.phase === "play";
@@ -872,7 +882,7 @@ function renderTable(d){
       `<span class="pts num">${s.hidden ? s.left + " cards" : s.hcp + " HCP"}</span></div>` +
       badge + (s.hidden ? backsHTML(s.left) : suitsHTML(d, s, yours));
     el.querySelectorAll("button[data-card]").forEach(b =>
-      b.onclick = () => go(() => post("/api/table/card", {card: +b.dataset.card})));
+      b.onclick = () => move(() => post("/api/table/card", {card: +b.dataset.card})));
     t.appendChild(el);
   }
 
@@ -995,8 +1005,9 @@ function renderPanel(d){
                   : `${d.dealer_name} dealt, nobody vulnerable. Pick a call in the box.`;
     B.innerHTML = biddingBox(d);
     panelTools(d);
+    B.querySelectorAll(".bblv button").forEach(b => b.onclick = () => pickLevel(+b.dataset.lv));
     B.querySelectorAll("button[data-call]").forEach(b => {
-      b.onclick = () => go(() => post("/api/table/call", {call: +b.dataset.call}));
+      b.onclick = () => move(() => post("/api/table/call", {call: +b.dataset.call}));
       // Hovering a call previews what it would say, so the box teaches by itself.
       b.onmouseenter = () => renderAdvice(D, +b.dataset.call);
       b.onmouseleave = () => renderAdvice(D);
@@ -1094,8 +1105,8 @@ function renderNext(d){
     kbd = d.suggest.kind === "call" ? "plays the ringed call · Enter"
                                     : "plays the ringed card · Enter";
     act = d.suggest.kind === "call"
-      ? () => go(() => post("/api/table/call", {call: d.suggest.action}))
-      : () => go(() => post("/api/table/card", {card: d.suggest.action}));
+      ? () => move(() => post("/api/table/call", {call: d.suggest.action}))
+      : () => move(() => post("/api/table/card", {card: d.suggest.action}));
   } else if(d.your_turn){
     // Hints off: nothing to take, so the button only says whose move it is.
     label = d.phase === "auction" ? "Your call — pick one above" : "Your card — pick one from your hand";
@@ -1106,10 +1117,15 @@ function renderNext(d){
     act = () => { skip(); if(!done) goNow(() => post("/api/table/finish")); };
   }
   NEXT_ACT = act;
-  bar.innerHTML = `<button class="${cls}" id="nextbtn" ${act ? "" : "disabled"}>${label}</button>` +
+  // The phone keeps undo and claim under the thumb too; these press the panel's own buttons.
+  const extra = [["undo", "↶", "Undo"], ["claim", "Claim", "Claim the rest"]]
+    .filter(([id]) => $(id))
+    .map(([id, txt, lbl]) => `<button class="nb-x nb-${id}" type="button" data-for="${id}" aria-label="${lbl}">${txt}</button>`).join("");
+  bar.innerHTML = extra + `<button class="${cls}" id="nextbtn" ${act ? "" : "disabled"}>${label}</button>` +
                   `<span class="kbd">${kbd}</span>`;             // always there, so nothing moves
   const b = bar.querySelector("#nextbtn");
   if(act) b.onclick = () => { b.blur(); act(); };
+  bar.querySelectorAll(".nb-x").forEach(x => x.onclick = () => $(x.dataset.for).click());
 }
 
 document.addEventListener("keydown", e => {
@@ -1247,16 +1263,38 @@ function previewAdvice(h, call){
   return `<p class="say">Self-play has no measured meaning for that call here.</p>` + odds;
 }
 
+/* On a phone the box is two steps: a row of levels, then that level's five strains.
+   The level shown starts at the ringed call's, else the lowest one still open. */
+let BB_LV = {at: null, lv: 1};
+function pickLevel(lv){
+  BB_LV.lv = lv;
+  document.querySelectorAll(".bblv button").forEach(b => b.classList.toggle("on", +b.dataset.lv === lv));
+  document.querySelectorAll(".bb button[data-call]").forEach(b => b.classList.toggle("cur", +b.dataset.lv === lv));
+}
+
 function biddingBox(d){
   const legal = d.legal_calls || [];
   const tip = (d.hints && d.hint && d.hint.net && d.hint.net.calls.length)
     ? d.hint.net.calls[0].action : -1;
+  const at = d.board_no + ":" + d.auction.length;
+  if(BB_LV.at !== at){
+    const open = legal.findIndex((ok, i) => ok && i < 35);
+    BB_LV = {at, lv: tip >= 0 && tip < 35 ? Math.floor(tip / 5) + 1 : open >= 0 ? Math.floor(open / 5) + 1 : 1};
+  }
   const mk = (i, label) => {
     const ok = d.your_turn && legal[i];
-    return `<button class="${legal[i]?'':'illegal'}${i===tip?' tip':''}" ${ok?'':'disabled'} ` +
-           `data-call="${i}"><span class="c">${label}</span></button>`;
+    const lv = i < 35 ? Math.floor(i / 5) + 1 : 0;
+    return `<button class="${legal[i]?'':'illegal'}${i===tip?' tip':''}${lv===BB_LV.lv?' cur':''}" ${ok?'':'disabled'} ` +
+           `data-call="${i}"${lv ? ` data-lv="${lv}"` : ""}><span class="c">${label}</span></button>`;
   };
-  let h = `<div class="bb">`;
+  let h = `<div class="bblv" role="group" aria-label="Level">`;
+  for(let lv=1; lv<=7; lv++){
+    const any = legal.some((ok, i) => ok && i < 35 && Math.floor(i / 5) + 1 === lv);
+    const tipHere = tip >= 0 && tip < 35 && Math.floor(tip / 5) + 1 === lv;
+    h += `<button type="button" data-lv="${lv}" class="${lv===BB_LV.lv?'on':''}${tipHere?' tip':''}${any?'':' illegal'}" ` +
+         `${any?'':'disabled'}>${lv}</button>`;
+  }
+  h += `</div><div class="bb">`;
   for(let lv=1; lv<=7; lv++){
     h += `<div class="lv">${lv}</div>`;
     LADDER.forEach((s,k) => h += mk((lv-1)*5+k, `<span class="${isRed(s)?'red':''}">${lv}${SYM[s]}</span>`));
@@ -1818,6 +1856,15 @@ function undoMove(){
 $("gear").onclick = () => $("settings").showModal();
 $("settings-close").onclick = () => $("settings").close();
 $("rank").onclick = openLeaderboard;
+/* The phone's ⋯ menu: the header tools slide up as a sheet. */
+function menu(open){
+  document.documentElement.classList.toggle("menu", open);
+  $("more").setAttribute("aria-expanded", String(open));
+}
+$("more").onclick = () => menu(!document.documentElement.classList.contains("menu"));
+$("scrim").onclick = () => menu(false);
+$("tools").addEventListener("click", e => { if(e.target.closest("#new-board,#challenge")) menu(false); });
+document.addEventListener("keydown", e => { if(e.key === "Escape") menu(false); });
 for(const dlg of document.querySelectorAll("dialog.modal")){
   dlg.addEventListener("click", e => { if(e.target === dlg) dlg.close(); });   // the backdrop
   const x = dlg.querySelector("[data-close]");

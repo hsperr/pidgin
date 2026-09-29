@@ -1,0 +1,251 @@
+/* /table on a phone. Loaded only under 640px wide (media="(max-width:640px)" on the
+   <link>), after the page's own styles, so everything here wins at equal weight and
+   the desktop never sees a rule of it. The markup and the script are the same; the
+   phone just lays them out as an app: a top bar, the table edge to edge, your hand
+   big at the bottom, the controls in a sheet, the next move under your thumb. */
+
+:root{
+  --bar-h:52px;                    /* the top app bar, without the notch */
+  --nb-h:74px;                     /* the next-action bar, without the home indicator */
+  --side:88px;                     /* the two opponents' columns */
+  --tw:42px; --th:56px;            /* a card on the trick */
+  --hand-hd:22px; --hand-pad:6px;
+  --ch:40px; --cw:42px;            /* a face-up hand that is not yours (dummy) */
+  --me-ch:44px; --me-cw:46px;      /* yours: the cards you tap */
+  --me-ch-bid:36px;                /* ... smaller during the auction, where the box needs the room */
+  --top-down:62px;                 /* partner face down: a name and a small fan */
+}
+@media (max-width:360px), (max-height:760px){
+  :root{ --side:80px; --tw:40px; --th:50px; --ch:36px; --cw:38px; --me-ch:40px; --me-cw:42px; --me-ch-bid:32px; --top-down:52px }
+}
+
+html{-webkit-tap-highlight-color:transparent; overflow-x:hidden}
+body{padding:0 0 calc(var(--nb-h) + env(safe-area-inset-bottom) + 8px); font-size:15px; overflow-x:hidden}
+.wrap{display:flex; flex-direction:column}
+button{touch-action:manipulation; min-height:44px}
+/* A tap is not a hover: keep a tapped button from looking selected. */
+@media (hover:none){
+  button:hover:not(:disabled):not(.primary){border-color:var(--line)}
+  button.cd.play:hover{background:var(--face); border-color:var(--face-line)}
+}
+
+/* ---- top app bar: title, rating, settings, the ⋯ menu. Sticky, notch-aware. */
+header{position:sticky; top:0; z-index:25; margin:0; order:-2;
+  background:var(--card); border-bottom:1px solid var(--line);
+  padding:env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left))}
+header .bar{height:var(--bar-h); flex-wrap:nowrap; gap:6px}
+header h1{font-size:18px; margin:0; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis}
+header .grow{display:none}
+#rank,#gear,#more{min-height:40px; height:40px; border:0; background:transparent; padding:0 10px; border-radius:20px}
+#rank{font-size:15px; font-weight:600; background:var(--bg)}
+#gear{font-size:21px}
+#more{display:inline-flex; align-items:center; font-size:22px; font-weight:700; letter-spacing:1px}
+#skip{display:none}                /* tapping the table skips, and the big button plays it out */
+header .meta{display:none}
+header .meta.chal{display:block; height:auto; margin:0 -8px 0 -14px; padding:0 14px 8px; font-size:13px;
+  overflow-x:auto; scrollbar-width:none}
+header .meta.chal::-webkit-scrollbar{display:none}
+#err{top:calc(env(safe-area-inset-top) + var(--bar-h) + 8px)}
+
+/* ---- the menu: the header's tools as a bottom sheet */
+#scrim{display:block; position:fixed; inset:0; z-index:40; background:rgba(0,0,0,.4);
+  opacity:0; pointer-events:none; transition:opacity .2s}
+html.menu #scrim{opacity:1; pointer-events:auto}
+html.menu header{z-index:45}           /* the sheet lives in the header, so the header goes over the scrim */
+.tools{display:grid; grid-template-columns:1fr 1fr; gap:10px; position:fixed; z-index:41; left:0; right:0; bottom:0;
+  background:var(--card); border-radius:18px 18px 0 0; box-shadow:0 -12px 40px rgba(0,0,0,.25);
+  padding:8px 16px calc(18px + env(safe-area-inset-bottom));
+  transform:translateY(105%); visibility:hidden; transition:transform .25s ease, visibility 0s .25s}
+html.menu .tools{transform:none; visibility:visible; transition:transform .25s ease}
+@media (prefers-reduced-motion:reduce){ .tools,html.menu .tools,#scrim{transition:none} }
+.tools::before{content:""; grid-column:1/-1; justify-self:center; width:40px; height:5px; border-radius:3px;
+  background:var(--line); margin-bottom:2px}
+.sheet-hd{display:block; grid-column:1/-1; margin:0; font-size:17px; font-weight:700}
+.tools > button{min-height:48px; border-radius:12px}
+#new-board{grid-column:1/-1; order:1; font-weight:600}
+#challenge{order:2} #share{order:3}
+.tools .seg{order:4; grid-column:1/-1; display:flex; flex-wrap:wrap; border:0; border-radius:0; overflow:visible}
+.tools .seg::before{content:attr(aria-label); flex:1 0 100%; font-size:13px; font-weight:600; color:var(--dim);
+  text-transform:uppercase; letter-spacing:.04em; margin:4px 0 6px}
+.tools .seg button{flex:1 1 0; min-height:44px; font-size:15px; border:1px solid var(--line); border-radius:0; padding:0 4px}
+.tools .seg button + button{border-left:0}
+.tools .seg button:first-of-type{border-radius:10px 0 0 10px}
+.tools .seg button:last-of-type{border-radius:0 10px 10px 0}
+.tools .seg button.on{border-color:var(--accent)}
+
+/* ---- the table: edge to edge. Partner across the top, the opponents in two narrow
+   columns beside the trick, you at the bottom. Every track has a fixed height for
+   the whole of a phase, so playing a card never moves anything. */
+.row{margin-bottom:0; gap:0}
+.top{grid-template-columns:minmax(0,1fr)}
+.table{grid-template-columns:var(--side) minmax(0,1fr) var(--side);
+  grid-template-rows:auto auto auto; grid-template-areas:"t t t" "l c r" "m m m";
+  gap:6px; padding:12px 6px 8px; border-radius:0; user-select:none; -webkit-user-select:none}
+.pos2{grid-area:t} .pos1{grid-area:l} .pos3{grid-area:r} .pos0{grid-area:m} .center{grid-area:c}
+.hand{height:auto; border-radius:12px}
+.hand .hd b{font-size:15px}
+.hand .hd .who{font-size:12px}
+.hand .hd .pts{font-size:12px}
+.hand .go{top:-9px; right:8px; font-size:11.5px; line-height:18px; padding:0 8px}
+.sl{gap:4px}
+.sl .sym{width:18px; font-size:18px}
+.cd{font-size:19px; border-radius:6px}
+.cd.ten{font-size:16px}
+
+/* Yours: the biggest cards on the screen, the ones you tap. */
+.hand.pos0{--ch:var(--me-ch); --cw:var(--me-cw)}
+.table[data-phase=auction] .hand.pos0{--ch:var(--me-ch-bid)}
+.hand.pos0 .cd{font-size:22px}
+.hand.pos0 .cd.ten{font-size:18px}
+.table[data-phase=auction] .hand.pos0 .cd{font-size:19px}
+.table[data-phase=auction] .hand.pos0 .cd.ten{font-size:16px}
+button.cd.play{box-shadow:0 2px 0 var(--face-line); border-color:var(--accent)}
+button.cd.play:active{transform:translateY(1px); background:var(--accent-bg)}
+
+/* A face-down hand sits on the cloth: a name tag and a fan of backs, no white box. */
+.hand.down{background:transparent; border-color:transparent; box-shadow:none; padding:0}
+.hand.down .hd{justify-self:center; background:var(--card); border-radius:20px; padding:0 10px; height:22px;
+  box-shadow:0 1px 3px rgba(0,0,0,.25); max-width:100%}
+.hand.down.turn .hd,.hand.down.acting .hd{box-shadow:0 0 0 2px var(--glow), 0 1px 3px rgba(0,0,0,.25)}
+.hand.down .go{top:-10px; right:auto; left:50%; transform:translateX(-50%)}
+.hand.down .hd .go{display:none}
+
+/* Partner across the top: small while face down; full size when it is dummy, from the
+   end of the auction on, so dummy going face up after the lead changes nothing. */
+.hand.pos2.down{height:var(--top-down); grid-template-rows:22px 1fr; row-gap:2px}
+.hand.pos2.down .backs{--bh:calc(var(--top-down) - 20px); --bw:calc(var(--bh) * .7); --step:calc(var(--bw) * .36)}
+.table[data-phase=play] .hand.pos2.dummy,.table[data-phase=over] .hand.pos2{
+  height:calc(var(--hand-hd) + 6px + 4 * var(--ch) + 12px + 2 * var(--hand-pad) + 4px)}
+.table[data-phase=play] .hand.pos2.dummy.down{grid-template-rows:var(--hand-hd) 1fr; row-gap:6px}
+.table[data-phase=play] .hand.pos2.dummy.down .backs{--bh:calc(var(--ch) * 2.4); --bw:calc(var(--bh) * .7); --step:calc(var(--bw) * .4)}
+
+/* The opponents: narrow columns, as tall as the trick. Face down, a stacked deck;
+   face up (an opponent's dummy, or the end of the board) the ranks as plain text,
+   which is all there is to do with them: read them. */
+.hand.pos1,.hand.pos3{height:auto; align-self:stretch; grid-template-rows:34px 1fr; row-gap:4px; padding:5px}
+.hand.pos1 .hd,.hand.pos3 .hd{flex-direction:column; align-items:center; justify-content:center; gap:0; line-height:1.15}
+.hand.pos1 .hd .who,.hand.pos3 .hd .who{display:none}
+.hand.pos1 .hd .pts,.hand.pos3 .hd .pts{font-size:11px}
+.hand.pos1.down,.hand.pos3.down{padding:0}
+.hand.pos1.down .hd,.hand.pos3.down .hd{height:auto; padding:2px 10px; border-radius:12px; justify-self:center}
+.hand.pos1.down .backs,.hand.pos3.down .backs{--bh:58px; --bw:calc(var(--bh) * .7); --step:3.6px}
+/* Seen from the side, a held hand fans downwards. */
+.hand.pos1.down .cd.back,.hand.pos3.down .cd.back{transform-origin:50% 50%;
+  transform:translateY(calc(var(--o) * var(--step))) rotate(calc(var(--o) * .9deg))}
+.hand.pos1:not(.down) .suits,.hand.pos3:not(.down) .suits{grid-template-rows:repeat(4,minmax(0,1fr)); row-gap:2px}
+.hand.pos1:not(.down) .sl,.hand.pos3:not(.down) .sl{gap:2px}
+.hand.pos1:not(.down) .sym,.hand.pos3:not(.down) .sym{width:13px; font-size:14px}
+.hand.pos1:not(.down) .cards,.hand.pos3:not(.down) .cards{gap:1px; overflow:hidden}
+.hand.pos1:not(.down) .cd,.hand.pos3:not(.down) .cd{min-width:0; height:auto; border:0; background:transparent;
+  box-shadow:none; font:700 14px/1 var(--mono); padding:0; letter-spacing:-.05em; flex:0 0 auto}
+/* Plain text on the hand's own background, so the theme's card ink does not apply. */
+.hand.pos1:not(.down) .cd,.hand.pos3:not(.down) .cd{color:var(--text)}
+.hand.pos1:not(.down) .cd.red,.hand.pos3:not(.down) .cd.red{color:var(--red)}
+.hand.pos1:not(.down) .cd.ten,.hand.pos3:not(.down) .cd.ten{font-size:12px; letter-spacing:-.1em; margin-right:1px}
+.hand.pos1:not(.down) .cd.gone,.hand.pos3:not(.down) .cd.gone{opacity:.22}
+
+/* The centre: the trick, or the auction. The facts that sit in the table's corners on
+   the desktop go into the trick's empty corners here. */
+.center{height:auto; align-self:stretch; padding:6px 4px; min-height:calc(3 * var(--th) + 16px)}
+.table[data-phase=auction] .center{min-height:calc(5 * 26px + 22px)}   /* the auction needs less than a trick */
+.trick{gap:2px 2px}
+.trick .slot{font-size:20px; border-radius:7px}
+.trick .mid{font-size:11.5px}
+.aq{font-size:16px}
+.aq th{font-size:12px}
+.aq td{height:26px}
+.corner{display:none; grid-area:c; z-index:1; pointer-events:none; padding:3px 4px; font-size:10.5px; line-height:1.2;
+  max-width:calc((100% - var(--tw)) / 2); white-space:normal}
+.corner b{font-size:16px; line-height:1.2}
+.table[data-phase=play] .corner,.table[data-phase=over] .corner{display:block}
+.corner.tl{grid-area:c; align-self:start; justify-self:start}
+.corner.tr{grid-area:c; align-self:start; justify-self:end; text-align:right}
+.corner.br{grid-area:c; align-self:end; justify-self:end; text-align:right}
+.corner.bl{display:none !important}      /* you sit at the bottom, always */
+/* "Tricks: you – them" takes three lines in a corner this small; this says it in one. */
+.corner.tr{font-size:0}
+.corner.tr::before{content:"you – them"; font-size:10.5px; white-space:nowrap}
+
+/* ---- the panel under the table, drawn as a sheet */
+.row.top > .card{position:relative; margin-top:-10px; border:0; border-radius:18px 18px 0 0; padding:18px 14px 14px;
+  box-shadow:0 -6px 18px rgba(0,0,0,.14); display:flex; flex-direction:column}
+.row.top > .card::before{content:""; position:absolute; top:6px; left:50%; width:36px; height:4px; margin-left:-18px;
+  border-radius:2px; background:var(--line)}
+.card h2{font-size:17px}
+#panel-hint{font-size:13.5px; margin:0 0 10px; min-height:calc(2 * 1.4em); line-height:1.4;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+#panel-actions{order:1}
+#advice{order:2} #rulecard{order:3}
+.actions button{min-width:0; min-height:44px}
+
+/* The bidding box, in two steps: pick a level, then one of its five strains. */
+.bblv{display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:5px; margin-bottom:8px}
+.bblv button{padding:0; min-height:44px; border-radius:10px; font-size:18px; font-weight:700; font-family:var(--mono)}
+.bblv button.on{background:var(--accent); border-color:var(--accent); color:#fff}
+.bblv button.illegal{opacity:.25}
+.bblv button.tip{outline:3px solid var(--glow); outline-offset:-1px}
+.bb{grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px}
+.bb .lv,.bb button:not(.cur){display:none}
+.bb button{min-height:52px; border-radius:10px}
+.bb button .c{font-size:20px}
+.bb2{grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; margin-top:8px}
+.bb2 > div:first-child{display:none}
+.bb2 button{min-height:46px; border-radius:10px}
+.bb2 button .c{font-size:16px}
+
+/* Play: the two counts side by side, small. The corners of the trick hold the rest. */
+.counts{gap:8px; margin-bottom:8px}
+.stat{padding:8px 12px; border-radius:10px; margin-bottom:8px}
+.stat > span{font-size:12.5px}
+.stat b{font-size:20px}
+
+/* ---- the next move: a bar at the bottom, over the home indicator, with undo and
+   claim beside it */
+#nextbar{position:fixed; left:0; right:0; bottom:0; z-index:20; margin:0; display:flex; gap:8px;
+  background:var(--card); border-top:1px solid var(--line); box-shadow:0 -8px 24px rgba(0,0,0,.12);
+  padding:10px max(12px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))}
+#nextbar button{min-height:54px; border-radius:14px}
+#nextbar #nextbtn{flex:1 1 auto; width:auto; min-width:0; font-size:17px}
+#nextbar .nb-x{display:block; flex:0 0 auto; width:auto; min-width:54px; padding:0 14px; font-size:16px; font-weight:600}
+#nextbar .nb-undo{font-size:24px; padding:0}
+#nextbar .kbd{display:none}
+/* Undo and claim live in the bar; the panel's own copies stay, hidden, for it to press. */
+#panel-actions #undo,#panel-actions #claim{display:none}
+
+/* ---- the rest of the page: full-width cards, one after another */
+.row:not(.top){padding:0 8px; margin-top:8px}
+.card{padding:14px; border-radius:14px}
+.card h2{white-space:normal}
+#result-row{order:-1; padding:8px 8px 0}      /* at the end of a board the result comes first */
+details.discl > summary{font-size:16px; min-height:44px}
+.hintgrid{gap:10px}
+.block{padding:12px}
+.sys{grid-template-columns:auto 38px minmax(0,1fr); gap:5px 8px; font-size:13.5px}
+.bars{font-size:14px}
+.vs{grid-template-columns:minmax(0,1fr)}
+
+/* ---- pop-ups: sheets from the bottom, full width */
+dialog.modal,dialog.modal.wide{width:100%; max-width:100%; margin:auto 0 0; max-height:calc(100dvh - env(safe-area-inset-top) - 24px);
+  border:0; border-radius:18px 18px 0 0; padding-bottom:env(safe-area-inset-bottom)}
+dialog.modal[open]{animation:sheet-up .25s ease-out}
+@keyframes sheet-up{from{transform:translateY(40%); opacity:.4}}
+@media (prefers-reduced-motion:reduce){ dialog.modal[open]{animation:none} }
+dialog.modal .mhd{padding:16px 16px 12px; border-radius:18px 18px 0 0}
+dialog.modal .mhd h2{font-size:18px}
+dialog.modal .mhd button{min-height:40px; min-width:40px; border-radius:20px; padding:0}
+dialog.modal .body{padding:14px 16px 20px}
+#deck{width:100%; min-height:46px; font-size:16px}
+#seats{display:grid; grid-template-columns:1fr 1fr}
+#seats button{min-width:0}
+table.lb{font-size:14.5px}
+table.lb td,table.lb th{padding:8px 6px}
+.namef input{min-height:46px; font-size:16px}    /* 16px keeps iOS from zooming in */
+
+/* ---- short screens: the auction, your hand and the whole box above the bar */
+@media (max-height:760px){
+  .table[data-phase=auction] .center{min-height:calc(4 * 26px + 22px)}
+  #panel-hint{-webkit-line-clamp:1; min-height:1.4em}
+  .row.top > .card{padding-top:16px}
+  .bb button{min-height:46px}
+  .bb2 button{min-height:44px}
+}

@@ -1856,6 +1856,13 @@ def register(app):
     def table_page():
         return send_from_directory(STATIC_DIR, "table.html")
 
+    # The phone stylesheet and what "Add to Home Screen" reads. Named one by one, so
+    # nothing else in the static folder is served by accident.
+    @app.get("/<any('table.mobile.css', 'table.webmanifest', 'table-icon.svg', 'table-icon-180.png'):name>")
+    def table_file(name):
+        kind = "application/manifest+json" if name.endswith(".webmanifest") else None
+        return send_from_directory(STATIC_DIR, name, mimetype=kind)
+
     @app.get("/api/table/state")
     @with_game
     def api_table_state(game):
