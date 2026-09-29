@@ -12,6 +12,8 @@ process serves all three pages:
     POST /api/table/card        the user's card
     POST /api/table/advance     let the nets act until it is the user's turn again
     POST /api/table/finish      let them run the rest of the deal out
+    POST /api/table/undo        take back the user's last call or card
+    POST /api/table/claim       claim every trick left; the solver checks and plays it out
     POST /api/table/hints       teaching on/off, solver peek on/off
     POST /api/table/models      pick the bidding and card-play checkpoints
     POST /api/table/explain     queue the "where does it go" rollout (newest wins)
@@ -130,6 +132,7 @@ def reset_board(game):
     game["pg"] = None
     game["tricks"] = None
     game.pop("_batch", None)
+    game.pop("claim", None)
 
 
 def auction_of(game):
@@ -288,6 +291,81 @@ def advance(game, limit=60):
         if len(pg["played"]) % 4 == 0:            # a trick just filled up
             return acted
     return acted
+
+
+# ------------------------------------------------------------ undo and claim
+
+def played_seats(pg):
+    """The seat that played each card so far, in order."""
+    batch = playdesk.batch_of({**pg, "played": []})
+    seats = []
+    for card in pg["played"]:
+        seats.append(int(batch.to_play()[0]))
+        batch.play(torch.tensor([card]))
+    return seats
+
+
+def can_undo(game):
+    """Something of the user's to take back. Every card the user played comes after a
+    call of theirs, so one call of theirs in the auction is enough to know."""
+    me = game["user_seat"]
+    return not game.get("challenge") and any((DEALER + i) % 4 == me for i in range(len(game["calls"])))
+
+
+def undo(game):
+    """Wind back to just before the user's last call or card, with the user on turn.
+
+    Everything the nets did after it goes too; they choose again when play goes on.
+    A claimed board goes back to the moment of the claim. A user who is dummy has
+    no cards of their own, so for them it takes back the last call.
+    """
+    pg = game["pg"]
+    if pg is not None and pg["played"]:
+        claim = game.pop("claim", None)
+        if claim is not None:
+            cut = claim["at"]
+        else:
+            mine = [i for i, seat in enumerate(played_seats(pg)) if user_plays(game, seat)]
+            cut = mine[-1] if mine else None
+        if cut is not None:
+            del pg["played"][cut:]
+            game.pop("_batch", None)
+            return True
+    me = game["user_seat"]
+    mine = [i for i in range(len(game["calls"])) if (DEALER + i) % 4 == me]
+    if not mine:
+        return False
+    reset_calls = game["calls"][:mine[-1]]
+    reset_board(game)
+    game["calls"] = reset_calls
+    return True
+
+
+def can_claim(game):
+    """Not in a challenge: a refused claim tells the user the defence still has a trick."""
+    return (playdesk.SOLVER is None and not game.get("challenge")
+            and phase(game) == "play" and user_on_turn(game))
+
+
+def claim(game):
+    """Claim every trick still to come, the one on the table included.
+
+    Double dummy decides, the way a director would: the claim stands only if the
+    user's side takes all of them against any defence. Then the solver plays the
+    rest out, both sides at their best, so the board ends like any other.
+    """
+    pg = game["pg"]
+    left = 13 - batch_for(game).trick_no
+    per_card = playdesk.solve_here(playdesk.solver_deal(pg))
+    if not per_card or max(per_card.values()) < left:
+        return False
+    game["claim"] = {"at": len(pg["played"]), "trick": 14 - left, "tricks": left}
+    while not batch_for(game).done:
+        per_card = playdesk.solve_here(playdesk.solver_deal(pg))
+        best = max(per_card.values())
+        playdesk.play_card(pg, min(c for c, v in per_card.items() if v == best), batch_for(game))
+        game.pop("_batch", None)
+    return True
 
 
 # ------------------------------------------------------------------- the view
@@ -467,6 +545,9 @@ def state_dump(game):
         "result": result_view(game),
         "review": None,
         "challenge": challenge_view(game),
+        "can_undo": can_undo(game),
+        "can_claim": False,
+        "claim": game.get("claim"),
     }
     if pg is not None:
         declarer = pg["declarer"]
@@ -478,6 +559,7 @@ def state_dump(game):
         }
         if ph == "play":
             out["legal_cards"] = batch.legal()[0].tolist()
+            out["can_claim"] = can_claim(game)
     if ph == "over" and pg is not None and game["hints"]:
         out["review"] = user_review(game)
     # With hints off the payload carries no suggestion of any kind: the page cannot
@@ -1354,7 +1436,9 @@ def user_review(game):
     rows = playdesk.review(game["pg"])
     if rows is None:
         return None
-    yours = [r for r in rows["cards"] if user_plays(game, r["seat"])]
+    # Cards after a claim were the solver's, not the user's.
+    upto = game["claim"]["at"] if game.get("claim") else 52
+    yours = [r for r in rows["cards"] if user_plays(game, r["seat"]) and r["step"] < upto]
     return {
         "available": True,
         "mine": [{**r, "name": card_text(r["card"]),
@@ -1868,6 +1952,28 @@ def register(app):
                 break
             if not advance(game):
                 break
+        return jsonify(state_dump(game))
+
+    @app.post("/api/table/undo")
+    @with_game
+    def api_table_undo(game):
+        if game.get("challenge"):
+            return jsonify(error="a challenge board is played once, without undo"), 400
+        if not undo(game):
+            return jsonify(error="nothing of yours to take back yet"), 400
+        advance(game)             # only moves when the user is not on turn, e.g. as dummy
+        return jsonify(state_dump(game))
+
+    @app.post("/api/table/claim")
+    @with_game
+    def api_table_claim(game):
+        if not can_claim(game):
+            if game.get("challenge"):
+                return jsonify(error="a challenge board is played out, without claims"), 400
+            return jsonify(error="you can claim when it is your card to play"), 400
+        if not claim(game):
+            return jsonify(error="Claim not accepted: the other side can still take a trick "
+                                 "with the right defence. Play on."), 400
         return jsonify(state_dump(game))
 
     @app.post("/api/table/explain")

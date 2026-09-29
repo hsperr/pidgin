@@ -16,12 +16,12 @@
   /* The table is drawn on fixed tracks, so nothing on it moves when a card is played:
      every hand keeps a slot for all thirteen of its cards, and the centre is exactly
      as tall as a hand. */
-  --cw:36px;            /* a card in hand: preferred width, it shrinks to fit a long suit */
-  --ch:36px;            /* ... and its height, which is also one suit row */
+  --cw:42px;            /* a card in hand: preferred width, it shrinks to fit a long suit */
+  --ch:42px;            /* ... and its height, which is also one suit row */
   --hand-hd:28px;       /* a hand's name line */
   --hand-pad:8px;
   --hand-h:calc(var(--hand-hd) + 6px + 4 * var(--ch) + 3 * 4px + 2 * var(--hand-pad) + 4px);
-  --tw:46px; --th:60px; /* a card on the trick */
+  --tw:56px; --th:74px; /* a card on the trick */
 }
 @media (prefers-color-scheme:dark){
   :root{
@@ -86,8 +86,9 @@ header .meta{color:var(--dim); font-size:14px; margin-top:8px; height:21px;
 
 /* ---- the table: fixed tracks, you at the bottom */
 .table{display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
-  grid-template-rows:repeat(3,var(--hand-h)); gap:10px;
-  background:radial-gradient(ellipse at center,var(--felt-2),var(--felt)); border-radius:14px; padding:14px}
+  grid-template-rows:repeat(3,var(--hand-h)); gap:8px;
+  background:var(--mat,radial-gradient(ellipse at center,var(--felt-2),var(--felt)));
+  box-shadow:var(--rail,none); border-radius:14px; padding:12px}
 .hand{position:relative; background:var(--card); border-radius:11px; padding:var(--hand-pad);
   border:2px solid transparent; min-width:0; height:var(--hand-h);
   display:grid; grid-template-rows:var(--hand-hd) 1fr; row-gap:6px}
@@ -107,21 +108,66 @@ header .meta{color:var(--dim); font-size:14px; margin-top:8px; height:21px;
 .sl .void{color:var(--faint); align-self:center}
 /* A card in hand. It gives up width before it wraps, so a long suit never adds a row. */
 .cd{flex:0 1 var(--cw); min-width:0; height:100%; padding:0; border-radius:7px;
-  border:1px solid var(--face-line); background:var(--face); color:var(--text);
-  font:600 18px/1 var(--mono); letter-spacing:-.04em; display:flex; align-items:center; justify-content:center;
+  border:1px solid var(--face-line); background:var(--face); color:var(--ink,var(--text));
+  font:var(--card-w,600) 22px/1 var(--card-font,var(--mono)); letter-spacing:-.04em; display:flex; align-items:center; justify-content:center;
   overflow:hidden; min-height:0}
-.cd.red{color:var(--red)}
-.cd.ten{font-size:15px; letter-spacing:-.1em}      /* the one two-character rank */
+.cd.red{color:var(--ink-red,var(--red))}
+.cd.ten{font-size:18px; letter-spacing:-.1em}      /* the one two-character rank */
 button.cd.play{box-shadow:0 2px 0 var(--face-line)}
 button.cd.play:hover{border-color:var(--accent); background:var(--accent-bg)}
 button.cd:disabled{opacity:1; cursor:default}
-.hand.turn button.cd:disabled{opacity:.4}          /* cannot follow suit with these */
+.hand.turn.inplay button.cd:disabled{opacity:.4}   /* cannot follow suit with these */
 /* Played cards keep their place, faded, so the rest of the hand never slides over. */
 .cd.gone{opacity:.16; border-style:dashed; box-shadow:none}
-.backs{display:flex; align-items:center; justify-content:center; gap:2px; min-width:0}
-.cd.back{flex-basis:var(--cw); height:calc(var(--ch) * 1.6); border:1px solid var(--back-2);
+/* A hidden hand: real card shapes, overlapped in a fan, as if held. The spacing is set for
+   thirteen cards, so the fan only gets narrower as cards are played. */
+.hand{container-type:inline-size}              /* 100cqw below = the hand's inner width */
+.backs{position:relative; min-width:0;
+  --bh:calc(var(--ch) * 2.3); --bw:calc(var(--bh) * .7);
+  --step:min(calc(var(--bw) * .42), calc((100cqw - var(--bw) - 56px) / 12))}
+.cd.back{position:absolute; left:50%; top:50%; width:var(--bw); height:var(--bh);
+  margin:calc(var(--bh) / -2) 0 0 calc(var(--bw) / -2); border-radius:6px; border:1px solid var(--back-2);
+  --o:calc(var(--i) - (var(--n) - 1) / 2);
+  transform:translateX(calc(var(--o) * var(--step))) rotate(calc(var(--o) * 1.8deg)); transform-origin:50% 140%;
+  box-shadow:inset 0 0 0 3px var(--face), -2px 1px 4px rgba(0,0,0,.28);
   background:repeating-linear-gradient(45deg,var(--back-1),var(--back-1) 4px,var(--back-2) 4px,var(--back-2) 8px)}
-.cd.back.gone{visibility:hidden}
+/* A themed deck draws its own back, margin and all. */
+.deck-img .cd.back{border:0; box-shadow:-2px 1px 4px rgba(0,0,0,.3); background:var(--back-img) center/100% 100%}
+
+/* ---- card themes: the mat, the card faces and the backs. The backs are drawn in
+   the script (DECKS), everything else is here. "modern" is the page as it was. */
+html[data-deck=classic]{--face:#fff; --face-line:#bdb6a8; --ink:#111; --ink-red:#c8102e;
+  --card-font:Georgia,"Times New Roman",serif; --card-w:700;
+  --mat:var(--noise),radial-gradient(ellipse at center,#1d7a4e,#0f4a2f 85%);
+  --rail:inset 0 0 0 6px #6b4a2b, inset 0 0 0 8px #3d2a18}
+html[data-deck=victorian]{--face:#f4ebd3; --face-line:#b9a57a; --ink:#2a1f14; --ink-red:#8e1b1b;
+  --card-font:"Bodoni 72",Didot,"Bodoni MT",Georgia,serif; --card-w:700;
+  --mat:var(--noise),radial-gradient(ellipse at center,#6a2323,#3a1111 85%);
+  --rail:inset 0 0 0 7px #2a0b0b, inset 0 0 0 8px #c9a54a}
+html[data-deck=deco]{--face:#f5efe0; --face-line:#c7ab62; --ink:#111; --ink-red:#b3261e;
+  --card-font:Futura,"Avenir Next","Century Gothic",sans-serif; --card-w:500;
+  --mat:repeating-linear-gradient(45deg,rgba(212,175,55,.07) 0 1px,transparent 1px 18px),
+    repeating-linear-gradient(-45deg,rgba(212,175,55,.07) 0 1px,transparent 1px 18px),
+    radial-gradient(ellipse at center,#18264a,#0b1326 85%);
+  --rail:inset 0 0 0 5px #0b1326, inset 0 0 0 6px #d4af37}
+html[data-deck=riviera]{--face:#fffaf0; --face-line:#d8cdb5; --ink:#1d1f23; --ink-red:#d6342c;
+  --card-font:"Arial Rounded MT Bold","Avenir Next Rounded",Nunito,system-ui,sans-serif; --card-w:700;
+  --mat:radial-gradient(circle,rgba(255,255,255,.07) 1.2px,transparent 1.6px) 0 0/16px 16px,
+    radial-gradient(ellipse at center,#1f7a74,#124a47 85%)}
+/* Riviera is a four-colour deck: diamonds orange, clubs green. */
+html[data-deck=riviera] .sD{color:#e07b12} html[data-deck=riviera] .sC{color:#1f8a4c}
+html[data-deck=champion]{--face:#fff; --face-line:#c9a227; --ink:#111; --ink-red:#c8102e;
+  --card-font:Georgia,serif; --card-w:700;
+  --mat:var(--noise),radial-gradient(ellipse at center,#4a2472,#1d0d30 85%);
+  --rail:inset 0 0 0 6px #1d0d30, inset 0 0 0 8px #d9b44a}
+html[data-deck=champion] .cd.back::after{content:""; position:absolute; inset:0; border-radius:inherit;
+  background:linear-gradient(110deg,transparent 42%,rgba(255,240,190,.4) 50%,transparent 58%) 0 0/300% 100%;
+  animation:sheen 4.5s ease-in-out infinite}
+@keyframes sheen{0%{background-position:100% 0} 60%,100%{background-position:0 0}}
+@media (prefers-reduced-motion:reduce){ html[data-deck=champion] .cd.back::after{animation:none} }
+#gear{font-size:20px; padding:4px 12px; line-height:1}
+#deck{min-height:38px; border:1px solid var(--line); border-radius:9px; background:var(--card); color:var(--text);
+  font:inherit; font-size:14px; padding:0 8px}
 .pos0{grid-column:2; grid-row:3} .pos1{grid-column:1; grid-row:2}
 .pos2{grid-column:2; grid-row:1} .pos3{grid-column:3; grid-row:2}
 .center{grid-column:2; grid-row:2; background:rgba(0,0,0,.2); border-radius:11px; padding:8px;
@@ -131,10 +177,10 @@ button.cd:disabled{opacity:1; cursor:default}
   gap:2px 4px; align-items:center; justify-items:center; width:100%}
 .trick .slot{width:var(--tw); height:var(--th); border-radius:8px; border:1.5px dashed rgba(255,255,255,.22);
   display:flex; flex-direction:column; align-items:center; justify-content:center;
-  font:700 20px/1.05 var(--mono)}
-.trick .slot.has{background:var(--face); border:1px solid var(--face-line); color:var(--text);
+  font:700 24px/1.05 var(--card-font,var(--mono))}
+.trick .slot.has{background:var(--face); border:1px solid var(--face-line); color:var(--ink,var(--text));
   box-shadow:0 3px 8px rgba(0,0,0,.25)}
-.trick .slot.has.red{color:var(--red)}
+.trick .slot.has.red{color:var(--ink-red,var(--red))}
 .trick .slot.win{outline:3px solid var(--glow); outline-offset:1px}
 .trick .mid{grid-column:2; grid-row:2; text-align:center; font-size:13px; line-height:1.3; opacity:.9;
   white-space:nowrap; overflow:hidden; max-width:100%}
@@ -185,7 +231,7 @@ button.cd:disabled{opacity:1; cursor:default}
 
 /* ---- phone: partner on top, the opponents side by side, the trick, then you */
 @media (max-width:640px){
-  :root{ --cw:30px; --ch:32px; --hand-hd:24px; --hand-pad:7px; --tw:42px; --th:54px }
+  :root{ --cw:34px; --ch:38px; --hand-hd:24px; --hand-pad:7px; --tw:46px; --th:62px }
   body{padding:12px 12px 96px}
   .card{padding:14px}
   .table{grid-template-columns:repeat(2,minmax(0,1fr));
@@ -195,8 +241,8 @@ button.cd:disabled{opacity:1; cursor:default}
   .pos2{grid-column:1/-1; grid-row:1} .pos1{grid-column:1; grid-row:2}
   .pos3{grid-column:2; grid-row:2} .pos0{grid-column:1/-1; grid-row:4}
   .center{grid-column:1/-1; grid-row:3; height:auto; align-self:stretch}
-  .cd{font-size:16px}
-  .cd.ten{font-size:14px}
+  .cd{font-size:18px}
+  .cd.ten{font-size:15px}
   .hand .hd b{font-size:16px}
   .hand .hd .who{font-size:12px}
 }
@@ -271,6 +317,16 @@ details.discl[open] > summary::before{content:"▾"}
 details.discl > summary em{font-style:normal; font-weight:400; color:var(--dim); font-size:14px}
 details.discl > .body{margin-top:16px}
 
+/* ---- settings: a modal over the table */
+#settings{width:min(560px, calc(100vw - 32px)); max-height:calc(100dvh - 48px); overflow:auto;
+  color:var(--text); padding:0; box-shadow:0 24px 60px rgba(0,0,0,.35)}
+#settings::backdrop{background:rgba(0,0,0,.45)}
+#settings .mhd{position:sticky; top:0; z-index:1; background:var(--card); display:flex; align-items:center;
+  justify-content:space-between; padding:14px 20px; border-bottom:1px solid var(--line)}
+#settings .mhd h2{margin:0; font-size:19px}
+#settings .mhd button{min-height:36px; padding:0 12px}
+#settings .body{padding:16px 20px 20px}
+
 /* ---- narrow screens: the button that commits your move stays under your thumb */
 @media (max-width:980px){
   body{padding-bottom:calc(104px + env(safe-area-inset-bottom))}
@@ -280,15 +336,12 @@ details.discl > .body{margin-top:16px}
     box-shadow:0 -8px 24px rgba(0,0,0,.14)}
   #nextbar .kbd{display:none}
   /* Which checkpoints are playing is not what you need on a phone, and it costs a
-     whole row above the table. It is one tap away in the settings disclosure. */
+     whole row above the table. It is one tap away in Settings. */
   header .meta{display:none}
   header .meta.chal{display:block}          /* the match score stays, even on a phone */
 }
-.phone-links{display:none}
 @media (max-width:640px){
   header h1{font-size:19px; flex:1 0 100%}
-  header .links{display:none}
-  .phone-links{display:flex}
 }
 
 /* ---- hints */
@@ -369,11 +422,8 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
       ><button data-s="fast">fast</button><button data-s="off">instant</button>
     </span>
     <button id="skip" class="off" title="Jump to the end of what the others just did">Skip ▸</button>
+
     <span class="grow"></span>
-    <span class="links">
-      <a class="btn" href="/" title="Bid against the net and see its outputs">Bid desk</a>
-      <a class="btn" href="/play" title="Watch the card-play net">Play desk</a>
-    </span>
     <button id="share" type="button"
             title="Copy a link to exactly this position. It holds all four hands, but whoever opens it only sees what your chair may see."
             aria-label="Copy a link to this position"><span class="lbl">Copy link</span><span class="ok" aria-hidden="true">Copied ✓</span></button>
@@ -381,6 +431,7 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
     <button id="challenge" type="button"
             title="Play four boards in South. Four bots play the same boards at another table, and you compare in IMPs.">Challenge</button>
     <button id="new-board" class="primary">New board</button>
+    <button id="gear" type="button" title="Settings: card theme, your chair" aria-label="Settings">⚙</button>
   </div>
   <div class="meta" id="meta">dealing…</div>
 </header>
@@ -417,10 +468,18 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
   </details>
 </div>
 
-<div class="row">
-  <details class="card discl" id="settings">
-    <summary>Your chair, and what is playing <em>North deals, nobody vulnerable</em></summary>
+<dialog class="card" id="settings" aria-labelledby="settings-title">
+    <div class="mhd"><h2 id="settings-title">Settings</h2>
+      <button id="settings-close" type="button" aria-label="Close settings">✕</button></div>
     <div class="body">
+      <p class="sub">Card theme</p>
+      <select id="deck" aria-label="Card theme">
+        <option value="modern">Modern</option><option value="classic">Club Classic</option>
+        <option value="victorian">Victorian</option><option value="deco">Art Deco</option>
+        <option value="riviera">Riviera (four colours)</option><option value="champion">Champion (preview)</option>
+      </select>
+      <p class="hint" style="margin:6px 0 16px">The cards and the table, for the whole page. Kept in this browser.</p>
+      <p class="sub">Your chair <em style="text-transform:none;font-weight:400">North deals, nobody vulnerable</em></p>
       <p class="hint" style="margin:0 0 10px">North always deals and nobody is vulnerable, the
         same setting the other two desks use — the self-play table the hints quote was built that
         way. Changing your chair deals a fresh board.</p>
@@ -428,13 +487,14 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
       <div class="actions" style="margin-top:8px">
         <button id="restart" title="Same thirteen cards, auction from the top">Restart this board</button>
       </div>
-      <div class="actions phone-links">
-        <a class="btn" href="/">Bid desk</a><a class="btn" href="/play">Play desk</a>
+      <p class="sub" style="margin-top:16px">The other desks</p>
+      <div class="actions" style="margin-top:0">
+        <a class="btn" href="/" title="Bid against the net and see its outputs">Bid desk</a>
+        <a class="btn" href="/play" title="Watch the card-play net">Play desk</a>
       </div>
       <p class="hint" style="margin:12px 0 0" id="setup-note"></p>
     </div>
-  </details>
-</div>
+</dialog>
 
 </div>
 
@@ -471,7 +531,7 @@ const suitWord = l => ({S:"spades", H:"hearts", D:"diamonds", C:"clubs"})[l] || 
    on turn there: nothing auto-advances until the visitor presses Continue, or
    plays, or starts something new. Any of those requests releases the hold. */
 let HOLD = false;
-const PROCEEDS = /\/api\/table\/(call|card|advance|finish|new_board|restart|challenge(\/next|\/load)?)$/;
+const PROCEEDS = /\/api\/table\/(call|card|advance|finish|new_board|restart|undo|claim|challenge(\/next|\/load)?)$/;
 let NOTICE_UNTIL = 0;          // a message about a bad link outlives the next request
 
 let GAME_ID = null;
@@ -512,6 +572,7 @@ let D = null;                  // the frame currently on screen
 let SRV = null;                // the newest state the server sent
 let TIMER = null;              // the auto-advance tick
 let WHY = {job:null, timer:null, lines:null, at:null};
+let JUMP = false;              // draw the next state at once, no card-by-card replay (a claim)
 
 /* One request at a time, in order: the auto-advance tick and a click can land
    together. `GEN` is the generation the user is looking at; anything queued from an
@@ -588,7 +649,8 @@ function render(d){
   const fresh = !SRV || SRV.board_no !== d.board_no;
   const back = SRV && (d.auction.length < VIEW.calls || cardsIn(d) < VIEW.cards);
   SRV = d;
-  if(fresh || back || SPEED === "off") VIEW = {calls: d.auction.length, cards: cardsIn(d)};
+  if(fresh || back || JUMP || SPEED === "off") VIEW = {calls: d.auction.length, cards: cardsIn(d)};
+  JUMP = false;
   const at = d.board_no + ":" + d.auction.length;
   if(WHY.at !== at){ WHY = {job:null, timer:null, lines:null, at}; }   // a rollout belongs to one position
   if(!d.challenge) $("meta").textContent = d.meta;
@@ -616,7 +678,10 @@ function paint(){
   const full = atTarget();
   D = frameOf(SRV, VIEW.calls, VIEW.cards, full);
   syncLink();
-  if(SRV.challenge) renderChallengeMeta(SRV.challenge, full);
+  if(SRV.challenge){
+    if(full) rateBoards(SRV.challenge);    // only once the last card is on screen
+    renderChallengeMeta(SRV.challenge, full);
+  }
   renderTable(D); renderPanel(D); renderAdvice(D); renderRule(D); renderNext(D); renderSettings(D);
   renderNumbers(D);
   // Hidden, not removed: the header keeps its width while the others play.
@@ -742,7 +807,7 @@ function renderTable(d){
     // card for whichever hand is on turn when it is yours to play (as declarer that
     // includes dummy; as dummy it is never).
     const yours = d.your_turn && (d.phase === "play" ? turn : mine);
-    el.className = `hand pos${slotOf(d, s.seat)}${turn && yours?" turn":""}` +
+    el.className = `hand pos${slotOf(d, s.seat)}${turn && yours?" turn":""}${d.phase === "play" ? " inplay" : ""}` +
                    `${turn && !yours?" acting":""}${mine?" mine":""}`;
     const role = seatRole(d, s.seat);
     // Spell out who plays the two declaring hands: declarer plays both.
@@ -796,22 +861,22 @@ function suitsHTML(d, s, yours){
     const red = isRed(k) ? " red" : "";
     const inner = cards.map(({c, live}) => {
       const label = SYM[k] + rankTxt(c.rank);
-      const cls = red + (c.rank === "T" ? " ten" : "");
+      const cls = red + " s" + k + (c.rank === "T" ? " ten" : "");
       if(!live) return `<span class="cd gone${cls}" aria-hidden="true">${rankTxt(c.rank)}</span>`;
       const playable = d.phase === "play" && yours && d.legal_cards && d.legal_cards[c.card];
       return `<button class="cd${cls}${playable ? " play" : ""}" ${playable ? "" : "disabled"} ` +
              `data-card="${c.card}" aria-label="${playable ? "play " : ""}${label}">${rankTxt(c.rank)}</button>`;
     }).join("");
-    out += `<div class="sl"><span class="sym${red}" aria-hidden="true">${SYM[k]}</span>` +
+    out += `<div class="sl"><span class="sym${red} s${k}" aria-hidden="true">${SYM[k]}</span>` +
            `<span class="cards">${inner || '<span class="void">—</span>'}</span></div>`;
   }
   return `<div class="suits">${out}</div>`;
 }
 
-// A hidden hand: thirteen slots, the played ones empty, so its size never changes.
+// A hidden hand: the cards still held, fanned out. The box keeps its size.
 function backsHTML(left){
   let out = "";
-  for(let i = 0; i < 13; i++) out += `<span class="cd back${i < left ? "" : " gone"}"></span>`;
+  for(let i = 0; i < left; i++) out += `<span class="cd back" style="--i:${i};--n:${left}"></span>`;
   return `<div class="backs" aria-label="${left} cards, face down">${out}</div>`;
 }
 
@@ -855,7 +920,7 @@ function trickHTML(d){
     const win = stale && d.last_trick.winner === s;
     // Only the card that just arrived animates in; the ones already down stay put.
     const land = x && LAND === s && !stale ? " land" : "";
-    inner += `<div class="slot p${p}${x ? " has" : ""}${x && isRed(x.suit) ? " red" : ""}` +
+    inner += `<div class="slot p${p}${x ? " has s" + x.suit : ""}${x && isRed(x.suit) ? " red" : ""}` +
       `${win ? " win" : ""}${land}">` +
       (x ? `<span>${rankTxt(x.rank)}</span><span>${SYM[x.suit]}</span>` : "") + `</div>`;
   }
@@ -882,6 +947,7 @@ function renderPanel(d){
       : d.suggest ? `${d.dealer_name} dealt, nobody vulnerable. Pick a call, or take the ringed one.`
                   : `${d.dealer_name} dealt, nobody vulnerable. Pick a call in the box.`;
     B.innerHTML = biddingBox(d);
+    panelTools(d);
     B.querySelectorAll("button[data-call]").forEach(b => {
       b.onclick = () => go(() => post("/api/table/call", {call: +b.dataset.call}));
       // Hovering a call previews what it would say, so the box teaches by itself.
@@ -895,6 +961,7 @@ function renderPanel(d){
   if(!ct){
     T.textContent = "Passed out";
     H.textContent = "All four players passed, so nobody plays. The board scores zero.";
+    panelTools(d);
     return;
   }
 
@@ -936,6 +1003,25 @@ function renderPanel(d){
   if(d.phase === "over" && !d.challenge){       // a challenge board is played once
     A.innerHTML = `<button id="replay">Replay this board</button>`;
     A.querySelector("#replay").onclick = () => goNow(() => post("/api/table/restart"));
+  }
+  panelTools(d);
+}
+
+// Undo and claim, under the panel, in every phase they apply to.
+function panelTools(d){
+  const A = $("panel-actions");
+  if(d.phase === "play" && d.your_turn && d.can_claim){
+    A.insertAdjacentHTML("beforeend", `<button id="claim" title="Your side takes every trick that is left, ` +
+      `whatever the others do. The solver checks it with all four hands face up.">Claim the rest</button>`);
+    A.querySelector("#claim").onclick = () => goNow(async () => {
+      const r = await post("/api/table/claim");
+      JUMP = true;
+      return r;
+    });
+  }
+  if(d.can_undo){
+    A.insertAdjacentHTML("afterbegin", `<button id="undo" title="Take back your last call or card (Backspace)">↶ Undo</button>`);
+    A.querySelector("#undo").onclick = undoMove;
   }
 }
 
@@ -1393,9 +1479,10 @@ function renderResult(d){
       (r.delta ? ` — ${r.delta} over` : " exactly")
     : `${contractHTML(ct)} by ${ct.declarer_name} went ${-r.delta} down`;
   $("res-title").innerHTML = line;
-  $("res-hint").innerHTML = r.we_declared
+  $("res-hint").innerHTML = (r.we_declared
     ? `Your side declared, so that score is yours.`
-    : `Their side declared, so the sign flips for you.`;
+    : `Their side declared, so the sign flips for you.`) +
+    (d.claim ? ` You claimed the last ${d.claim.tricks} trick${d.claim.tricks === 1 ? "" : "s"}.` : "");
   const good = r.my_score >= 0;
   let s = `<div class="stat ${good?"good":"bad"}"><span>Your side scored</span>` +
           `<b class="num">${fmtPts(r.my_score)}</b>` +
@@ -1437,6 +1524,48 @@ function renderResult(d){
     `${TAGS.solver}</p><p class="hint">${rv.note}</p>` + own + side;
 }
 
+/* ------------------------------------------------ challenge rating, kept in this browser
+
+Elo. Each challenge board is one game against the bots, rated a fixed 1500: you win
+it when your table scores more IMPs, draw on zero. A board counts once, keyed by its
+deal, so a challenge link played again cannot farm points. */
+const BOT_RATING = 1500, RATING_K = 24;
+let RATING = {r: BOT_RATING, n: 0, best: BOT_RATING, seen: []};
+try { Object.assign(RATING, JSON.parse(localStorage.getItem("table-rating")) || {}); } catch(e) {}
+if(!Array.isArray(RATING.seen) || !Number.isFinite(RATING.r))      // a damaged record starts over
+  RATING = {r: BOT_RATING, n: 0, best: BOT_RATING, seen: []};
+const RATED = {};                  // board key -> {before, after}, for this page's messages
+
+function rateBoards(c){
+  for(const b of c.boards){
+    if(b.imps === null) continue;
+    const key = c.code.c + ":" + b.no;
+    if(RATING.seen.includes(key)) continue;
+    const score = b.imps > 0 ? 1 : b.imps < 0 ? 0 : .5;
+    const expect = 1 / (1 + 10 ** ((BOT_RATING - RATING.r) / 400));
+    const before = RATING.r;
+    RATING.r = Math.round(before + RATING_K * (score - expect));
+    RATING.n++; RATING.best = Math.max(RATING.best, RATING.r);
+    RATING.seen = RATING.seen.concat(key).slice(-400);
+    RATED[key] = {before, after: RATING.r};
+  }
+  try { localStorage.setItem("table-rating", JSON.stringify(RATING)); } catch(e) {}
+  showRating();
+}
+function showRating(){
+  $("challenge").textContent = RATING.n ? `Challenge · ${RATING.r}` : "Challenge";
+  $("challenge").title = "Play four boards in South. Four bots play the same boards at another table, and you " +
+    `compare in IMPs. Your rating: ${RATING.r} after ${RATING.n} board${RATING.n === 1 ? "" : "s"} ` +
+    `(best ${RATING.best}; the bots are ${BOT_RATING}). Kept in this browser only.`;
+}
+function ratingLine(c, b){
+  const x = RATED[c.code.c + ":" + b.no];
+  if(!x) return "";
+  const d = x.after - x.before;
+  return `<p class="hint" style="margin-top:4px">Your rating: <b class="num">${x.before} → ${x.after}</b> ` +
+    `(${d > 0 ? "+" : d < 0 ? "−" : "±"}${Math.abs(d)}). The bots are ${BOT_RATING}. Kept in this browser.</p>`;
+}
+
 /* ------------------------------------------------ challenge: you and three bots against four bots
 
 The other table's result for a board arrives only once your own board is over. */
@@ -1471,7 +1600,7 @@ function challengeHTML(c){
   if(!b || b.imps === null) return "";
   const who = b.imps > 0 ? "You won this board" : b.imps < 0 ? "The bots won this board" : "A tie on this board";
   let s = `<p class="sub">Challenge · board ${b.no} of ${c.n}</p>` +
-    `<h2>${who}: ${impWord(b.imps)}</h2>` +
+    `<h2>${who}: ${impWord(b.imps)}</h2>` + ratingLine(c, b) +
     `<div class="vs">` +
       `<div class="stat ${b.imps>0?"good":b.imps<0?"bad":""}"><span>Your table — you in South</span>` +
         `<b class="num">${signed(b.mine.ns_score)}</b><span>${tableLine(b.mine)}</span>` +
@@ -1514,14 +1643,30 @@ function renderSettings(d){
     `<button data-seat="${i}" class="${i===d.user_seat?"primary":""}" style="flex:0 0 auto;min-width:0">` +
     `${n}${i===d.dealer?" (deals)":""}</button>`).join("");
   $("seats").querySelectorAll("button").forEach(b =>
-    b.onclick = () => leaveChallengeOk() && goNow(() => post("/api/table/new_board", {seat: +b.dataset.seat})));
+    b.onclick = () => { if(!leaveChallengeOk()) return;
+      $("settings").close(); goNow(() => post("/api/table/new_board", {seat: +b.dataset.seat})); });
   $("setup-note").innerHTML = `Board #${d.board_no} · <span class="dim">${d.meta_long || d.meta}</span>`;
 }
 
 $("new-board").onclick = () => leaveChallengeOk() && goNow(() => post("/api/table/new_board"));
 $("challenge").onclick = startChallenge;
-$("restart").onclick = () => goNow(() => post("/api/table/restart"));
+$("restart").onclick = () => { $("settings").close(); goNow(() => post("/api/table/restart")); };
 $("skip").onclick = skip;
+function undoMove(){
+  if(!SRV || !SRV.can_undo) return;
+  goNow(() => post("/api/table/undo"));
+}
+// Settings is a modal. Esc closes it (the browser does that), so do ✕ and a click on the backdrop.
+$("gear").onclick = () => $("settings").showModal();
+$("settings-close").onclick = () => $("settings").close();
+$("settings").addEventListener("click", e => { if(e.target === $("settings")) $("settings").close(); });
+document.addEventListener("keydown", e => {
+  if(e.key !== "Backspace" || e.metaKey || e.ctrlKey || e.altKey || $("settings").open) return;
+  const t = document.activeElement;
+  if(t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA")) return;
+  e.preventDefault();
+  undoMove();
+});
 $("table").addEventListener("click", e => { if(!e.target.closest("button")) skip(); });
 $("speedseg").querySelectorAll("button").forEach(b => b.onclick = () => {
   SPEED = b.dataset.s;
@@ -1644,6 +1789,129 @@ window.addEventListener("hashchange", () => {
   if((p.get("d") !== null || p.get("c") !== null) && ("#" + p.toString()) !== document.body.dataset.code) boot();
 });
 
+/* ------------------------------------------------ card themes
+The mat, faces and backs. Same drawings as design/themes.html. One theme for the
+whole table, kept in this browser. */
+const SVG = body => `url("data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 70 100'>${body}</svg>`)}")`;
+const f2 = n => n.toFixed(2);
+
+function modernBack(){
+  return SVG(`<defs><pattern id='p' width='8' height='8' patternUnits='userSpaceOnUse' patternTransform='rotate(45)'>
+    <rect width='8' height='8' fill='#1f45ad'/><rect width='4' height='8' fill='#2d5bd8'/></pattern></defs>
+    <rect width='70' height='100' rx='5' fill='url(#p)' stroke='#1f45ad' stroke-width='2'/>`);
+}
+
+// A red lattice with a white margin: the look of a plain club deck, not any maker's design.
+function classicBack(){
+  return SVG(`<defs><pattern id='p' width='5' height='5' patternUnits='userSpaceOnUse' patternTransform='rotate(45)'>
+    <path d='M0 0H5M0 0V5' stroke='#f6d5da' stroke-width='.55'/></pattern></defs>
+    <rect width='70' height='100' rx='5' fill='#fff'/>
+    <rect x='4' y='4' width='62' height='92' rx='3' fill='#9b1c2c'/>
+    <rect x='6' y='6' width='58' height='88' rx='2' fill='url(#p)'/>
+    <rect x='6.5' y='6.5' width='57' height='87' rx='2' fill='none' stroke='#fff' stroke-width='.9'/>
+    <ellipse cx='35' cy='50' rx='14' ry='19' fill='#9b1c2c' stroke='#fff' stroke-width='1.2'/>
+    <ellipse cx='35' cy='50' rx='11' ry='16' fill='none' stroke='#fff' stroke-width='.5'/>
+    <text x='35' y='56.5' text-anchor='middle' font-size='18' fill='#fff' font-family='Georgia'>♣</text>`);
+}
+
+// Navy and gold, a rosette in the middle and fine cross-hatching, after 1890s backs.
+function victorianBack(){
+  let petals = "";
+  for(let a = 0; a < 180; a += 22.5)
+    petals += `<ellipse cx='35' cy='50' rx='13' ry='3.2' transform='rotate(${a} 35 50)' fill='none' stroke='#d9b862' stroke-width='.6'/>`;
+  const corner = (x, y) => `<circle cx='${x}' cy='${y}' r='3' fill='none' stroke='#d9b862' stroke-width='.6'/><circle cx='${x}' cy='${y}' r='1' fill='#d9b862'/>`;
+  return SVG(`<defs><pattern id='p' width='3' height='3' patternUnits='userSpaceOnUse' patternTransform='rotate(30)'>
+    <path d='M0 0H3' stroke='#c9a54a' stroke-width='.35' opacity='.55'/></pattern>
+    <pattern id='q' width='3' height='3' patternUnits='userSpaceOnUse' patternTransform='rotate(-30)'>
+    <path d='M0 0H3' stroke='#c9a54a' stroke-width='.35' opacity='.55'/></pattern></defs>
+    <rect width='70' height='100' rx='5' fill='#f1e6c8'/>
+    <rect x='3' y='3' width='64' height='94' rx='3' fill='#1b2a4a'/>
+    <rect x='3' y='3' width='64' height='94' rx='3' fill='url(#p)'/><rect x='3' y='3' width='64' height='94' rx='3' fill='url(#q)'/>
+    <rect x='6' y='6' width='58' height='88' rx='2' fill='none' stroke='#d9b862' stroke-width='.8'/>
+    <rect x='8' y='8' width='54' height='84' rx='1.5' fill='none' stroke='#d9b862' stroke-width='.4'/>
+    ${corner(12, 14)}${corner(58, 14)}${corner(12, 86)}${corner(58, 86)}
+    <circle cx='35' cy='50' r='16' fill='#1b2a4a' stroke='#d9b862' stroke-width='.9'/>
+    ${petals}<circle cx='35' cy='50' r='3.5' fill='#d9b862'/>`);
+}
+
+// Black and gold, a sunburst behind stepped diamonds: the 1920s look.
+function decoBack(){
+  let rays = "";
+  for(let i = 0; i < 36; i++){
+    const a = i * Math.PI / 18;
+    rays += `<line x1='35' y1='50' x2='${f2(35 + 80 * Math.cos(a))}' y2='${f2(50 + 80 * Math.sin(a))}' stroke='#d4af37' stroke-width='${i % 2 ? .3 : .7}'/>`;
+  }
+  const dia = (r, w, fill = "none") =>
+    `<path d='M35 ${50 - r * 1.4}L${35 + r} 50L35 ${50 + r * 1.4}L${35 - r} 50Z' fill='${fill}' stroke='#d4af37' stroke-width='${w}'/>`;
+  return SVG(`<defs><clipPath id='c'><rect x='7' y='7' width='56' height='86'/></clipPath></defs>
+    <rect width='70' height='100' rx='5' fill='#111'/>
+    <rect x='3' y='3' width='64' height='94' rx='3' fill='none' stroke='#d4af37' stroke-width='1'/>
+    <path d='M7 11V7H11M59 7H63V11M63 89V93H59M11 93H7V89' fill='none' stroke='#d4af37' stroke-width='.9'/>
+    <g clip-path='url(#c)' opacity='.55'>${rays}</g>
+    ${dia(15, .5, "#111")}${dia(11, .9)}${dia(7, .5)}${dia(3.5, 0, "#d4af37")}`);
+}
+
+// Teal with orange starbursts and mustard dots, 1960s holiday deck.
+function rivieraBack(){
+  const star = (x, y, r) => {
+    let s = "";
+    for(let i = 0; i < 8; i++){
+      const a = i * Math.PI / 4, rr = i % 2 ? r * .55 : r;
+      s += `<line x1='${x}' y1='${y}' x2='${f2(x + rr * Math.cos(a))}' y2='${f2(y + rr * Math.sin(a))}' stroke='#f08a4b' stroke-width='.9' stroke-linecap='round'/>`;
+    }
+    return s + `<circle cx='${x}' cy='${y}' r='1.1' fill='#fff4dc'/>`;
+  };
+  const dots = [[18,22,2.2],[52,30,1.6],[24,70,1.8],[50,78,2.4],[40,16,1.2],[14,48,1.3],[58,58,1.4]]
+    .map(([x, y, r]) => `<circle cx='${x}' cy='${y}' r='${r}' fill='#f2c14e'/>`).join("");
+  return SVG(`<rect width='70' height='100' rx='5' fill='#fff4dc'/>
+    <rect x='4' y='4' width='62' height='92' rx='8' fill='#1d6f6b'/>
+    ${dots}${star(30, 36, 7)}${star(46, 62, 9)}${star(20, 84, 5)}${star(56, 14, 5)}`);
+}
+
+// The champion's deck: one holder at a time, the top rated player (or pair) of the season.
+function championBack(word){
+  // Two laurel branches curving round the crown, from the bottom up to the top.
+  let leaves = "";
+  for(let i = 0; i < 8; i++){
+    const deg = 105 + i * 19, a = deg * Math.PI / 180;
+    const x = 35 + 18 * Math.cos(a), y = 51 + 18 * Math.sin(a), rot = deg + 90 + 28;
+    for(const [lx, lr] of [[x, rot], [70 - x, 180 - rot]])
+      leaves += `<ellipse cx='${f2(lx)}' cy='${f2(y)}' rx='3.6' ry='1.5' fill='url(#g)' transform='rotate(${f2(lr)} ${f2(lx)} ${f2(y)})'/>`;
+  }
+  return SVG(`<defs>
+    <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#fbe7a1'/><stop offset='.5' stop-color='#c9962b'/><stop offset='1' stop-color='#f5d77a'/></linearGradient>
+    <radialGradient id='b' cx='.5' cy='.45' r='.7'><stop offset='0' stop-color='#3a2c10'/><stop offset='1' stop-color='#0e0b05'/></radialGradient></defs>
+    <rect width='70' height='100' rx='5' fill='url(#g)'/>
+    <rect x='2.5' y='2.5' width='65' height='95' rx='3.5' fill='url(#b)'/>
+    <rect x='5' y='5' width='60' height='90' rx='2' fill='none' stroke='url(#g)' stroke-width='.7'/>
+    ${leaves}
+    <path d='M26 58V46L30.5 50.5L35 42L39.5 50.5L44 46V58Z' fill='url(#g)'/>
+    <rect x='26' y='59' width='18' height='2.6' rx='.6' fill='url(#g)'/>
+    <circle cx='35' cy='42' r='1.3' fill='#fff6d0'/>
+    <path d='M35 15l1.2 3.4h3.6l-2.9 2.1 1.1 3.4-3-2.1-3 2.1 1.1-3.4-2.9-2.1h3.6z' fill='url(#g)'/>
+    <text x='35' y='88' text-anchor='middle' font-size='${word.length > 8 ? 5.6 : 6.2}' letter-spacing='1.2' fill='url(#g)' font-family='Georgia' font-weight='700'>${word}</text>`);
+}
+const DECKS = {modern: null, classic: classicBack, victorian: victorianBack, deco: decoBack,
+               riviera: rivieraBack, champion: () => championBack("CHAMPION")};
+// Film grain for the cloth and leather mats.
+document.documentElement.style.setProperty("--noise", `url("data:image/svg+xml,${encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .22 0'/></filter><rect width='100%' height='100%' filter='url(#n)'/></svg>")}")`);
+function applyDeck(name){
+  if(!(name in DECKS)) name = "modern";
+  const root = document.documentElement, draw = DECKS[name];
+  root.dataset.deck = name;
+  root.classList.toggle("deck-img", !!draw);
+  if(draw) root.style.setProperty("--back-img", draw());
+  $("deck").value = name;
+  try { localStorage.setItem("table-deck", name); } catch(e) {}
+}
+let DECK = "modern";
+try { DECK = localStorage.getItem("table-deck") || "modern"; } catch(e) {}
+applyDeck(DECK);
+$("deck").onchange = e => applyDeck(e.target.value);
+
+showRating();
 applySpeed();
 boot();
 </script>

@@ -1,0 +1,300 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Table themes</title>
+<!-- Design preview only: not wired into /table. Open this file in a browser. -->
+<style>
+:root{
+  --bg:#f6f5f1; --panel:#ffffff; --line:#d9d5cb; --text:#1d1f23; --dim:#5f636b;
+  --mono: ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --k:1;                                  /* card scale: 1 = today's /table size */
+  --cw:calc(36px * var(--k)); --ch:calc(36px * var(--k));
+  --tw:calc(46px * var(--k)); --th:calc(60px * var(--k));
+  --bh:calc(var(--ch) * 2.3); --bw:calc(var(--bh) * .7);
+}
+@media (prefers-color-scheme:dark){
+  :root{ --bg:#121417; --panel:#1b1e23; --line:#343943; --text:#e8eaed; --dim:#a3a8b1 }
+}
+*{box-sizing:border-box}
+body{margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{position:sticky; top:0; z-index:5; background:var(--bg); border-bottom:1px solid var(--line);
+  padding:12px 16px; display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center}
+header h1{font-size:18px; margin:0}
+header .note{color:var(--dim); font-size:13px}
+.seg{display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden}
+.seg button{font:inherit; font-size:13px; border:0; background:var(--panel); color:var(--text); padding:6px 12px; cursor:pointer}
+.seg button.on{background:var(--text); color:var(--bg)}
+main{max-width:1180px; margin:0 auto; padding:16px}
+section{margin:0 0 28px}
+.meta{display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; margin:0 0 8px}
+.meta h2{margin:0; font-size:20px}
+.meta .era{color:var(--dim); font-size:13px}
+.meta p{flex-basis:100%; margin:2px 0 0; color:var(--dim); font-size:14px; max-width:820px}
+
+/* ---- the mat */
+.mat{border-radius:14px; padding:16px; display:flex; flex-wrap:wrap; gap:20px; align-items:center;
+  justify-content:center; min-height:calc(var(--bh) * 2 + 180px)}
+.big{display:flex; gap:14px; flex-wrap:wrap; justify-content:center}
+.big .card{width:132px; height:188px; border-radius:10px; background:var(--back) center/100% 100%;
+  box-shadow:0 6px 18px rgba(0,0,0,.35); position:relative; overflow:hidden}
+.big .cap{font-size:11px; color:rgba(255,255,255,.75); text-align:center; margin-top:6px}
+.play{display:grid; gap:12px; justify-items:center; flex:1 1 360px; max-width:520px; min-width:0}
+.seat{background:rgba(0,0,0,.22); border-radius:11px; padding:8px 10px; width:100%; min-width:0}
+.seat .lbl{font-size:12.5px; color:rgba(255,255,255,.85); margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.seat .lbl b{font-size:14px; margin-right:6px}
+
+/* ---- hidden hand: the same fan as /table */
+.backs{position:relative; height:calc(var(--bh) + 26px); --step:calc(var(--bw) * .3)}
+.back{position:absolute; left:50%; top:50%; width:var(--bw); height:var(--bh);
+  margin:calc(var(--bh) / -2) 0 0 calc(var(--bw) / -2); border-radius:calc(6px * var(--k));
+  --o:calc(var(--i) - (var(--n) - 1) / 2);
+  transform:translateX(calc(var(--o) * var(--step))) rotate(calc(var(--o) * 1.8deg)); transform-origin:50% 140%;
+  background:var(--back) center/100% 100%; box-shadow:-2px 1px 4px rgba(0,0,0,.3); overflow:hidden}
+
+/* ---- faces. Each theme sets the paper, ink, font and the four suit colours. */
+.f{background:var(--f-bg); border:1px solid var(--f-line); color:var(--c); font-family:var(--f-font);
+  font-weight:var(--f-w); position:relative}
+.S{--c:var(--s-s)} .H{--c:var(--s-h)} .D{--c:var(--s-d)} .C{--c:var(--s-c)}
+.rows{display:grid; grid-template-rows:repeat(4,var(--ch)); row-gap:4px}
+.sl{display:flex; align-items:center; gap:6px}
+.sl .sym{width:20px; font-size:20px; text-align:center; color:color-mix(in srgb,var(--c),white 60%)}
+.sl .cards{display:flex; gap:3px; height:100%}
+.hc{width:var(--cw); height:100%; border-radius:7px; display:flex; align-items:center; justify-content:center;
+  font-size:calc(18px * var(--k) * var(--f-scale, 1)); letter-spacing:var(--f-ls, -.04em); line-height:1}
+.hc.ten{font-size:calc(15px * var(--k) * var(--f-scale, 1)); letter-spacing:-.1em}
+.trick{display:grid; grid-template-columns:repeat(3,var(--tw)); grid-template-rows:repeat(3,var(--th)); gap:6px}
+.tc{width:var(--tw); height:var(--th); border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,.25); overflow:hidden}
+.tc::before{content:""; position:absolute; inset:3px; border:1px solid var(--f-frame, transparent); border-radius:5px}
+.tc .ix{position:absolute; left:4px; top:3px; display:flex; flex-direction:column; align-items:center;
+  font-size:calc(13px * var(--k) * var(--f-scale, 1)); line-height:.95; letter-spacing:-.05em}
+.tc .ix i{font-style:normal; font-size:calc(10px * var(--k))}
+.tc .pip{position:absolute; right:5px; bottom:3px; font-size:calc(24px * var(--k)); line-height:1}
+.tc.p2{grid-column:2; grid-row:1} .tc.p1{grid-column:1; grid-row:2}
+.tc.p3{grid-column:3; grid-row:2} .tc.p0{grid-column:2; grid-row:3}
+.tc.win{outline:3px solid #f0b93f; outline-offset:1px}
+
+/* ---- themes */
+.t-modern{--s-s:#1d1f23; --s-h:#c0392b; --s-d:#c0392b; --s-c:#1d1f23; --f-bg:#fff; --f-line:#cfcac0;
+  --f-font:var(--mono); --f-w:600}
+.t-modern .mat{background:radial-gradient(ellipse at center,#2a7359,#1f5e48)}
+
+.t-classic{--s-s:#111; --s-h:#c8102e; --s-d:#c8102e; --s-c:#111; --f-bg:#fff; --f-line:#bdb6a8;
+  --f-font:Georgia,"Times New Roman",serif; --f-w:700; --f-frame:rgba(200,16,46,.25)}
+.t-classic .mat{background:var(--noise),radial-gradient(ellipse at center,#1d7a4e,#0f4a2f 85%);
+  box-shadow:inset 0 0 0 6px #6b4a2b, inset 0 0 0 8px #3d2a18}
+
+.t-victorian{--s-s:#2a1f14; --s-h:#8e1b1b; --s-d:#8e1b1b; --s-c:#2a1f14;
+  --f-bg:linear-gradient(160deg,#f7f0dc,#ece0c0); --f-line:#b9a57a;
+  --f-font:"Bodoni 72",Didot,"Bodoni MT",Georgia,serif; --f-w:700; --f-frame:#b8964a; --f-scale:1.05}
+.t-victorian .mat{background:var(--noise),radial-gradient(ellipse at center,#6a2323,#3a1111 85%);
+  box-shadow:inset 0 0 0 7px #2a0b0b, inset 0 0 0 8px #c9a54a}
+
+.t-deco{--s-s:#111; --s-h:#b3261e; --s-d:#b3261e; --s-c:#111; --f-bg:#f5efe0; --f-line:#c7ab62;
+  --f-font:Futura,"Avenir Next","Century Gothic",sans-serif; --f-w:500; --f-frame:#c7ab62; --f-ls:0}
+.t-deco .mat{background:
+  repeating-linear-gradient(45deg,rgba(212,175,55,.07) 0 1px,transparent 1px 18px),
+  repeating-linear-gradient(-45deg,rgba(212,175,55,.07) 0 1px,transparent 1px 18px),
+  radial-gradient(ellipse at center,#18264a,#0b1326 85%);
+  box-shadow:inset 0 0 0 5px #0b1326, inset 0 0 0 6px #d4af37, inset 0 0 0 10px #0b1326, inset 0 0 0 11px rgba(212,175,55,.5)}
+
+.t-riviera{--s-s:#1d1f23; --s-h:#d6342c; --s-d:#e07b12; --s-c:#1f8a4c; --f-bg:#fffaf0; --f-line:#d8cdb5;
+  --f-font:"Arial Rounded MT Bold","Avenir Next Rounded","Nunito",system-ui,sans-serif; --f-w:700; --f-ls:0}
+.t-riviera .mat{background:radial-gradient(circle,rgba(255,255,255,.07) 1.2px,transparent 1.6px) 0 0/16px 16px,
+  radial-gradient(ellipse at center,#1f7a74,#124a47 85%)}
+
+.t-champion{--s-s:#111; --s-h:#c8102e; --s-d:#c8102e; --s-c:#111; --f-bg:#fff; --f-line:#c9a227;
+  --f-font:Georgia,serif; --f-w:700; --f-frame:rgba(201,162,39,.55)}
+.t-champion .tc,.t-champion .hc{border-width:1.5px}
+.t-champion .mat{background:var(--noise),radial-gradient(ellipse at center,#4a2472,#1d0d30 85%);
+  box-shadow:inset 0 0 0 6px #1d0d30, inset 0 0 0 8px #d9b44a}
+.t-champion .lbl b{color:#f3d57a}
+/* A slow gold sheen, so the champion's cards stand out across the table. */
+.t-champion .back::after,.t-champion .big .card::after{content:""; position:absolute; inset:0;
+  background:linear-gradient(110deg,transparent 42%,rgba(255,240,190,.4) 50%,transparent 58%) 0 0/300% 100%;
+  animation:sheen 4.5s ease-in-out infinite}
+@keyframes sheen{0%{background-position:100% 0} 60%,100%{background-position:0 0}}
+@media (prefers-reduced-motion:reduce){ .t-champion .back::after,.t-champion .big .card::after{animation:none} }
+
+@media (max-width:600px){ .big .card{width:104px; height:148px} }
+</style>
+</head>
+<body>
+<header>
+  <h1>Table themes · preview</h1>
+  <div class="seg" id="size">
+    <button class="on" data-k="1">Today's size</button><button data-k="1.4">Bigger (1.4×)</button>
+  </div>
+  <span class="note">Not in the game yet. Each theme = card back + mat + card fronts.</span>
+</header>
+<main id="out"></main>
+
+<script>
+const SVG = body => `url("data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 70 100'>${body}</svg>`)}")`;
+const f = n => n.toFixed(2);
+
+function modernBack(){
+  return SVG(`<defs><pattern id='p' width='8' height='8' patternUnits='userSpaceOnUse' patternTransform='rotate(45)'>
+    <rect width='8' height='8' fill='#1f45ad'/><rect width='4' height='8' fill='#2d5bd8'/></pattern></defs>
+    <rect width='70' height='100' rx='5' fill='url(#p)' stroke='#1f45ad' stroke-width='2'/>`);
+}
+
+// A red lattice with a white margin: the look of a plain club deck, not any maker's design.
+function classicBack(){
+  return SVG(`<defs><pattern id='p' width='5' height='5' patternUnits='userSpaceOnUse' patternTransform='rotate(45)'>
+    <path d='M0 0H5M0 0V5' stroke='#f6d5da' stroke-width='.55'/></pattern></defs>
+    <rect width='70' height='100' rx='5' fill='#fff'/>
+    <rect x='4' y='4' width='62' height='92' rx='3' fill='#9b1c2c'/>
+    <rect x='6' y='6' width='58' height='88' rx='2' fill='url(#p)'/>
+    <rect x='6.5' y='6.5' width='57' height='87' rx='2' fill='none' stroke='#fff' stroke-width='.9'/>
+    <ellipse cx='35' cy='50' rx='14' ry='19' fill='#9b1c2c' stroke='#fff' stroke-width='1.2'/>
+    <ellipse cx='35' cy='50' rx='11' ry='16' fill='none' stroke='#fff' stroke-width='.5'/>
+    <text x='35' y='56.5' text-anchor='middle' font-size='18' fill='#fff' font-family='Georgia'>♣</text>`);
+}
+
+// Navy and gold, a rosette in the middle and fine cross-hatching, after 1890s backs.
+function victorianBack(){
+  let petals = "";
+  for(let a = 0; a < 180; a += 22.5)
+    petals += `<ellipse cx='35' cy='50' rx='13' ry='3.2' transform='rotate(${a} 35 50)' fill='none' stroke='#d9b862' stroke-width='.6'/>`;
+  const corner = (x, y) => `<circle cx='${x}' cy='${y}' r='3' fill='none' stroke='#d9b862' stroke-width='.6'/><circle cx='${x}' cy='${y}' r='1' fill='#d9b862'/>`;
+  return SVG(`<defs><pattern id='p' width='3' height='3' patternUnits='userSpaceOnUse' patternTransform='rotate(30)'>
+    <path d='M0 0H3' stroke='#c9a54a' stroke-width='.35' opacity='.55'/></pattern>
+    <pattern id='q' width='3' height='3' patternUnits='userSpaceOnUse' patternTransform='rotate(-30)'>
+    <path d='M0 0H3' stroke='#c9a54a' stroke-width='.35' opacity='.55'/></pattern></defs>
+    <rect width='70' height='100' rx='5' fill='#f1e6c8'/>
+    <rect x='3' y='3' width='64' height='94' rx='3' fill='#1b2a4a'/>
+    <rect x='3' y='3' width='64' height='94' rx='3' fill='url(#p)'/><rect x='3' y='3' width='64' height='94' rx='3' fill='url(#q)'/>
+    <rect x='6' y='6' width='58' height='88' rx='2' fill='none' stroke='#d9b862' stroke-width='.8'/>
+    <rect x='8' y='8' width='54' height='84' rx='1.5' fill='none' stroke='#d9b862' stroke-width='.4'/>
+    ${corner(12, 14)}${corner(58, 14)}${corner(12, 86)}${corner(58, 86)}
+    <circle cx='35' cy='50' r='16' fill='#1b2a4a' stroke='#d9b862' stroke-width='.9'/>
+    ${petals}<circle cx='35' cy='50' r='3.5' fill='#d9b862'/>`);
+}
+
+// Black and gold, a sunburst behind stepped diamonds: the 1920s look.
+function decoBack(){
+  let rays = "";
+  for(let i = 0; i < 36; i++){
+    const a = i * Math.PI / 18;
+    rays += `<line x1='35' y1='50' x2='${f(35 + 80 * Math.cos(a))}' y2='${f(50 + 80 * Math.sin(a))}' stroke='#d4af37' stroke-width='${i % 2 ? .3 : .7}'/>`;
+  }
+  const dia = (r, w, fill = "none") =>
+    `<path d='M35 ${50 - r * 1.4}L${35 + r} 50L35 ${50 + r * 1.4}L${35 - r} 50Z' fill='${fill}' stroke='#d4af37' stroke-width='${w}'/>`;
+  return SVG(`<defs><clipPath id='c'><rect x='7' y='7' width='56' height='86'/></clipPath></defs>
+    <rect width='70' height='100' rx='5' fill='#111'/>
+    <rect x='3' y='3' width='64' height='94' rx='3' fill='none' stroke='#d4af37' stroke-width='1'/>
+    <path d='M7 11V7H11M59 7H63V11M63 89V93H59M11 93H7V89' fill='none' stroke='#d4af37' stroke-width='.9'/>
+    <g clip-path='url(#c)' opacity='.55'>${rays}</g>
+    ${dia(15, .5, "#111")}${dia(11, .9)}${dia(7, .5)}${dia(3.5, 0, "#d4af37")}`);
+}
+
+// Teal with orange starbursts and mustard dots, 1960s holiday deck.
+function rivieraBack(){
+  const star = (x, y, r) => {
+    let s = "";
+    for(let i = 0; i < 8; i++){
+      const a = i * Math.PI / 4, rr = i % 2 ? r * .55 : r;
+      s += `<line x1='${x}' y1='${y}' x2='${f(x + rr * Math.cos(a))}' y2='${f(y + rr * Math.sin(a))}' stroke='#f08a4b' stroke-width='.9' stroke-linecap='round'/>`;
+    }
+    return s + `<circle cx='${x}' cy='${y}' r='1.1' fill='#fff4dc'/>`;
+  };
+  const dots = [[18,22,2.2],[52,30,1.6],[24,70,1.8],[50,78,2.4],[40,16,1.2],[14,48,1.3],[58,58,1.4]]
+    .map(([x, y, r]) => `<circle cx='${x}' cy='${y}' r='${r}' fill='#f2c14e'/>`).join("");
+  return SVG(`<rect width='70' height='100' rx='5' fill='#fff4dc'/>
+    <rect x='4' y='4' width='62' height='92' rx='8' fill='#1d6f6b'/>
+    ${dots}${star(30, 36, 7)}${star(46, 62, 9)}${star(20, 84, 5)}${star(56, 14, 5)}`);
+}
+
+// The champion's deck: one holder at a time, the top rated player (or pair) of the season.
+function championBack(word){
+  // Two laurel branches curving round the crown, from the bottom up to the top.
+  let leaves = "";
+  for(let i = 0; i < 8; i++){
+    const deg = 105 + i * 19, a = deg * Math.PI / 180;
+    const x = 35 + 18 * Math.cos(a), y = 51 + 18 * Math.sin(a), rot = deg + 90 + 28;
+    for(const [lx, lr] of [[x, rot], [70 - x, 180 - rot]])
+      leaves += `<ellipse cx='${f(lx)}' cy='${f(y)}' rx='3.6' ry='1.5' fill='url(#g)' transform='rotate(${f(lr)} ${f(lx)} ${f(y)})'/>`;
+  }
+  return SVG(`<defs>
+    <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#fbe7a1'/><stop offset='.5' stop-color='#c9962b'/><stop offset='1' stop-color='#f5d77a'/></linearGradient>
+    <radialGradient id='b' cx='.5' cy='.45' r='.7'><stop offset='0' stop-color='#3a2c10'/><stop offset='1' stop-color='#0e0b05'/></radialGradient></defs>
+    <rect width='70' height='100' rx='5' fill='url(#g)'/>
+    <rect x='2.5' y='2.5' width='65' height='95' rx='3.5' fill='url(#b)'/>
+    <rect x='5' y='5' width='60' height='90' rx='2' fill='none' stroke='url(#g)' stroke-width='.7'/>
+    ${leaves}
+    <path d='M26 58V46L30.5 50.5L35 42L39.5 50.5L44 46V58Z' fill='url(#g)'/>
+    <rect x='26' y='59' width='18' height='2.6' rx='.6' fill='url(#g)'/>
+    <circle cx='35' cy='42' r='1.3' fill='#fff6d0'/>
+    <path d='M35 15l1.2 3.4h3.6l-2.9 2.1 1.1 3.4-3-2.1-3 2.1 1.1-3.4-2.9-2.1h3.6z' fill='url(#g)'/>
+    <text x='35' y='88' text-anchor='middle' font-size='${word.length > 8 ? 5.6 : 6.2}' letter-spacing='1.2' fill='url(#g)' font-family='Georgia' font-weight='700'>${word}</text>`);
+}
+
+const THEMES = [
+  {id:"modern", name:"Modern", era:"today", back:modernBack(),
+   blurb:"What /table uses now. Plain and quick to read, the default everyone starts with."},
+  {id:"classic", name:"Club Classic", era:"20th century card room", back:classicBack(),
+   blurb:"Red lattice back with a white margin, green baize with a wooden rail, serif fronts. It says 'real bridge club'. Our own drawing: it copies no maker's back or name."},
+  {id:"victorian", name:"Victorian", era:"about 1890", back:victorianBack(),
+   blurb:"Navy and gold rosette, ivory paper fronts with a thin gold frame, oxblood leather mat. Designs from this time are public domain, so we can follow real old decks closely."},
+  {id:"deco", name:"Art Deco", era:"1920s", back:decoBack(),
+   blurb:"Black and gold sunburst, cream fronts in a geometric font, midnight blue mat with gold rails."},
+  {id:"riviera", name:"Riviera", era:"1960s", back:rivieraBack(),
+   blurb:"Teal with orange starbursts. The fronts use four suit colours (♦ orange, ♣ green): easier to read fast, and many online players like it. This could also be a free setting on its own."},
+  {id:"champion", name:"Champion", era:"one holder per season", back:championBack("CHAMPION"), pair:championBack("CHAMPIONS"),
+   blurb:"Not for sale. Only the top rated player holds it (or 'Champions' for the top pair). Everyone at the table sees it on that seat, with a slow gold shine. It moves on when someone passes them."},
+];
+
+const HAND = [["S","♠",["A","K","10","7"]], ["H","♥",["Q","9"]], ["D","♦",["J","8","5"]], ["C","♣",["K","6","3","2"]]];
+const TRICK = [["p2","H","K"], ["p3","C","4"], ["p0","H","A",true], ["p1","D","7"]];
+const SYM = {S:"♠", H:"♥", D:"♦", C:"♣"};
+
+function fan(n){
+  let s = "";
+  for(let i = 0; i < n; i++) s += `<span class="back" style="--i:${i};--n:${n}"></span>`;
+  return `<div class="backs">${s}</div>`;
+}
+function hand(){
+  return `<div class="rows">` + HAND.map(([s, sym, ranks]) =>
+    `<div class="sl ${s}"><span class="sym">${sym}</span><div class="cards">` +
+    ranks.map(r => `<span class="f hc ${s}${r === "10" ? " ten" : ""}">${r}</span>`).join("") +
+    `</div></div>`).join("") + `</div>`;
+}
+function trick(){
+  return `<div class="trick">` + TRICK.map(([p, s, r, win]) =>
+    `<div class="f tc ${p} ${s}${win ? " win" : ""}"><span class="ix">${r}<i>${SYM[s]}</i></span><span class="pip">${SYM[s]}</span></div>`
+  ).join("") + `</div>`;
+}
+
+const out = document.getElementById("out");
+for(const t of THEMES){
+  const big = `<div><div class="card"></div><div class="cap">${t.pair ? "one player" : "card back"}</div></div>` +
+    (t.pair ? `<div><div class="card pair"></div><div class="cap">top pair</div></div>` : "");
+  const north = t.id === "champion"
+    ? `<b>North</b>Champion · rating 1874` : `<b>North</b>the net`;
+  const sec = document.createElement("section");
+  sec.className = "t-" + t.id;
+  sec.style.setProperty("--back", t.back);
+  sec.innerHTML =
+    `<div class="meta"><h2>${t.name}</h2><span class="era">${t.era}</span><p>${t.blurb}</p></div>` +
+    `<div class="mat"><div class="big">${big}</div>` +
+    `<div class="play"><div class="seat"><div class="lbl">${north} · 13 cards</div>${fan(13)}</div>` +
+    trick() +
+    `<div class="seat" style="width:auto"><div class="lbl"><b>South</b>you</div>${hand()}</div></div></div>`;
+  if(t.pair) sec.querySelector(".pair").style.setProperty("--back", t.pair);
+  out.appendChild(sec);
+}
+
+// Film grain for the cloth and leather mats.
+document.documentElement.style.setProperty("--noise", `url("data:image/svg+xml,${encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .22 0'/></filter><rect width='100%' height='100%' filter='url(#n)'/></svg>")}")`);
+
+document.querySelectorAll("#size button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#size button").forEach(x => x.classList.toggle("on", x === b));
+  document.documentElement.style.setProperty("--k", b.dataset.k);
+});
+</script>
+</body>
+</html>
