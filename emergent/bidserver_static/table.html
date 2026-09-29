@@ -317,15 +317,35 @@ details.discl[open] > summary::before{content:"▾"}
 details.discl > summary em{font-style:normal; font-weight:400; color:var(--dim); font-size:14px}
 details.discl > .body{margin-top:16px}
 
-/* ---- settings: a modal over the table */
-#settings{width:min(560px, calc(100vw - 32px)); max-height:calc(100dvh - 48px); overflow:auto;
+/* ---- modals: settings, the leaderboard, the end of a challenge */
+dialog.modal{width:min(560px, calc(100vw - 32px)); max-height:calc(100dvh - 48px); overflow:auto;
   color:var(--text); padding:0; box-shadow:0 24px 60px rgba(0,0,0,.35)}
-#settings::backdrop{background:rgba(0,0,0,.45)}
-#settings .mhd{position:sticky; top:0; z-index:1; background:var(--card); display:flex; align-items:center;
+dialog.modal.wide{width:min(760px, calc(100vw - 32px))}
+dialog.modal::backdrop{background:rgba(0,0,0,.45)}
+dialog.modal .mhd{position:sticky; top:0; z-index:1; background:var(--card); display:flex; align-items:center;
   justify-content:space-between; padding:14px 20px; border-bottom:1px solid var(--line)}
-#settings .mhd h2{margin:0; font-size:19px}
-#settings .mhd button{min-height:36px; padding:0 12px}
-#settings .body{padding:16px 20px 20px}
+dialog.modal .mhd h2{margin:0; font-size:19px}
+dialog.modal .mhd button{min-height:36px; padding:0 12px}
+dialog.modal .body{padding:16px 20px 20px}
+#rank{font-variant-numeric:tabular-nums; padding:4px 8px; font-size:14px; white-space:nowrap}
+@media (min-width:981px){ header .bar{gap:6px} header .seg button{padding:6px 8px} header h1{margin-right:4px} }
+table.lb{border-collapse:collapse; width:100%; font-size:15px; font-variant-numeric:tabular-nums}
+table.lb th{font-size:13px; color:var(--dim); font-weight:600; text-align:left; padding:4px 8px; border-bottom:1px solid var(--line)}
+table.lb td{padding:7px 8px; border-bottom:1px solid var(--line)}
+table.lb td.n, table.lb th.n{text-align:right}
+table.lb tr.you td{background:var(--accent-bg); font-weight:600}
+.namef{display:flex; gap:8px; flex-wrap:wrap; margin:8px 0}
+.namef input{flex:1 1 180px; min-height:40px; border:1px solid var(--line); border-radius:9px; padding:0 12px;
+  font:inherit; background:var(--card); color:var(--text)}
+.err{color:var(--red); min-height:1.4em; margin:4px 0 0; font-size:14px}
+.bigscore{font-size:34px; font-weight:700; margin:2px 0 4px; font-variant-numeric:tabular-nums}
+.bigscore.good{color:var(--good,#1a7f4b)} .bigscore.bad{color:var(--red)}
+table.match td a{white-space:nowrap}
+.prog{height:10px; border-radius:6px; background:var(--line); overflow:hidden; margin:14px 0 8px}
+.prog > i{display:block; height:100%; width:0; background:var(--accent); border-radius:inherit; transition:width .3s}
+.gensteps{list-style:none; padding:0; margin:10px 0 0; font-size:14.5px}
+.gensteps li{padding:3px 0; color:var(--dim)} .gensteps li.now{color:var(--text); font-weight:600}
+.gensteps li.done::before{content:"✓ "; color:var(--accent)}
 
 /* ---- narrow screens: the button that commits your move stays under your thumb */
 @media (max-width:980px){
@@ -431,6 +451,7 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
     <button id="challenge" type="button"
             title="Play four boards in South. Four bots play the same boards at another table, and you compare in IMPs.">Challenge</button>
     <button id="new-board" class="primary">New board</button>
+    <button id="rank" type="button" title="Your challenge rating. Opens the leaderboard." aria-label="Leaderboard">🏆 …</button>
     <button id="gear" type="button" title="Settings: card theme, your chair" aria-label="Settings">⚙</button>
   </div>
   <div class="meta" id="meta">dealing…</div>
@@ -468,7 +489,7 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
   </details>
 </div>
 
-<dialog class="card" id="settings" aria-labelledby="settings-title">
+<dialog class="card modal" id="settings" aria-labelledby="settings-title">
     <div class="mhd"><h2 id="settings-title">Settings</h2>
       <button id="settings-close" type="button" aria-label="Close settings">✕</button></div>
     <div class="body">
@@ -476,7 +497,7 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
       <select id="deck" aria-label="Card theme">
         <option value="modern">Modern</option><option value="classic">Club Classic</option>
         <option value="victorian">Victorian</option><option value="deco">Art Deco</option>
-        <option value="riviera">Riviera (four colours)</option><option value="champion">Champion (preview)</option>
+        <option value="riviera">Riviera (four colours)</option><option value="champion" disabled>Champion (top of the leaderboard)</option>
       </select>
       <p class="hint" style="margin:6px 0 16px">The cards and the table, for the whole page. Kept in this browser.</p>
       <p class="sub">Your chair <em style="text-transform:none;font-weight:400">North deals, nobody vulnerable</em></p>
@@ -494,6 +515,31 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
       </div>
       <p class="hint" style="margin:12px 0 0" id="setup-note"></p>
     </div>
+</dialog>
+
+<dialog class="card modal" id="lb" aria-labelledby="lb-title">
+    <div class="mhd"><h2 id="lb-title">Leaderboard</h2>
+      <button type="button" data-close aria-label="Close leaderboard">✕</button></div>
+    <div class="body" id="lb-body"></div>
+</dialog>
+
+<dialog class="card modal" id="gen" aria-labelledby="gen-title">
+    <div class="mhd"><h2 id="gen-title">Dealing a challenge</h2></div>
+    <div class="body">
+      <p style="margin:0" class="hint">Four bots play every board at the other table first, so your
+        score can be compared. This takes a few seconds per board.</p>
+      <div class="prog" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="gen-bar"><i></i></div>
+      <p style="margin:0" id="gen-now" aria-live="polite">Starting…</p>
+      <ul class="gensteps" id="gen-steps"></ul>
+      <p class="err" id="gen-err"></p>
+      <div class="actions" style="margin-top:8px"><button id="gen-cancel" type="button">Cancel</button></div>
+    </div>
+</dialog>
+
+<dialog class="card modal wide" id="match" aria-labelledby="match-title">
+    <div class="mhd"><h2 id="match-title">Challenge over</h2>
+      <button type="button" data-close aria-label="Close">✕</button></div>
+    <div class="body" id="match-body"></div>
 </dialog>
 
 </div>
@@ -649,6 +695,7 @@ function render(d){
   const fresh = !SRV || SRV.board_no !== d.board_no;
   const back = SRV && (d.auction.length < VIEW.calls || cardsIn(d) < VIEW.cards);
   SRV = d;
+  showMe(d.me);
   if(fresh || back || JUMP || SPEED === "off") VIEW = {calls: d.auction.length, cards: cardsIn(d)};
   JUMP = false;
   const at = d.board_no + ":" + d.auction.length;
@@ -679,7 +726,7 @@ function paint(){
   D = frameOf(SRV, VIEW.calls, VIEW.cards, full);
   syncLink();
   if(SRV.challenge){
-    if(full) rateBoards(SRV.challenge);    // only once the last card is on screen
+    maybeShowMatch(SRV.challenge, full);   // only once the last card is on screen
     renderChallengeMeta(SRV.challenge, full);
   }
   renderTable(D); renderPanel(D); renderAdvice(D); renderRule(D); renderNext(D); renderSettings(D);
@@ -1460,6 +1507,7 @@ function renderResult(d){
   if(d.phase !== "over" || !r){ row.style.display = "none"; return; }
   row.style.display = "";
   $("res-chal").innerHTML = d.challenge ? challengeHTML(d.challenge) : "";
+  if($("match-open")) $("match-open").onclick = () => showMatch(d.challenge);
   const ct = d.contract;
   if(r.passed_out){
     $("res-title").textContent = "Passed out";
@@ -1524,46 +1572,113 @@ function renderResult(d){
     `${TAGS.solver}</p><p class="hint">${rv.note}</p>` + own + side;
 }
 
-/* ------------------------------------------------ challenge rating, kept in this browser
+/* ------------------------------------------------ rating and leaderboard, kept on the server
 
-Elo. Each challenge board is one game against the bots, rated a fixed 1500: you win
-it when your table scores more IMPs, draw on zero. A board counts once, keyed by its
-deal, so a challenge link played again cannot farm points. */
-const BOT_RATING = 1500, RATING_K = 24;
-let RATING = {r: BOT_RATING, n: 0, best: BOT_RATING, seen: []};
-try { Object.assign(RATING, JSON.parse(localStorage.getItem("table-rating")) || {}); } catch(e) {}
-if(!Array.isArray(RATING.seen) || !Number.isFinite(RATING.r))      // a damaged record starts over
-  RATING = {r: BOT_RATING, n: 0, best: BOT_RATING, seen: []};
-const RATED = {};                  // board key -> {before, after}, for this page's messages
+Elo against the bots, who are fixed at 1500. The server rates each board of a
+challenge it dealt, and sends the player's record as `me` with every state. */
+let ME = null;
+const esc = t => String(t).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+const delta = x => { const d = x.after - x.before; return `${d > 0 ? "+" : d < 0 ? "−" : "±"}${Math.abs(d)}`; };
 
-function rateBoards(c){
-  for(const b of c.boards){
-    if(b.imps === null) continue;
-    const key = c.code.c + ":" + b.no;
-    if(RATING.seen.includes(key)) continue;
-    const score = b.imps > 0 ? 1 : b.imps < 0 ? 0 : .5;
-    const expect = 1 / (1 + 10 ** ((BOT_RATING - RATING.r) / 400));
-    const before = RATING.r;
-    RATING.r = Math.round(before + RATING_K * (score - expect));
-    RATING.n++; RATING.best = Math.max(RATING.best, RATING.r);
-    RATING.seen = RATING.seen.concat(key).slice(-400);
-    RATED[key] = {before, after: RATING.r};
-  }
-  try { localStorage.setItem("table-rating", JSON.stringify(RATING)); } catch(e) {}
-  showRating();
+function showMe(me){
+  if(!me) return;
+  ME = me;
+  $("rank").textContent = `🏆 ${me.rating}`;
+  $("rank").title = `Your challenge rating: ${me.rating} after ${me.boards} board${me.boards === 1 ? "" : "s"} ` +
+    `(best ${me.best}; the bots are ${me.bots}). Opens the leaderboard.`;
+  const champ = $("deck").querySelector('option[value="champion"]');
+  champ.disabled = !me.champion;
+  champ.textContent = me.champion ? "Champion (yours while you top the board)" : "Champion (top of the leaderboard)";
+  if(!me.champion && document.documentElement.dataset.deck === "champion") applyDeck("modern");
+  if(me.champion && DECK === "champion" && document.documentElement.dataset.deck !== "champion") applyDeck("champion");
 }
-function showRating(){
-  $("challenge").textContent = RATING.n ? `Challenge · ${RATING.r}` : "Challenge";
-  $("challenge").title = "Play four boards in South. Four bots play the same boards at another table, and you " +
-    `compare in IMPs. Your rating: ${RATING.r} after ${RATING.n} board${RATING.n === 1 ? "" : "s"} ` +
-    `(best ${RATING.best}; the bots are ${BOT_RATING}). Kept in this browser only.`;
-}
-function ratingLine(c, b){
-  const x = RATED[c.code.c + ":" + b.no];
+function ratingLine(b){
+  const x = b.rating;
   if(!x) return "";
-  const d = x.after - x.before;
   return `<p class="hint" style="margin-top:4px">Your rating: <b class="num">${x.before} → ${x.after}</b> ` +
-    `(${d > 0 ? "+" : d < 0 ? "−" : "±"}${Math.abs(d)}). The bots are ${BOT_RATING}. Kept in this browser.</p>`;
+    `(${delta(x)}). The bots are 1500.</p>`;
+}
+
+async function openLeaderboard(){
+  const dlg = $("lb"), body = $("lb-body");
+  if(!dlg.open) dlg.showModal();
+  body.innerHTML = `<p class="hint">Loading…</p>`;
+  let j;
+  try { j = await (await fetch("/api/leaderboard")).json(); }
+  catch(e){ body.innerHTML = `<p class="err">Could not load the leaderboard.</p>`; return; }
+  showMe(j.me);
+  if(!j.me.name) return nameForm(body, j, false);
+  const rows = j.players.map((r, i) =>
+    `<tr class="${r.you ? "you" : ""}"><td class="n">${i + 1}</td><td>${esc(r.name)}${r.champion ? " 👑" : ""}</td>` +
+    `<td class="n">${r.rating}</td><td class="n">${r.boards}</td><td class="n">${r.best}</td></tr>`).join("");
+  body.innerHTML =
+    `<p class="hint" style="margin-top:0">Rated on challenge boards against the bots (1500). ` +
+    `The top player with at least ${j.min_boards} boards is the champion 👑 and gets the Champion card theme.</p>` +
+    (rows ? `<table class="lb"><tr><th class="n">#</th><th>Player</th><th class="n">Rating</th>` +
+            `<th class="n">Boards</th><th class="n">Best</th></tr>${rows}</table>`
+          : `<p>Nobody is on the board yet. Play a challenge to be the first.</p>`) +
+    `<p class="hint" style="margin:14px 0 0">You are <b>${esc(j.me.name)}</b>, ${j.me.rating} after ${j.me.boards} ` +
+    `board${j.me.boards === 1 ? "" : "s"}. <a href="#" id="rename">Change name</a></p>`;
+  $("rename").onclick = e => { e.preventDefault(); nameForm(body, j, true); };
+}
+function nameForm(body, j, rename){
+  body.innerHTML =
+    `<p style="margin-top:0">${rename ? "Pick a new name." : "Pick a name to see the leaderboard and appear on it."}</p>` +
+    `<p class="hint">No password: this browser is your account for now. Your rating so far stays with you.</p>` +
+    `<form class="namef" id="namef"><input id="namein" maxlength="20" autocomplete="nickname" ` +
+    `placeholder="3 to 20 letters or digits" value="${rename ? esc(j.me.name) : ""}" aria-label="Your name">` +
+    `<button class="primary" type="submit">${rename ? "Save" : "Join"}</button></form><p class="err" id="nameerr"></p>`;
+  $("namein").focus();
+  $("namef").onsubmit = async e => {
+    e.preventDefault();
+    try { showMe(await post("/api/me/name", {name: $("namein").value})); openLeaderboard(); }
+    catch(err){ $("nameerr").textContent = err.message; }
+  };
+}
+
+/* The end of a challenge: a modal with the match, the rating change and review links.
+   It opens once per challenge, when the last card of the last board is on screen. */
+const MATCH_SHOWN = new Set();
+function reviewHref(c, b, who){
+  const [a, p] = b.moves[who], q = new URLSearchParams();
+  q.set("d", c.code.c.split(".")[b.no - 1]);
+  if(a) q.set("a", a);
+  q.set("dr", 0); q.set("v", "none");
+  if(p) q.set("p", p);
+  q.set("s", "S"); q.set("m", c.code.m); q.set("pm", c.code.pm); q.set("h", 1);
+  return "/table#" + q.toString();
+}
+function maybeShowMatch(c, full){
+  if(!c.done || !full || MATCH_SHOWN.has(c.code.c)) return;
+  MATCH_SHOWN.add(c.code.c);
+  showMatch(c);
+}
+function showMatch(c){
+  const verdict = c.total > 0 ? "You beat the bots" : c.total < 0 ? "The bots won" : "A tie with the bots";
+  const rated = c.boards.map(b => b.rating).filter(Boolean);
+  const rline = rated.length
+    ? `<p>Your rating: <b class="num">${rated[0].before} → ${rated[rated.length - 1].after}</b> ` +
+      `(${delta({before: rated[0].before, after: rated[rated.length - 1].after})})</p>`
+    : `<p class="hint">Not rated: this challenge came from a link. Press Challenge for a rated one.</p>`;
+  const link = (b, who, t) => `<a href="${reviewHref(c, b, who)}" target="_blank" rel="noopener">${t}</a>`;
+  $("match-title").textContent = `Challenge over · ${c.n} boards`;
+  $("match-body").innerHTML =
+    `<p class="sub" style="margin:0">${verdict}</p>` +
+    `<div class="bigscore ${c.total > 0 ? "good" : c.total < 0 ? "bad" : ""}">${impWord(c.total)}</div>` + rline +
+    `<div class="rvwrap"><table class="match"><tr><th>Board</th><th>You</th><th class="n">N/S</th>` +
+    `<th>Bots</th><th class="n">N/S</th><th class="n">IMPs</th><th class="n">Rating</th><th>Review</th></tr>` +
+    c.boards.map(b => `<tr><td>${b.no}</td><td>${tableLine(b.mine)}</td><td class="n">${signed(b.mine.ns_score)}</td>` +
+      `<td>${tableLine(b.bot)}</td><td class="n">${signed(b.bot.ns_score)}</td>` +
+      `<td class="n"><b>${signed(b.imps)}</b></td><td class="n">${b.rating ? delta(b.rating) : "—"}</td>` +
+      `<td>${link(b, "mine", "Your table")} · ${link(b, "bot", "Bots")}</td></tr>`).join("") +
+    `</table></div>` +
+    `<p class="hint" style="margin-top:8px">Review opens the board in a new tab with all four hands and the solver's ` +
+    `notes. <b>Copy link</b> sends a friend the same boards against the same bot table.</p>` +
+    `<div class="actions" style="margin-top:12px"><button id="m-lb">Leaderboard</button>` +
+    `<button id="m-again" class="primary">New challenge</button></div>`;
+  $("m-lb").onclick = () => { $("match").close(); openLeaderboard(); };
+  $("m-again").onclick = () => { $("match").close(); startChallenge(); };
+  if(!$("match").open) $("match").showModal();
 }
 
 /* ------------------------------------------------ challenge: you and three bots against four bots
@@ -1600,7 +1715,7 @@ function challengeHTML(c){
   if(!b || b.imps === null) return "";
   const who = b.imps > 0 ? "You won this board" : b.imps < 0 ? "The bots won this board" : "A tie on this board";
   let s = `<p class="sub">Challenge · board ${b.no} of ${c.n}</p>` +
-    `<h2>${who}: ${impWord(b.imps)}</h2>` + ratingLine(c, b) +
+    `<h2>${who}: ${impWord(b.imps)}</h2>` + ratingLine(b) +
     `<div class="vs">` +
       `<div class="stat ${b.imps>0?"good":b.imps<0?"bad":""}"><span>Your table — you in South</span>` +
         `<b class="num">${signed(b.mine.ns_score)}</b><span>${tableLine(b.mine)}</span>` +
@@ -1610,32 +1725,75 @@ function challengeHTML(c){
         `<div class="auc">${auctionLine(b.bot)}</div></div>` +
     `</div><p class="hint" style="margin-top:8px">Scores are for North–South. ` +
     `The difference, ${signed(b.mine.ns_score - b.bot.ns_score)}, is ${impWord(b.imps)}.</p>`;
-  if(c.done){
-    const verdict = c.total > 0 ? `You beat the bots by ${c.total} IMP${c.total===1?"":"s"}`
-                  : c.total < 0 ? `The bots beat you by ${-c.total} IMP${c.total===-1?"":"s"}`
-                  : "A tie with the bots";
-    s += `<p class="sub" style="margin-top:14px">The match</p><h2>${verdict}</h2>` +
-      `<div class="rvwrap"><table class="match"><tr><th>Board</th><th>You</th><th class="n">N/S</th>` +
-      `<th>Bots</th><th class="n">N/S</th><th class="n">IMPs</th></tr>` +
-      c.boards.map(r => `<tr><td>${r.no}</td><td>${tableLine(r.mine)}</td><td class="n">${signed(r.mine.ns_score)}</td>` +
-        `<td>${tableLine(r.bot)}</td><td class="n">${signed(r.bot.ns_score)}</td>` +
-        `<td class="n"><b>${signed(r.imps)}</b></td></tr>`).join("") +
-      `<tr><td colspan="5"><b>Total</b></td><td class="n"><b>${signed(c.total)}</b></td></tr></table></div>` +
-      `<p class="hint" style="margin-top:8px">Send the challenge to a friend: <b>Copy link</b> gives them ` +
-      `the same four boards and the same bot table.</p>`;
-  }
+  if(c.done) s += `<div class="actions" style="margin-top:12px"><button id="match-open">The match: ` +
+    `${impWord(c.total)}</button></div>`;
   return s + `<hr style="border:0;border-top:1px solid var(--line);margin:16px 0">`;
 }
 
-function startChallenge(){
+/* Dealing a challenge is a job on the server: the bots play the other table first.
+   The modal shows how far it is and can cancel it. Closing it in any way cancels. */
+let DEALING = null;                    // {job, timer} while a challenge is being dealt
+async function startChallenge(){
+  if(DEALING) return;
   if(SRV && SRV.challenge && !SRV.challenge.done &&
-     !confirm("Start a new challenge? The one you are playing ends.")) return;
-  $("meta").textContent = "Dealing four boards, and the bots play the other table… (a few seconds)";
-  return goNow(() => post("/api/table/challenge", {boards: 4}));
+     !confirm("Start a new challenge? The one you are playing ends" +
+              (SRV.challenge.rated ? ", and its unfinished board counts as a loss." : "."))) return;
+  const dlg = $("gen");
+  $("gen-err").textContent = ""; $("gen-cancel").textContent = "Cancel";
+  genPaint({n: 4, board: 0, cards: 0, state: "running"});
+  dlg.showModal();
+  let j;
+  try { j = await post("/api/table/challenge/job", {boards: 4}); }
+  catch(e){ $("gen-err").textContent = e.message; $("gen-cancel").textContent = "Close"; return; }
+  DEALING = {job: j.job, timer: null};
+  genPoll();
 }
+async function genPoll(){
+  if(!DEALING) return;
+  let j;
+  try { j = await (await fetch(`/api/table/challenge/progress?job=${DEALING.job}`)).json(); }
+  catch(e){ j = null; }
+  if(!DEALING) return;                                    // cancelled while we waited
+  if(!j || j.error || j.state === "error" || j.state === "cancelled"){
+    $("gen-err").textContent = (j && (j.error || "The challenge was cancelled.")) || "Lost contact with the server.";
+    $("gen-cancel").textContent = "Close"; DEALING = null; return;
+  }
+  genPaint(j);
+  if(j.state === "ready"){
+    const job = DEALING.job; DEALING = null;
+    $("gen").close();
+    return goNow(() => post("/api/table/challenge/start", {job}));
+  }
+  DEALING.timer = setTimeout(genPoll, 350);
+}
+function genPaint(j){
+  // Each board: a little for the auction, the rest for the 52 cards.
+  const part = j.state === "ready" ? 1 : (j.board + (j.cards ? .1 + .9 * j.cards / 52 : .05)) / j.n;
+  $("gen-bar").firstElementChild.style.width = `${Math.round(100 * Math.min(1, part))}%`;
+  $("gen-bar").setAttribute("aria-valuenow", Math.round(100 * part));
+  const k = Math.min(j.board, j.n - 1);
+  $("gen-now").textContent = j.state === "ready" ? "All boards dealt. Sit down in South…"
+    : `Board ${k + 1} of ${j.n}: the bots are ` +
+      (j.cards ? `playing, trick ${Math.min(13, Math.floor(j.cards / 4) + 1)} of 13` : "bidding");
+  let li = "";
+  for(let i = 0; i < j.n; i++)
+    li += `<li class="${i < j.board || j.state === "ready" ? "done" : i === j.board ? "now" : ""}">Board ${i + 1}</li>`;
+  $("gen-steps").innerHTML = li;
+}
+function genCancel(){
+  if(!DEALING) return;
+  const job = DEALING.job;
+  clearTimeout(DEALING.timer); DEALING = null;
+  post("/api/table/challenge/cancel", {job}).catch(() => {});
+}
+$("gen-cancel").onclick = () => $("gen").close();
+$("gen").addEventListener("close", genCancel);       // Esc, the button, the backdrop: all cancel
 function leaveChallengeOk(){
-  return !(SRV && SRV.challenge && !SRV.challenge.done) ||
-         confirm("Leave the challenge? Your score so far is lost.");
+  const c = SRV && SRV.challenge;
+  if(!c || c.done) return true;
+  const open = c.boards[c.i].status === "playing";
+  return confirm("Leave the challenge?" + (c.rated && open
+    ? " The board you are playing counts as a loss for your rating." : " Your score so far is lost."));
 }
 
 function renderSettings(d){
@@ -1659,9 +1817,14 @@ function undoMove(){
 // Settings is a modal. Esc closes it (the browser does that), so do ✕ and a click on the backdrop.
 $("gear").onclick = () => $("settings").showModal();
 $("settings-close").onclick = () => $("settings").close();
-$("settings").addEventListener("click", e => { if(e.target === $("settings")) $("settings").close(); });
+$("rank").onclick = openLeaderboard;
+for(const dlg of document.querySelectorAll("dialog.modal")){
+  dlg.addEventListener("click", e => { if(e.target === dlg) dlg.close(); });   // the backdrop
+  const x = dlg.querySelector("[data-close]");
+  if(x) x.onclick = () => dlg.close();
+}
 document.addEventListener("keydown", e => {
-  if(e.key !== "Backspace" || e.metaKey || e.ctrlKey || e.altKey || $("settings").open) return;
+  if(e.key !== "Backspace" || e.metaKey || e.ctrlKey || e.altKey || document.querySelector("dialog[open]")) return;
   const t = document.activeElement;
   if(t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA")) return;
   e.preventDefault();
@@ -1909,9 +2072,8 @@ function applyDeck(name){
 let DECK = "modern";
 try { DECK = localStorage.getItem("table-deck") || "modern"; } catch(e) {}
 applyDeck(DECK);
-$("deck").onchange = e => applyDeck(e.target.value);
+$("deck").onchange = e => { DECK = e.target.value; applyDeck(DECK); };
 
-showRating();
 applySpeed();
 boot();
 </script>

@@ -18,6 +18,12 @@ process serves all three pages:
     POST /api/table/models      pick the bidding and card-play checkpoints
     POST /api/table/explain     queue the "where does it go" rollout (newest wins)
     GET  /api/table/explain     collect it
+    POST /api/table/challenge/job       deal a challenge in the background (the page uses this)
+    GET  /api/table/challenge/progress  how far that is
+    POST /api/table/challenge/cancel    stop it
+    POST /api/table/challenge/start     sit down at a dealt challenge
+
+Player routes (/api/me, /api/leaderboard) and the challenge rating are in `players`.
 
 The user holds one chair; their partner and both opponents are nets. The play
 follows a real table: a declaring user plays both their hand and dummy's, and a
@@ -52,17 +58,19 @@ nothing here paces anything, and `advance` stopping at the end of a trick is onl
 there to keep each response small.
 """
 import os
+import secrets
 import threading
+import time
 from collections import OrderedDict
 
 import numpy as np
 import torch
-from flask import jsonify, request, send_from_directory
+from flask import has_request_context, jsonify, request, send_from_directory
 
 from bridgezero.bridge.auction import AuctionState
 from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
 from bridgezero.bridge.scoring import contract_score, dd_par_score, imps
-from emergent import engine, playdesk
+from emergent import engine, players, playdesk
 from emergent.deck import (HCP_W, N_CALLS, NAMES, RANKS, SEAT_NAMES, STRAINS, SUITS,
                            TRUMP_TO_BID_STRAIN, beats, call_name, call_token, card_name, trick_best)
 from emergent.deck import deal_owners, owners_to_bitmaps
@@ -548,6 +556,7 @@ def state_dump(game):
         "can_undo": can_undo(game),
         "can_claim": False,
         "claim": game.get("claim"),
+        "me": players.me(players.current_id()) if has_request_context() else None,
     }
     if pg is not None:
         declarer = pg["declarer"]
@@ -1616,8 +1625,18 @@ CHALLENGE_MAX = 8
 CHALLENGE_SEAT = 2          # South
 
 
-def robot_board(owners, model, play_model, search):
-    """The other table: all four chairs are nets. Returns the finished game dict."""
+class Cancelled(Exception):
+    pass
+
+
+def robot_board(owners, model, play_model, search, tick=None):
+    """The other table: all four chairs are nets. Returns the finished game dict.
+
+    `tick(cards)` is called after every call (cards=0) and card; it returns False to stop.
+    """
+    def step(cards):
+        if tick is not None and not tick(cards):
+            raise Cancelled()
     game = new_board(user_seat=CHALLENGE_SEAT, model=model, play_model=play_model, owners=owners)
     game["search"] = search
     for _ in range(100):
@@ -1626,12 +1645,14 @@ def robot_board(owners, model, play_model, search):
         view, _ = bid_view(game)
         if view is None or not add_call(game, view["pick"]):
             raise RuntimeError("the bidding net could not bid at the other table")
+        step(0)
     while phase(game) == "play":
         pg, batch = game["pg"], batch_for(game)
         card = playdesk.net_card(pg, playdesk.contracts_of(pg), batch)
         if card is None or not playdesk.play_card(pg, card, batch):
             raise RuntimeError("the card-play net could not play at the other table")
         game.pop("_batch", None)
+        step(len(pg["played"]))
     return game
 
 
@@ -1655,16 +1676,19 @@ def moves_code(game):
             playdesk.encode_cards(pg["played"]) if pg is not None else "")
 
 
-def new_challenge(model, play_model, search, n=CHALLENGE_BOARDS):
+def new_challenge(model, play_model, search, n=CHALLENGE_BOARDS, progress=None):
+    """`progress(board index, cards played there)` returns False to cancel (raises `Cancelled`)."""
     rng = np.random.default_rng()
     deals, bots = [], []
-    for _ in range(n):
+    for k in range(n):
         owners = np.asarray(deal_owners(rng), dtype=np.int64)
         deals.append(owners)
-        game = robot_board(owners, model, play_model, search)
+        game = robot_board(owners, model, play_model, search,
+                           tick=None if progress is None else (lambda cards, k=k: progress(k, cards)))
         bots.append(dict(board_summary(game), code=moves_code(game)))
     return {"deals": deals, "bot": bots, "mine": [None] * n, "i": 0,
-            "model": model, "play_model": play_model, "search": bool(search)}
+            "model": model, "play_model": play_model, "search": bool(search),
+            "player": None, "rated": [None] * n}
 
 
 def challenge_from_link(body, prev):
@@ -1703,7 +1727,8 @@ def challenge_from_link(body, prev):
         out.append(owners)
         bots.append(dict(board_summary(game), code=(auctions[k], played[k])))
     return {"deals": out, "bot": bots, "mine": [None] * len(out), "i": 0,
-            "model": model, "play_model": play_model, "search": search}
+            "model": model, "play_model": play_model, "search": search,
+            "player": None, "rated": [None] * len(out)}
 
 
 def challenge_board(ch, prev_board_no):
@@ -1713,6 +1738,8 @@ def challenge_board(ch, prev_board_no):
                      board_no=prev_board_no + 1)
     game["search"] = ch["search"]
     game["challenge"] = ch
+    if ch["player"]:
+        players.board_started(ch["player"], DESK.encode_deal(ch["deals"][ch["i"]]))
     return game
 
 
@@ -1734,21 +1761,56 @@ def challenge_view(game):
         return None
     i = ch["i"]
     if ch["mine"][i] is None and phase(game) == "over":
-        ch["mine"][i] = board_summary(game)
+        ch["mine"][i] = dict(board_summary(game), code=moves_code(game))
+        if ch["player"]:
+            ch["rated"][i] = players.board_finished(
+                ch["player"], DESK.encode_deal(ch["deals"][i]),
+                imps(ch["mine"][i]["ns_score"] - ch["bot"][i]["ns_score"]))
     boards, total = [], 0
     for k, bot in enumerate(ch["bot"]):
         mine = ch["mine"][k]
         row = {"no": k + 1, "status": "done" if mine else "playing" if k == i else "waiting",
-               "mine": mine, "bot": None, "imps": None}
+               "mine": None, "bot": None, "imps": None, "rating": None}
         if mine:
+            # The moves of both tables go out only once the board is over, for the review links.
+            row["mine"] = {x: mine[x] for x in mine if x != "code"}
             row["bot"] = {x: bot[x] for x in bot if x != "code"}
+            row["moves"] = {"mine": mine["code"], "bot": bot["code"]}
             row["imps"] = imps(mine["ns_score"] - bot["ns_score"])
+            row["rating"] = ch["rated"][k]
             total += row["imps"]
         boards.append(row)
     return {"n": len(ch["bot"]), "i": i, "boards": boards, "total": total,
             "done": all(m is not None for m in ch["mine"]),
             "last": i == len(ch["bot"]) - 1,
+            "rated": bool(ch["player"]),
             "code": challenge_code(ch)}
+
+
+# A challenge takes seconds to deal: the bots play every board at the other table.
+# The page asks for it as a job, outside the table lock, so the other tables keep
+# moving, the page can show how far it is, and the user can cancel.
+
+CH_JOBS = {"lock": threading.Lock(), "jobs": OrderedDict()}
+CH_JOB_TTL = 600
+
+
+def _challenge_worker(job):
+    def progress(k, cards):
+        job["board"], job["cards"] = k, cards
+        return not job["cancel"]
+    try:
+        ch = new_challenge(job["model"], job["play_model"], job["search"], job["n"], progress)
+        job.update(state="ready", ch=ch, board=job["n"], cards=0)
+    except Cancelled:
+        job["state"] = "cancelled"
+    except Exception as exc:                        # keep the desk alive on any failure
+        job.update(state="error", error=f"{type(exc).__name__}: {exc}")
+
+
+def challenge_job_view(job):
+    return {"job": job["id"], "state": job["state"], "n": job["n"], "board": job["board"],
+            "cards": job["cards"], "error": job.get("error")}
 
 
 # ------------------------------------------------------------------- routes
@@ -1788,6 +1850,8 @@ def with_game(fn):
 
 
 def register(app):
+    players.register(app)
+
     @app.get("/table")
     def table_page():
         return send_from_directory(STATIC_DIR, "table.html")
@@ -1830,6 +1894,64 @@ def register(app):
         n = int_field(body_of(request), "boards")
         n = CHALLENGE_BOARDS if n < 1 else min(n, CHALLENGE_MAX)
         ch = new_challenge(game["model"], game["play_model"], game.get("search", engine.CONFIG.search), n)
+        # Only a challenge the server dealt is rated; one from a link could be written by hand.
+        ch["player"] = players.current_id()
+        players.forfeit_open(ch["player"])       # boards left unfinished before count as lost
+        fresh = challenge_board(ch, game["board_no"])
+        game.clear()
+        game.update(fresh)
+        advance(game)
+        return jsonify(state_dump(game))
+
+    @app.post("/api/table/challenge/job")
+    @with_game
+    def api_table_challenge_job(game):
+        n = int_field(body_of(request), "boards")
+        n = CHALLENGE_BOARDS if n < 1 else min(n, CHALLENGE_MAX)
+        job = {"id": secrets.token_hex(8), "player": players.current_id(), "at": time.time(),
+               "model": game["model"], "play_model": game["play_model"],
+               "search": game.get("search", engine.CONFIG.search), "n": n,
+               "state": "running", "board": 0, "cards": 0, "cancel": False}
+        with CH_JOBS["lock"]:
+            for key in [k for k, j in CH_JOBS["jobs"].items() if time.time() - j["at"] > CH_JOB_TTL]:
+                CH_JOBS["jobs"][key]["cancel"] = True
+                del CH_JOBS["jobs"][key]
+            CH_JOBS["jobs"][job["id"]] = job
+        threading.Thread(target=_challenge_worker, args=(job,), daemon=True).start()
+        return jsonify(challenge_job_view(job))
+
+    def own_job():
+        with CH_JOBS["lock"]:
+            job = CH_JOBS["jobs"].get(str(request.args.get("job") or body_of(request).get("job") or ""))
+        return job if job is not None and job["player"] == players.current_id() else None
+
+    @app.get("/api/table/challenge/progress")
+    def api_table_challenge_progress():
+        job = own_job()
+        if job is None:
+            return jsonify(error="no such challenge being dealt"), 404
+        return jsonify(challenge_job_view(job))
+
+    @app.post("/api/table/challenge/cancel")
+    def api_table_challenge_cancel():
+        job = own_job()
+        if job is not None:
+            job["cancel"] = True
+            with CH_JOBS["lock"]:
+                CH_JOBS["jobs"].pop(job["id"], None)
+        return jsonify(ok=True)
+
+    @app.post("/api/table/challenge/start")
+    @with_game
+    def api_table_challenge_start(game):
+        job = own_job()
+        if job is None or job["state"] != "ready":
+            return jsonify(error="that challenge is not dealt yet"), 400
+        with CH_JOBS["lock"]:
+            CH_JOBS["jobs"].pop(job["id"], None)
+        ch = job["ch"]
+        ch["player"] = job["player"]
+        players.forfeit_open(ch["player"])       # boards left unfinished before count as lost
         fresh = challenge_board(ch, game["board_no"])
         game.clear()
         game.update(fresh)

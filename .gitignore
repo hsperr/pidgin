@@ -8,3 +8,4 @@ __pycache__/
 # models/play_models.json is how a deploy is rolled back.
 models/*.pt
 models/*.npz
+data/

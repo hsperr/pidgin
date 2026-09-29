@@ -19,7 +19,7 @@ done
 echo "==> syncing code + models to $HOST:$APP"
 ssh "$HOST" "mkdir -p $APP"
 rsync -az --delete \
-  --exclude '.git' --exclude '__pycache__' --exclude '*.pyc' --exclude '.DS_Store' \
+  --exclude '.git' --exclude '/data/' --exclude '__pycache__' --exclude '*.pyc' --exclude '.DS_Store' \
   ./ "$HOST:$APP/"
 
 echo "==> installing deps and restarting"
