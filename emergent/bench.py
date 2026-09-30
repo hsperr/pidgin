@@ -225,96 +225,17 @@ def table(head: list[str], rows: list[list]) -> str:
     return f'<div class="scroll"><table><tr>{th}</tr>{body}</table></div>'
 
 
-def openings_html(o: dict) -> str:
-    calls = sorted(o["calls"].items(), key=lambda kv: -kv[1]["n"])
-    rows = [[k, v["n"], f'{100 * v["share"]:.1f}%', f'{v["hcp"]:.1f}',
-             f'{v["hcp_p10"]:.0f}–{v["hcp_p90"]:.0f}', "–".join(f"{x:.1f}" for x in v["len"])]
-            for k, v in calls if v["share"] >= 0.002]
-    rate = [[k, v["n"], "–" if v["rate"] is None else f'{100 * v["rate"]:.0f}%']
-            for k, v in o["open_rate"].items()]
-    return (table(["Opening", "Times", "Share", "Mean HCP", "HCP 10–90%", "Length ♠–♥–♦–♣"], rows)
-            + '<p class="dim small">How often it opens as dealer, by HCP:</p>'
-            + table(["HCP", "Hands", "Opened"], rate))
+REPORT_PAGE = os.path.join(HERE, "bench_report.html")
 
 
-STYLE_ROWS = [("code_words_per_100", "Code words per 100 auctions", 1),
-              ("natural_suit_bids", "Natural suit bids (4+ cards, or 3 to partner's suit)", 2),
-              ("low_doubles_per_100", "Doubles at level 1–3 per 100", 1),
-              ("jump_share", "Jump bids (share of bids)", 2),
-              ("cue_bids_per_100", "Cue bids per 100", 1),
-              ("four_nt_per_100", "4NT per 100", 1),
-              ("calls_per_auction", "Own calls per auction", 1)]
-
-
-def report_html(rid: str, r: dict) -> Response:
-    w, bot, opp = r["weak"], html.escape(r["bot"]), html.escape(r["opponent"])
-    lo, hi = r["imps_ci95"]
-    verdict = ("clearly ahead" if lo > 0 else "clearly behind" if hi < 0 else
-               "not clear yet: the range crosses 0")
-    a, b = w["A"], w["B"]
-    comp = table(["", bot, opp], [
-        ["Doubled and down (per 1000 tables)", f'{a["doubled_down_per_1k"]:.1f}', f'{b["doubled_down_per_1k"]:.1f}'],
-        ["Share of the other side's failing contracts it doubled",
-         f'{a["punish_rate"] or 0:.2f}', f'{b["punish_rate"] or 0:.2f}'],
-        *[[f"Doubles of level-{lv} contracts (per 1000 tables)", f'{a["x_per_1k_by_level"][lv]:.1f}',
-           f'{b["x_per_1k_by_level"][lv]:.1f}'] for lv in "12345"]])
-    outbid = table(["Combined HCP", f"{bot}: IMPs", "doubled", "down", f"{opp}: IMPs", "doubled", "down"], [
-        [html.escape(k.replace("<=", "≤"))] + sum(([sgn(s["outbid"][k].get("imps")), f'{s["outbid"][k].get("doubled", 0):.2f}',
-                    f'{s["outbid"][k].get("down", 0):.2f}'] for s in (a, b)), [])
-        for k in a["outbid"]])
-    where = table(["Boards", "Share", "IMPs per board"], [
-        ["Both sides bid at both tables", f'{100 * w["contested"]["both"]["share"]:.0f}%',
-         f'<td class="{cls(w["contested"]["both"]["imps"])}">{sgn(w["contested"]["both"]["imps"])}</td>'],
-        ["Both sides bid at one table", f'{100 * w["contested"]["one"]["share"]:.0f}%',
-         f'<td class="{cls(w["contested"]["one"]["imps"])}">{sgn(w["contested"]["one"]["imps"])}</td>'],
-        ["Only one side bid at both tables", f'{100 * w["contested"]["none"]["share"]:.0f}%',
-         f'<td class="{cls(w["contested"]["none"]["imps"])}">{sgn(w["contested"]["none"]["imps"])}</td>'],
-    ])
-    classes = table(["Pattern", "Share of boards", "IMPs per board of the match"], [
-        [f"{bot} declares at both tables, doubled and down at one or more", f'{100 * w["B1"]["share"]:.1f}%',
-         f'<td class="{cls(w["B1"]["imps_per_board"])}">{sgn(w["B1"]["imps_per_board"], 3)}</td>'],
-        [f"{opp} declares at both tables", f'{100 * w["C"]["share"]:.1f}%',
-         f'<td class="{cls(w["C"]["imps_per_board"])}">{sgn(w["C"]["imps_per_board"], 3)}</td>']])
-    style = table(["", bot, opp], [[label, f'{r["style"]["A"][k]:.{d}f}', f'{r["style"]["B"][k]:.{d}f}']
-                                   for k, label, d in STYLE_ROWS])
-    body = f"""
-<p class="small"><a href="/bench">← Bot benchmark</a></p>
-<h1>{bot} vs {opp}</h1>
-<div class="dim small">Deal set {r["set"]}, {w["boards"]} boards, both tables · {r["when"]} ·
-<a href="?format=json">numbers as JSON</a></div>
-<div class="card"><div class="big {cls(w["imps_per_board"])}">{sgn(w["imps_per_board"])} IMPs/board</div>
-<div class="dim">95% range {sgn(lo)} to {sgn(hi)}: {verdict}. Won {r["won_lost_tied"][0]},
-lost {r["won_lost_tied"][1]}, tied {r["won_lost_tied"][2]} boards.</div></div>
-
-<h2>Where the IMPs come from</h2>
-<p class="dim small">A board counts as contested at a table when both sides bid or doubled there.</p>
-{where}
-{classes}
-
-<h2>Competition and doubles</h2>
-{comp}
-<p class="dim small">The last time a side outbid the other, what did it gain? IMPs against letting the
-other side play its last bid undoubled, by the outbidding side's combined HCP. Rows with low HCP and
-negative IMPs mean bidding on too light.</p>
-{outbid}
-
-<h2>Openings: {bot}</h2>
-{openings_html(r["openings"]["A"])}
-<details><summary>Openings: {opp}</summary>{openings_html(r["openings"]["B"])}</details>
-
-<h2>Bidding style</h2>
-<p class="dim small">A code word is a call partner cannot read at face value: a suit bid without 4 cards
-(or 3 in partner's suit), a double at level 1–3, a redouble, or a 2♣ opening that is not a club suit.</p>
-{style}
-
-<h2>How to read this</h2>
-<ul class="dim small">
-<li>Contracts are scored double-dummy: every declarer and defender plays perfectly. Defence
-against doubled partscores is flattered most.</li>
-<li>Every double counts as a double: takeout and penalty look the same here.</li>
-<li>Fewer than about 2,000 boards leave wide ranges. The full set has {SET_SIZE:,} boards.</li>
-</ul>"""
-    return page(f"{r['bot']} vs {r['opponent']}", body)
+def report_html(r: dict) -> Response:
+    """The report page: one template that draws itself from the report's JSON."""
+    with open(REPORT_PAGE) as fh:
+        template = fh.read()
+    data = json.dumps(r).replace("</", "<\\/")          # no early </script> from a bot's name
+    title = html.escape(f"{r['bot']} vs {r['opponent']}")
+    return Response(template.replace("__TITLE__", title).replace("/*REPORT*/", data),
+                    mimetype="text/html")
 
 
 def index_html() -> Response:
@@ -536,4 +457,4 @@ def register(app):
             report = json.load(fh)
         if request.args.get("format") == "json":
             return jsonify(report)
-        return report_html(rid, report)
+        return report_html(report)

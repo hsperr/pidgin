@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>__TITLE__</title>
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--line:#e3dfd6;--text:#1d1f23;--dim:#5f636b;--faint:#9a9da4;
+--accent:#2d5bd8;--pos:#1f8a5b;--neg:#c24a3a;--pos-bg:rgba(31,138,91,.13);--neg-bg:rgba(194,74,58,.13);
+--you:#2d5bd8;--opp:#a8700f}
+@media (prefers-color-scheme:dark){:root{--bg:#121417;--card:#1b1e23;--line:#30353d;--text:#e8eaed;
+--dim:#a3a8b1;--faint:#6b707a;--accent:#7598ff;--pos:#4cc08a;--neg:#ef7866;--pos-bg:rgba(76,192,138,.16);
+--neg-bg:rgba(239,120,102,.16);--you:#7598ff;--opp:#e9b458}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;padding:14px 16px 40px}
+.wrap{max-width:1180px;margin:0 auto}
+a{color:var(--accent)}
+.pos{color:var(--pos)}.neg{color:var(--neg)}.dim{color:var(--dim)}.faint{color:var(--faint)}
+.you{color:var(--you);font-weight:600}.opp{color:var(--opp);font-weight:600}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:2px 6px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+th{font-weight:600;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+th:first-child,td:first-child{text-align:left;white-space:normal;min-width:120px}
+td[colspan]{white-space:normal}
+td.cellpos{background:var(--pos-bg)}td.cellneg{background:var(--neg-bg)}
+td.edge{font-weight:600;text-align:center}
+.head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 18px;margin-bottom:10px}
+.head h1{font-size:18px;margin:0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px}
+.tile{min-width:0;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.tile .k{font-size:11px;color:var(--dim)}.tile .v{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums}
+.tile .s{font-size:11px;color:var(--dim)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:10px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;overflow-x:auto;min-width:0}
+.panel h2{font-size:12px;margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim)}
+.note{font-size:11px;color:var(--faint);margin-top:4px}
+.foot{font-size:11px;color:var(--faint);margin-top:12px}
+</style>
+</head>
+<body><div class="wrap">
+<div class="head"><h1><span class="you" id="h-you"></span> vs <span class="opp" id="h-opp"></span></h1>
+<span class="dim" id="h-meta"></span><span class="dim"><a href="/bench">Bot benchmark</a> · <a href="?format=json">JSON</a></span></div>
+<div class="tiles" id="tiles"></div>
+<div class="grid">
+ <div class="panel"><h2>Where the IMPs go</h2><table id="where"></table>
+  <div class="note">Contested = both sides made a call other than Pass at that table. "Of match" = IMPs per board of the whole match.</div></div>
+ <div class="panel"><h2>Doubles</h2><table id="dbl"></table>
+  <div class="note">A double is a double here: takeout and penalty look the same. Level 1–2 doubles are mostly takeout.</div></div>
+ <div class="panel"><h2>Competing on: value of the last outbid</h2><table id="outbid"></table>
+  <div class="note">When a side made the last outbid: IMPs against letting the other side play its last bid undoubled, by the outbidding pair's combined HCP. Negative with few HCP = bids on too light.</div></div>
+ <div class="panel"><h2>Bidding style</h2><table id="style"></table>
+  <div class="note">Artificial = a call partner cannot read at face value: a suit bid without 4 cards (or 3 in partner's suit), a double at level 1–3, a redouble, a 2♣ opening that is not clubs.</div></div>
+ <div class="panel"><h2>Openings <span class="you" id="o-you"></span></h2><table id="openA"></table></div>
+ <div class="panel"><h2>Openings <span class="opp" id="o-opp"></span></h2><table id="openB"></table></div>
+</div>
+<div class="foot">Contracts are scored double-dummy: every declarer and defender plays perfectly, which flatters the defence against doubled partscores most. Fewer than about 2,000 boards leave wide ranges.</div>
+</div>
+<script id="data" type="application/json">/*REPORT*/</script>
+<script>
+const R = JSON.parse(document.getElementById('data').textContent);
+const W = R.weak, A = W.A, B = W.B;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const you = esc(R.bot), opp = esc(R.opponent);
+const $ = id => document.getElementById(id);
+const sg = (v, d = 2) => v == null ? '–' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(d);
+const f = (v, d = 1) => v == null ? '–' : v.toFixed(d);
+const pc = v => v == null ? '–' : Math.round(100 * v) + '%';
+const cl = v => !v ? '' : v > 0 ? 'pos' : 'neg';
+const cell = v => `<td class="cell${v < 0 ? 'neg' : v > 0 ? 'pos' : ''}">${sg(v)}</td>`;
+// Edge: who does better on this row. better = +1 when higher is better, -1 when lower is.
+const edgeOf = (a, b, better) => a == null || b == null || a === b ? '' :
+  (a - b) * better > 0 ? '<span class="pos">you</span>' : '<span class="neg">them</span>';
+const edge = (a, b, better) => `<td class="edge">${edgeOf(a, b, better)}</td>`;
+const edge1 = v => `<td class="edge">${!v ? '' : v > 0 ? '<span class="pos">you</span>' : '<span class="neg">them</span>'}</td>`;
+const HCPK = [['<=15', '≤15'], ['16-17', '16–17'], ['18-19', '18–19'], ['20-21', '20–21'], ['22+', '22+']];
+const OPENK = ['0-5', '6-9', '10-11', '12-14', '15-17', '18+'];
+
+$('h-you').innerHTML = you; $('h-opp').innerHTML = opp; $('o-you').innerHTML = you; $('o-opp').innerHTML = opp;
+$('h-meta').textContent = `set ${R.set} · ${W.boards} boards × 2 tables · ${R.when} · double-dummy scoring`;
+const [lo, hi] = R.imps_ci95;
+const tile = (k, v, s, c = '') => `<div class="tile"><div class="k">${k}</div><div class="v ${c}">${v}</div><div class="s">${s}</div></div>`;
+$('tiles').innerHTML =
+  tile('IMPs / board', sg(W.imps_per_board), `95%: ${sg(lo)} … ${sg(hi)}${lo > 0 || hi < 0 ? '' : ' · not sure yet'}`, cl(W.imps_per_board)) +
+  tile('Boards won / lost / tied', R.won_lost_tied.join(' / '), `${W.boards} boards`) +
+  tile('Uncontested boards', sg(W.contested.none.imps), `IMP/board · ${pc(W.contested.none.share)} of boards`, cl(W.contested.none.imps)) +
+  tile('Contested boards', sg(W.contested.both.imps), `IMP/board · ${pc(W.contested.both.share)} of boards`, cl(W.contested.both.imps)) +
+  tile('Doubled & down', `${f(A.doubled_down_per_1k, 0)} <span class="dim" style="font-size:13px">vs ${f(B.doubled_down_per_1k, 0)}</span>`,
+       'per 1000 tables, you vs them', A.doubled_down_per_1k > B.doubled_down_per_1k ? 'neg' : 'pos');
+
+const w = [['Both tables contested', W.contested.both], ['One table contested', W.contested.one], ['Neither table contested', W.contested.none]];
+$('where').innerHTML = '<tr><th>Boards</th><th>Share</th><th>IMP/board</th><th>Of match</th><th>Edge</th></tr>' +
+  w.map(([k, v]) => `<tr><td>${k}</td><td>${pc(v.share)}</td><td class="${cl(v.imps)}">${sg(v.imps)}</td>` +
+                    `<td class="${cl(v.imps)}">${sg(v.imps == null ? null : v.imps * v.share)}</td>${edge1(v.imps)}</tr>`).join('') +
+  `<tr><td>You declare both tables, doubled & down at one+</td><td>${pc(W.B1.share)}</td><td></td><td class="${cl(W.B1.imps_per_board)}">${sg(W.B1.imps_per_board)}</td>${edge1(W.B1.imps_per_board)}</tr>` +
+  `<tr><td>They declare both tables</td><td>${pc(W.C.share)}</td><td></td><td class="${cl(W.C.imps_per_board)}">${sg(W.C.imps_per_board)}</td>${edge1(W.C.imps_per_board)}</tr>`;
+
+$('dbl').innerHTML = `<tr><th></th><th class="you">${you}</th><th class="opp">${opp}</th><th>Edge</th></tr>` +
+  `<tr><td>Doubled & went down /1000 tables</td><td>${f(A.doubled_down_per_1k)}</td><td>${f(B.doubled_down_per_1k)}</td>${edge(A.doubled_down_per_1k, B.doubled_down_per_1k, -1)}</tr>` +
+  `<tr><td>Other side's failing contracts it doubled</td><td>${pc(A.punish_rate)}</td><td>${pc(B.punish_rate)}</td>${edge(A.punish_rate, B.punish_rate, 1)}</tr>` +
+  ['1', '2', '3', '4', '5'].map(l => `<tr><td>Doubles of level-${l} contracts /1000</td><td>${f(A.x_per_1k_by_level[l])}</td><td>${f(B.x_per_1k_by_level[l])}</td><td></td></tr>`).join('');
+
+$('outbid').innerHTML = `<tr><th>HCP</th><th class="you">IMP</th><th>X'd</th><th>Down</th><th class="opp">IMP</th><th>X'd</th><th>Down</th><th>Edge</th></tr>` +
+  HCPK.map(([k, label]) => {
+    const a = A.outbid[k] || {}, b = B.outbid[k] || {};
+    return `<tr><td>${label}</td>${cell(a.imps)}<td>${pc(a.doubled)}</td><td>${pc(a.down)}</td>` +
+           `${cell(b.imps)}<td>${pc(b.doubled)}</td><td>${pc(b.down)}</td>${edge(a.imps, b.imps, 1)}</tr>`;
+  }).join('');
+
+const S = [['Artificial calls /100 auctions', 'code_words_per_100', 1], ['Natural suit bids', 'natural_suit_bids', 'p'],
+  ['Doubles at level 1–3 /100', 'low_doubles_per_100', 1], ['Jump bids (share of bids)', 'jump_share', 'p'],
+  ['Cue bids /100', 'cue_bids_per_100', 1], ['4NT /100', 'four_nt_per_100', 1], ['Own calls per auction', 'calls_per_auction', 1]];
+const sv = (v, d) => d === 'p' ? pc(v) : f(v, d);
+$('style').innerHTML = `<tr><th></th><th class="you">${you}</th><th class="opp">${opp}</th></tr>` +
+  S.map(([l, k, d]) => `<tr><td>${l}</td><td>${sv(R.style.A[k], d)}</td><td>${sv(R.style.B[k], d)}</td></tr>`).join('');
+
+const openT = o => '<tr><th>Call</th><th>Share</th><th>HCP</th><th>10–90%</th><th>♠ ♥ ♦ ♣</th></tr>' +
+  Object.entries(o.calls).sort((x, y) => y[1].n - x[1].n).filter(([, v]) => v.share >= 0.004).map(([k, v]) =>
+    `<tr><td>${esc(k)}</td><td>${pc(v.share)}</td><td>${f(v.hcp)}</td><td>${Math.round(v.hcp_p10)}–${Math.round(v.hcp_p90)}</td>` +
+    `<td>${v.len.map(x => x.toFixed(1)).join(' ')}</td></tr>`).join('') +
+  `<tr><td colspan="5" class="faint">Opens as dealer, by HCP: ${OPENK.map(k => `${k} ${pc((o.open_rate[k] || {}).rate)}`).join(' · ')}</td></tr>`;
+$('openA').innerHTML = openT(R.openings.A); $('openB').innerHTML = openT(R.openings.B);
+</script>
+</body>
+</html>

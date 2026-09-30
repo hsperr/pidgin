@@ -89,7 +89,7 @@ def test_report_scores_double_dummy_and_renders(client):
         float(np.mean(z["imps_A"])))
 
     page = client.get(f"/bench/report/{rid}").get_data(as_text=True)
-    assert "toy opener vs pass bot" in page and "IMPs/board" in page
+    assert "<title>toy opener vs pass bot</title>" in page and '"weak"' in page
     assert "toy opener" in client.get("/bench").get_data(as_text=True)   # public: listed
 
 
@@ -111,3 +111,10 @@ def test_spec_matches_the_routes(client):
     assert set(spec["paths"]) == {"/apis/bench/deals", "/apis/bench/report", "/bench/report/{id}"}
     guide = client.get("/apis/bench/agent.md").get_data(as_text=True)
     assert "/apis/bench/report" in guide and "{" not in guide.split("## 1.")[0]
+
+
+def test_a_bot_name_cannot_break_out_of_the_page(client):
+    boards = [{"board": i, "ns": "P P P P", "ew": "P P P P"} for i in range(1, 201)]
+    rid = client.post("/apis/bench/report", json={"bot": "</script><b>x", "boards": boards}).json["id"]
+    page = client.get(f"/bench/report/{rid}").get_data(as_text=True)
+    assert "</script><b>" not in page
