@@ -11,6 +11,13 @@ The old bid desk and play desk pages are gone (`/play` redirects to `/`). Their 
 `/api/*` and `/api/play/*`, stay: the tests use them to check that every surface
 bids and plays alike.
 
+- `/bench` — **bot benchmark**: anyone gets a fixed deal set, plays a duplicate match
+  with their bot, posts the auctions and gets a weak-spot report page (IMPs, competition,
+  doubles, openings, bidding style). Contract: `/apis/bench/agent.md` and
+  `/apis/bench/openapi.json`; code in `emergent/bench.py`, example client in
+  `examples/bench_client.py`. Deals are rows 90,000–99,999 of `models/bench_100k.npz`;
+  reports are files in `data/bench/`.
+
 ## Run locally
 
     python3 -m emergent.bidserver                           # http://127.0.0.1:8787

@@ -322,7 +322,18 @@ def error(message: str, code: int = 400):
     return jsonify(error=message), code
 
 
+BRILL_ORIGIN = "*"
+
+
 def register(app):
+    @app.after_request
+    def allow_brill_origin(resp):
+        """Brill's daily-event page calls /apis/brill from its own origin in the browser
+        (plain GETs, no pre-flight). Only that origin may read the answers."""
+        if request.path.startswith("/apis/brill"):
+            resp.headers["Access-Control-Allow-Origin"] = BRILL_ORIGIN
+        return resp
+
     @app.get("/apis/bbo.php")
     def api_bbo():
         """robot.php: ``h`` is the auction, then (once it is over) the cards played, all joined

@@ -37,7 +37,7 @@ from bridgezero.bridge.scoring import (contract_score, dd_par_score, own_contrac
 from bridgezero.contract.environment import AUCTION_FEATURES
 from bridgezero.fourseat.model import (competitive_log_probs, load_fourseat_checkpoint,
                                        policy_log_probs)
-from emergent import apis, engine, playdesk, tabledesk
+from emergent import apis, bench, engine, playdesk, tabledesk
 from emergent.deck import (CALL_CHARS, HCP_W, N_CALLS, NAMES, RANKS, SEAT_NAMES, SUITS,
                            TRUMP_TO_BID_STRAIN, call_name, call_token, deal_owners,
                            decode_deal, encode_deal, owners_to_bitmaps, owners_to_pbn)
@@ -550,6 +550,7 @@ def api_explain_result():
 playdesk.register(app)          # /api/play/*, the card play desk's API (its page is gone)
 tabledesk.register(app)         # /table and /api/table/*, play a board against the nets
 apis.register(app)              # /apis/bbo.php and /apis/brill/*, for other sites' tables
+bench.register(app)             # /bench and /apis/bench/*, weak-spot reports for anyone's bot
 
 
 def create_app(ckpt=None):

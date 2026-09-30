@@ -89,6 +89,13 @@ def test_root(client):
     assert client.get("/apis/brill").status_code == 200
 
 
+def test_brill_origin_may_read(client):
+    """Brill's browser page reads our answers cross-origin; the rest of the site stays closed."""
+    for path in ("/apis/brill/", "/apis/brill/bid"):
+        assert client.get(path).headers["Access-Control-Allow-Origin"] == "*"
+    assert "Access-Control-Allow-Origin" not in client.get("/apis/bbo.php").headers
+
+
 @pytest.mark.parametrize("seed,dealer,vul", [(1, 0, "None"), (2, 1, "NS"), (3, 2, "EW"), (4, 3, "All")])
 def test_full_board(client, seed, dealer, vul):
     ctx, played = play_board(client, deal(seed), dealer, vul, board=str(seed))

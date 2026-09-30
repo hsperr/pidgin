@@ -46,6 +46,10 @@ PY
 }
 copy E46_brlstyle_league_l1.0_40k/ckpt_step40000.pt E46_s40k.pt   # +0.89 IMP/board vs E28 s50k
 
+echo "==> /bench analysis (frozen copies of bridge_public/tools)"
+PUBLIC=${PUBLIC:-$HOME/code/bridge_public}
+cp "$PUBLIC/tools/weakspots.py" "$PUBLIC/tools/simplicity.py" emergent/analysis/
+
 echo "==> card play desk"
 copy play_E48_wideleagueH/last.pt play_E48_wideleagueH.pt  # +0.33 IMP/board over league E
 copy play_E48_leagueE/last.pt play_E48_leagueE.pt   # +6.03 IMP/board over random
