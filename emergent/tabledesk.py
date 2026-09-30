@@ -1,9 +1,9 @@
 """Table: play a whole board against the nets, with teaching hints.
 
-Routes live on the bid desk's Flask app (`register(app)` from bidserver), so one
-process serves all three pages:
+Routes live on the bid desk's Flask app (`register(app)` from bidserver). The table
+is the site's only page; the bid desk and play desk keep their APIs, not their pages.
 
-    GET  /table                 the page
+    GET  /  and  /table         the page
     GET  /api/table/state       everything the page draws
     POST /api/table/new_board   deal again (optionally from a different chair)
     POST /api/table/load        open a shared link: that deal, chair, models, calls, cards
@@ -1852,6 +1852,7 @@ def with_game(fn):
 def register(app):
     players.register(app)
 
+    @app.get("/")
     @app.get("/table")
     def table_page():
         return send_from_directory(STATIC_DIR, "table.html")

@@ -1,21 +1,19 @@
 # bridge_server
 
-Three pages at https://bridge.localgeek.jp, one Flask app in one process:
+One page at https://bridge.localgeek.jp, one Flask app in one process:
 
-- `/` — the **bid desk**: bid against a trained checkpoint, see the net's outputs
-  (policy, Q, trick head, double heads), its inputs, and double-dummy scores. A
-  dropdown picks the model per browser tab.
-- `/play` — the **play desk**: watch the E48 card-play net play out a contract.
-  When an auction on the bid desk ends, "Play it out →" carries that deal, that
-  auction and that contract straight over.
-- `/table` — **play a board**: you hold one chair and play that one hand, the nets
-  hold the other three. Bid the auction, play the cards, get a duplicate score
-  against par, deal again. A hint toggle turns on teaching notes before every call
-  and every card.
+- `/` (also `/table`) — **play a board**: you hold one chair and play that one hand,
+  the nets hold the other three. Bid the auction, play the cards, get a duplicate
+  score against par, deal again. A hint toggle turns on teaching notes before every
+  call and every card. Challenges, a rating and a leaderboard live here too.
+
+The old bid desk and play desk pages are gone (`/play` redirects to `/`). Their APIs,
+`/api/*` and `/api/play/*`, stay: the tests use them to check that every surface
+bids and plays alike.
 
 ## Run locally
 
-    python3 -m emergent.bidserver                           # http://127.0.0.1:8787, /play and /table too
+    python3 -m emergent.bidserver                           # http://127.0.0.1:8787
 
 ## The bot engine
 
@@ -32,8 +30,8 @@ Its `CONFIG` is read from the environment once, at start:
 | `PLAY_SEARCH_DEFENCE` | `all` | `off` / `lead` / `all` / `only`; declarer always searches |
 | `PLAY_SEARCH_DEFENCE_FROM` | `2` | defence searches from this trick index (the third trick) |
 
-/table's search toggle overrides `PLAY_SEARCH` for that game; /play shows the plain net
-and never searches.
+/table's search toggle overrides `PLAY_SEARCH` for that game; the play desk API shows the
+plain net and never searches.
 
 ## Update to the newest snapshots, then deploy
 

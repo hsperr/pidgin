@@ -498,17 +498,11 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
       </select>
       <p class="hint" style="margin:6px 0 16px">The cards and the table, for the whole page. Kept in this browser.</p>
       <p class="sub">Your chair <em style="text-transform:none;font-weight:400">North deals, nobody vulnerable</em></p>
-      <p class="hint" style="margin:0 0 10px">North always deals and nobody is vulnerable, the
-        same setting the other two desks use — the self-play table the hints quote was built that
-        way. Changing your chair deals a fresh board.</p>
+      <p class="hint" style="margin:0 0 10px">North always deals and nobody is vulnerable: the
+        self-play table the hints quote was built that way. Changing your chair deals a fresh board.</p>
       <div class="actions" id="seats" style="margin:0"></div>
       <div class="actions" style="margin-top:8px">
         <button id="restart" title="Same thirteen cards, auction from the top">Restart this board</button>
-      </div>
-      <p class="sub" style="margin-top:16px">The other desks</p>
-      <div class="actions" style="margin-top:0">
-        <a class="btn" href="/" title="Bid against the net and see its outputs">Bid desk</a>
-        <a class="btn" href="/play" title="Watch the card-play net">Play desk</a>
       </div>
       <p class="hint" style="margin:12px 0 0" id="setup-note"></p>
     </div>
@@ -1684,7 +1678,7 @@ function reviewHref(c, b, who){
   q.set("dr", 0); q.set("v", "none");
   if(p) q.set("p", p);
   q.set("s", "S"); q.set("m", c.code.m); q.set("pm", c.code.pm); q.set("h", 1);
-  return "/table#" + q.toString();
+  return "/#" + q.toString();
 }
 function maybeShowMatch(c, full){
   if(!c.done || !full || MATCH_SHOWN.has(c.code.c)) return;

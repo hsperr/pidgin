@@ -38,6 +38,8 @@ chmod 750 /opt/bridge
 systemctl restart bridge
 for i in $(seq 1 30); do curl -sf localhost:3500/api/state -o /dev/null && break; sleep 1; done
 systemctl is-active bridge
+curl -sf localhost:3500/ -o /dev/null && echo "table page ok"
+curl -sf localhost:3500/api/table/state -o /dev/null && echo "table api ok"
 curl -sf localhost:3500/api/state -o /dev/null && echo "bid desk api ok"
 curl -sf localhost:3500/api/play/state -o /dev/null && echo "play desk api ok"
 REMOTE

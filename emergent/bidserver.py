@@ -28,7 +28,7 @@ from collections import OrderedDict
 
 import numpy as np
 import torch
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request
 
 from bridgezero.bridge.auction import AuctionState
 from bridgezero.bridge.calls import PASS
@@ -50,7 +50,6 @@ DENOMS = [Denom.spades, Denom.hearts, Denom.diamonds, Denom.clubs, Denom.nt]  # 
 PLAYERS = [Player.north, Player.east, Player.south, Player.west]
 REL_NAMES = ["me", "LHO", "partner", "RHO"]
 HERE = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(HERE, "bidserver_static")
 MODELS_DIR = os.path.join(os.path.dirname(HERE), "models")
 
 app = Flask(__name__, static_folder=None)
@@ -367,11 +366,6 @@ def net_pick(game):
 
 # ------------------------------------------------------------------- routes
 
-@app.get("/")
-def index():
-    return send_from_directory(STATIC_DIR, "index.html")
-
-
 @app.get("/api/state")
 @with_game
 def api_state(game):
@@ -553,7 +547,7 @@ def api_explain_result():
     return jsonify(job=key, **(entry or {"status": "unknown"}))
 
 
-playdesk.register(app)          # /play and /api/play/*, the card play desk
+playdesk.register(app)          # /api/play/*, the card play desk's API (its page is gone)
 tabledesk.register(app)         # /table and /api/table/*, play a board against the nets
 apis.register(app)              # /apis/bbo.php and /apis/brill/*, for other sites' tables
 
@@ -584,7 +578,7 @@ def main():
         print(f"  {b.id:10s} step {b.step}  {b.info}")
     for b in playdesk.MODELS.values():
         print(f"  {b.id:10s} play    {b.info}")
-    print(f"open http://{a.host}:{a.port}   (play desk: /play, play a board: /table)")
+    print(f"open http://{a.host}:{a.port}   (the table; /table works too)")
     app.run(host=a.host, port=a.port, debug=False)
 
 

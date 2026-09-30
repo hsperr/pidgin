@@ -31,7 +31,7 @@ from collections import OrderedDict
 
 import numpy as np
 import torch
-from flask import jsonify, request, send_from_directory
+from flask import jsonify, redirect, request
 
 from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
 from bridgezero.bridge.deals import deal_to_pbn
@@ -46,7 +46,6 @@ from emergent.deck import (CALL_CHARS, HCP_W, RANKS, SEAT_NAMES, STRAINS, SUITS,
 from emergent.deck import CARD_CHARS  # noqa: F401  (tabledesk reads the links' codec from here)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(HERE, "bidserver_static")
 MODELS_DIR = os.path.join(os.path.dirname(HERE), "models")
 BENCH_FILE = os.path.join(MODELS_DIR, "bench_100k.npz")
 BENCH_LIMIT = int(os.environ.get("PLAY_BENCH_LIMIT", "4000"))
@@ -578,9 +577,10 @@ def start_game(model=None):
 
 
 def register(app):
+    # The play desk page is gone; its API stays. Old /play links land on the table.
     @app.get("/play")
     def play_page():
-        return send_from_directory(STATIC_DIR, "play.html")
+        return redirect("/", 302)
 
     @app.get("/api/play/state")
     @with_game

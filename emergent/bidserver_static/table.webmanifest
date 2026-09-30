@@ -1,7 +1,7 @@
 {
   "name": "Bridge table",
   "short_name": "Bridge",
-  "start_url": "/table",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f6f5f1",
