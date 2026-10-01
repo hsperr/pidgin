@@ -88,7 +88,10 @@ Dealer and vulnerability are real inputs here (the desks fix North / nobody).
   `https://bridge.localgeek.jp/apis/brill`: `GET /` (200), `/bid`, `/lead`, `/play`.
   `/bid` answers `bid`, `alert`, `explanation` (from `models/corpus_<id>.json`), `candidates`.
   Card play uses the play net; unseen cards are random filler that never reaches its input
-  (checked in `tests/test_apis.py`). §11 answers: one process serves all four seats, no state
+  (checked in `tests/test_apis.py`). Card play is deterministic and seat-free: the search
+  is seeded by the position as the seat on turn sees it (seats counted from that seat) and
+  always draws all `PLAY_SEARCH_SAMPLES` layouts, never cut by `PLAY_SEARCH_BUDGET_MS`. So
+  the same position gets the same card, also with the whole deal turned round the table. §11 answers: one process serves all four seats, no state
   between requests; cold start = server start (models load at boot), then ~10–50 ms per
   request; `meanings` and `matchtype` are accepted and ignored; one system per model id.
 

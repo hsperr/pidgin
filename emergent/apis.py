@@ -255,14 +255,15 @@ def fill_owners(known: dict[int, int], need: dict[int, int], voids: dict[int, se
 
 
 def api_card(bot, *, seat: int, hand: list[int], dummy: list[int] | None, played: list[int],
-             calls: list[int], dealer: int, vul: tuple[bool, bool], seed_text: str,
+             calls: list[int], dealer: int, vul: tuple[bool, bool],
              search: bool | None = None):
     """(card, [(card, prob), ...]) for the card this seat owes (dummy's when declarer asks).
 
     The position is rebuilt from what this seat sees, then `engine.choose_card` picks,
     as for /table: search per engine.CONFIG unless ``search`` says otherwise; the
     probabilities are the plain net's, for context. The search never reads the
-    filled-in hidden hands: it samples its own layouts from what this seat can see."""
+    filled-in hidden hands: it samples its own layouts from what this seat can see.
+    Deterministic: the search is seeded by that view (see below) and never cut by the clock."""
     check_auction(calls)
     contract = playdesk.contract_from_calls(calls, dealer)
     if contract is None:
@@ -302,7 +303,12 @@ def api_card(bot, *, seat: int, hand: list[int], dummy: list[int] | None, played
     if any(k > 13 for k in count.values()):
         raise ApiError("a seat holds more than 13 cards")
     need = {s: 13 - count[s] for s in range(4) if 13 - count[s] > 0}
-    seed = int(hashlib.sha256(seed_text.encode()).hexdigest()[:8], 16)
+    # The seed is the position as this seat sees it, with seats counted from this seat:
+    # the same position gets the same card, and so does the whole deal turned round the
+    # table. The board number and the seat names stay out of it on purpose.
+    view = (sorted(hand), sorted(dummy) if dummy is not None and played else [], played, calls,
+            (dealer - seat) % 4, (vul[seat % 2], vul[1 - seat % 2]))
+    seed = int(hashlib.sha256(repr(view).encode()).hexdigest()[:8], 16)
     owners = fill_owners(known, need, voids, seed)
 
     game = {"owners": owners, "calls": list(calls), "dealer": dealer, "synthetic": False,
@@ -313,7 +319,7 @@ def api_card(bot, *, seat: int, hand: list[int], dummy: list[int] | None, played
     batch = playdesk.batch_of(game, c)
     if int(batch.to_play()[0]) != turn:
         raise ApiError("internal: play engine disagrees about whose turn it is")
-    return engine.choose_card(bot, c, batch, search)
+    return engine.choose_card(bot, c, batch, search, seed=seed)
 
 
 # ------------------------------------------------------------------ routes
@@ -380,9 +386,8 @@ def register(app):
                     other = declarer if seat == dummy_seat else dummy_seat
                     dummy = parse_hand(a.get("nesw"[other], ""), "nesw"[other])
                 mid, bot = play_model(a.get("play_model"))
-                seed_text = "|".join(a.get(k, "") for k in ("d", "v", "pov", "n", "e", "s", "w", "h"))
                 card, _ = api_card(bot, seat=seat, hand=hand, dummy=dummy, played=played,
-                                   calls=calls, dealer=dealer, vul=vul, seed_text=seed_text)
+                                   calls=calls, dealer=dealer, vul=vul)
                 answer = f'<r type="play" card="{card_name(card)}"/>'
         except ApiError as exc:
             body = f'<?xml version="1.0" encoding="UTF-8"?>\n<sc_bm error={quoteattr(str(exc))}/>\n'
@@ -441,9 +446,8 @@ def register(app):
                 raise ApiError("/play needs 'played'; the opening lead is /lead")
             dummy = parse_hand(a["dummy"], "dummy") if a.get("dummy") else None
             mid, bot = play_model(a.get("play_model"))
-            seed_text = "|".join(a.get(k, "") for k in ("board", "dealer", "vul", "seat", "hand", "dummy", "ctx", "played"))
             card, top = api_card(bot, seat=seat, hand=hand, dummy=dummy, played=played,
-                                 calls=calls, dealer=dealer, vul=vul, seed_text=seed_text)
+                                 calls=calls, dealer=dealer, vul=vul)
         except ApiError as exc:
             return error(str(exc))
         return jsonify(card=card_name(card), model=mid,

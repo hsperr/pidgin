@@ -104,7 +104,7 @@ def test_same_cards_everywhere(client):
         asked = declarer if turn == dummy else turn
         card, _ = apis.api_card(bot, seat=asked, hand=hands[asked],
                                 dummy=hands[dummy] if i else None, played=table[:i], calls=calls,
-                                dealer=0, vul=(False, False), seed_text="x", search=False)
+                                dealer=0, vul=(False, False), search=False)
         assert card == table[i], f"card {i + 1}"
 
 

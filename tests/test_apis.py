@@ -146,7 +146,7 @@ def test_bid_matches_desk(client):
             desk.add_call(game, api_call)
 
 
-def test_filler_never_changes_the_card(client):
+def test_filler_never_changes_the_card(client, monkeypatch):
     """The unseen cards are random filler: the chosen card and its probabilities must not move."""
     _, bot = apis.play_model(None)
     hands = deal(11)
@@ -161,15 +161,17 @@ def test_filler_never_changes_the_card(client):
         asked = declarer if turn == dummy else turn
         card, _ = apis.api_card(bot, seat=asked, hand=hands[asked],
                                 dummy=hands[dummy] if ctx_play else None, played=ctx_play,
-                                calls=calls, dealer=0, vul=(False, False), seed_text="x",
-                                search=False)
+                                calls=calls, dealer=0, vul=(False, False), search=False)
         ctx_play.append(card)
     _, turn = apis.trick_seats(ctx_play, leader, 0)
     asked = declarer if turn == dummy else turn
-    answers = {apis.api_card(bot, seat=asked, hand=hands[asked], dummy=hands[dummy],
-                             played=ctx_play, calls=calls, dealer=0, vul=(False, False),
-                             seed_text=f"filler{k}", search=False)[1][0]
-               for k in range(6)}
+    fill = apis.fill_owners
+    answers = set()
+    for k in range(6):
+        monkeypatch.setattr(apis, "fill_owners", lambda known, need, voids, seed, k=k: fill(known, need, voids, k))
+        answers.add(apis.api_card(bot, seat=asked, hand=hands[asked], dummy=hands[dummy],
+                                  played=ctx_play, calls=calls, dealer=0, vul=(False, False),
+                                  search=False)[1][0])
     assert len({round(p, 6) for _, p in answers}) == 1 and len({c for c, _ in answers}) == 1
 
 
@@ -182,13 +184,37 @@ def test_declarer_card_comes_from_search(client):
     dummy = (declarer + 2) % 4
     played = [apis.api_card(bot, seat=(declarer + 1) % 4, hand=hands[(declarer + 1) % 4],
                             dummy=None, played=[], calls=calls, dealer=0,
-                            vul=(False, False), seed_text="x")[0]]
+                            vul=(False, False))[0]]
     before = apis.engine.searcher(bot).solves
     card, _ = apis.api_card(bot, seat=declarer, hand=hands[declarer], dummy=hands[dummy],
-                            played=played, calls=calls, dealer=0, vul=(False, False),
-                            seed_text="x")
+                            played=played, calls=calls, dealer=0, vul=(False, False))
     assert apis.engine.searcher(bot).solves > before
     assert card in hands[dummy]
+
+
+def test_card_play_is_deterministic_and_seat_free(client):
+    """With search on, the same position gets the same card: asked twice, after other
+    requests, and with the whole deal turned round the table (Brill's report)."""
+    rot_vul = {"None": "None", "All": "All", "NS": "EW", "EW": "NS"}
+    hands = deal(31)
+    ctx, played = play_board(client, hands, 0, "NS", board="31")
+    calls = [apis.parse_call(ctx[i:i + 2]) for i in range(0, len(ctx), 2)]
+    contract = apis.playdesk.contract_from_calls(calls, 0)
+    declarer, trump = contract["declarer"], contract["trump"]
+    dummy, leader = (declarer + 2) % 4, (declarer + 1) % 4
+    for i in range(0, 52, 3):
+        _, turn = apis.trick_seats(played[:i], leader, trump)
+        asked = declarer if turn == dummy else turn
+        path = "/apis/brill/lead" if i == 0 else "/apis/brill/play"
+        q = {"seat": SEATS[asked], "dealer": "N", "vul": "NS", "ctx": ctx, "hand": hand_text(hands[asked])}
+        if i:
+            q.update(dummy=hand_text(hands[dummy]), played="".join(apis.card_name(c) for c in played[:i]))
+        first = client.get(path, query_string=q).json["card"]
+        assert client.get(path, query_string=q).json["card"] == first
+        for k in (1, 2, 3):
+            turned = dict(q, seat=SEATS[(asked + k) % 4], dealer=SEATS[k],
+                          vul=rot_vul["NS"] if k % 2 else "NS", board=str(k))
+            assert client.get(path, query_string=turned).json["card"] == first, (i, k)
 
 
 def test_errors_are_400_json(client):

@@ -170,13 +170,40 @@ def card_policy(bot, contracts, batch):
     return out["log_probs"][0].exp(), out, enc
 
 
+def seat_free_sampler(seed):
+    """A layout sampler that numbers the hidden seats from the seat on turn.
+
+    The stock sampler walks the seats as N, E, S, W, so the same dice deal a hidden card
+    to a different opponent once the whole deal is turned round the table. Walking them
+    from the seat on turn makes a turned deal draw the same layouts, turned with it.
+    """
+    from dataclasses import replace
+
+    from bridgezero.play.search import LayoutSampler
+
+    class SeatFree(LayoutSampler):
+        def draw(self, position):
+            def rel(s):
+                return (s - position.turn) % 4
+            return super().draw(replace(
+                position,
+                caps={s: position.caps[s] for s in sorted(position.caps, key=rel)},
+                suit_seats=[sorted(seats, key=rel) for seats in position.suit_seats]))
+
+    return SeatFree(seed)
+
+
 @torch.no_grad()
-def choose_card(bot, contracts, batch, search=None):
+def choose_card(bot, contracts, batch, search=None, seed=None):
     """(card, top) for the seat on turn at `batch`: the card, and the net's own best
     four legal cards as [(card, p)].
 
     `search` None follows CONFIG. With search, declarer always searches and defence
     per CONFIG.defence / defence_from; a turn the searcher skips is the net's card.
+
+    `seed` makes the search deterministic: fresh dice from `seed` (seat-free, see
+    `seat_free_sampler`) and all CONFIG.samples layouts, with no clock to stop early.
+    Without it the searcher's dice run on from the last request and the budget applies.
     """
     probs, _, _ = card_policy(bot, contracts, batch)
     legal = batch.legal()[0]
@@ -185,6 +212,14 @@ def choose_card(bot, contracts, batch, search=None):
         with SEARCH_LOCK:
             player = searcher(bot)
             player.start(contracts)
-            card = int(player.choose(batch, contracts, batch.legal(), batch.t)[0])
+            if seed is None:
+                card = int(player.choose(batch, contracts, batch.legal(), batch.t)[0])
+            else:
+                kept = player.sampler, player.budget_ms
+                player.sampler, player.budget_ms = seat_free_sampler(seed), None
+                try:
+                    card = int(player.choose(batch, contracts, batch.legal(), batch.t)[0])
+                finally:
+                    player.sampler, player.budget_ms = kept
     order = [int(c) for c in probs.argsort(descending=True) if legal[int(c)]]
     return card, [(c, float(probs[c])) for c in order[:4]]
