@@ -232,6 +232,12 @@ exactly the table's. What changes:
 - the hints toggle works as on `/`, and the hints still read only what your chair may
   see (`known_seats`), not the four hands on screen;
 - a bar under the header picks dealer, vulnerability, your chair and both models;
+- who plays what: with no `seat` you call and play for all four chairs (declarer picks
+  dummy's card) and the nets wait; `user_seat` follows the chair acting, so the hints
+  and "you" are that chair's, while `view_seat` stays at the bottom. **Net: this
+  call/card** (`POST /api/table/step`) lets a net make one move, **Nets play to the end**
+  (`finish`) hands them every chair. `seat=S` is one chair against three nets, as on /;
+  `bots=EW&seat=N` any mix (`bots=-` for none);
 - the tab keeps its own `X-Game` (`table-game-debug`), apart from a `/` tab.
 
 The address bar always holds the position in plain words, cut to the frame on screen:
@@ -243,7 +249,7 @@ The address bar always holds the position in plain words, cut to the frame on sc
 - hands: `spades.hearts.diamonds.clubs`, ranks `AKQJT98765432` (`10` reads as `T`),
   `-` for a void, always all thirteen cards (played ones too). A hand left out is
   dealt at random from what nobody holds; no hands at all is a random deal.
-- `dealer` defaults to N, `vul` to none (`all` works too), `seat` to S.
+- `dealer` defaults to N, `vul` to none (`all` works too); no `seat` or `bots`: you play all four.
 - `auction`: calls from the dealer joined by `-`: `P`, `X`, `XX`, `1C` … `7NT` (`1N` works).
 - `play`: cards in play order joined by `-`, suit then rank: `H7-HQ-HK-HA`.
 - `hints`: 1 or 0; left out, the tab keeps what it had.
