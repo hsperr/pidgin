@@ -6,6 +6,8 @@ One page at https://bridge.localgeek.jp, one Flask app in one process:
   the nets hold the other three. Bid the auction, play the cards, get a duplicate
   score against par, deal again. A hint toggle turns on teaching notes before every
   call and every card. Challenges, a rating and a leaderboard live here too.
+- `/debug` — **the same page in debug mode**: all four hands face up, any dealer and
+  vulnerability, and the position spelled out in the address bar (see "Debug mode" below).
 
 The old bid desk and play desk pages are gone (`/play` redirects to `/`). Their APIs,
 `/api/*` and `/api/play/*`, stay: the tests use them to check that every surface
@@ -186,7 +188,9 @@ The address bar always holds the position on screen, so copying it (or pressing
 - `d`, `a`, `dr`, `v` and `m` are the bid desk's (`bidserver.encode_deal`, one
   `CALL_CHARS` character per call) and `p` is the play desk's (one `CARD_CHARS`
   character per card, in play order), so the same link also opens on `/` and `/play`.
-  `a` and `p` are left out while empty. `dr` and `v` are always `0` and `none` here.
+  `a` and `p` are left out while empty. `dr` is the dealer (0–3 = N E S W) and `v` the
+  vulnerability (`none`, `ns`, `ew`, `all`); a new board on `/` is always `0` and `none`,
+  but a link may carry others and the nets and the score use them.
 - `s` is your chair, `pm` the card-play model id, `h` hints on/off. Speed, search
   and the solver peek are the viewer's own settings and are not in the link.
 
@@ -214,6 +218,40 @@ does the `code` in every state payload. The page still draws only what the
 visitor's chair may see, exactly as in normal play: their own hand, dummy after
 the opening lead, all four once the board is over. Anyone who decodes the URL
 knows the deal, so share mid-board links with people who won't.
+
+### Debug mode (`/debug`)
+
+`/debug` serves the same `table.html`; the page sees its own path and switches on
+debug mode (`DEBUG` in the script). Bidding, play, undo, new board and the nets are
+exactly the table's. What changes:
+
+- all four hands are face up the whole time (`visible_seats`), dummy before the lead too;
+- hints, challenges, the rating and the leaderboard are hidden, and the server refuses
+  them for a debug game (`game["debug"]`): no challenge can start, so nothing is ever
+  written to `players.db`, and `me` is not sent;
+- a bar under the header picks dealer, vulnerability, your chair and both models;
+- the tab keeps its own `X-Game` (`table-game-debug`), apart from a `/` tab.
+
+The address bar always holds the position in plain words, cut to the frame on screen:
+
+    /debug#n=<hand>&e=<hand>&s=<hand>&w=<hand>&dealer=<N|E|S|W>&vul=<none|ns|ew|both>
+           &auction=<calls>&play=<cards>&seat=<N|E|S|W>&m=<bid model>&pm=<play model>
+    /debug#n=AQJ32.Q8.T32.K83&e=T54.KT63.875.AJ9&s=K987.AJ.AKQJ.QT4&w=6.97542.964.7652&dealer=E&vul=ns&auction=1S-P-2C-P&seat=S
+
+- hands: `spades.hearts.diamonds.clubs`, ranks `AKQJT98765432` (`10` reads as `T`),
+  `-` for a void, always all thirteen cards (played ones too). A hand left out is
+  dealt at random from what nobody holds; no hands at all is a random deal.
+- `dealer` defaults to N, `vul` to none (`all` works too), `seat` to S.
+- `auction`: calls from the dealer joined by `-`: `P`, `X`, `XX`, `1C` … `7NT` (`1N` works).
+- `play`: cards in play order joined by `-`, suit then rank: `H7-HQ-HK-HA`.
+- Case does not matter on the way in; the page writes it back in this form.
+
+It opens through `POST /api/table/debug` (`debug_board` in `tabledesk.py`), checked
+like a `/` link: 13 cards a hand, no card twice, every call and card legal in turn. A
+bad one gets a 400 naming the problem; the page shows it with the text that failed and
+deals a random board. Like a `/` link, the board stops at the position until Continue.
+A new dealer or vulnerability from the bar replays the same hands from the top; a new
+chair keeps the position. Tests: `tests/test_table_debug.py`.
 
 ### Challenge: you against a table of bots
 

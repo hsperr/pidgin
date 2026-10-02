@@ -413,6 +413,21 @@ table.rv{border-collapse:separate; border-spacing:0 3px; width:100%; font-size:1
 table.rv th{font-size:13px; color:var(--dim); font-weight:600; text-align:left; padding:0 10px}
 table.rv td{background:var(--neg-bg); padding:6px 10px; font-family:var(--mono)}
 table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border-radius:0 7px 7px 0}
+/* ---- /debug: the same page, all four hands up, the position spelled out in the address bar */
+.debug #hintseg, .debug #challenge, .debug #rank, .debug #chair-set{display:none}
+#debugbar{display:none; margin:0 0 14px; padding:10px 12px; border:1px dashed var(--pick); border-radius:12px;
+  background:var(--card); font-size:14px}
+.debug #debugbar{display:block}
+#debugbar .dbrow{display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center}
+#debugbar label{display:inline-flex; gap:6px; align-items:center; color:var(--dim)}
+#debugbar select{font:inherit; font-size:14px; min-height:34px; max-width:100%; border:1px solid var(--line);
+  border-radius:8px; background:var(--bg); color:var(--text); padding:2px 6px}
+#db-m, #db-pm{max-width:min(300px, 70vw)}
+#debugbar b.tag{color:var(--pick)}
+#debugbar .dbnote{margin:6px 0 0; color:var(--dim); font-size:13px}
+#debugbar .dbnote code{font-family:var(--mono); font-size:12.5px}
+#debug-err{margin:6px 0 0; color:var(--neg); font-weight:600; overflow-wrap:anywhere}
+#debug-err:empty{display:none}
 </style>
 <link rel="stylesheet" href="/table.mobile.css" media="(max-width:640px)">
 </head>
@@ -452,6 +467,21 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
   </div>
   <div class="meta" id="meta">dealing…</div>
 </header>
+<div id="debugbar" aria-label="Debug">
+  <div class="dbrow">
+    <b class="tag">Debug</b>
+    <label>Dealer <select id="db-dealer"><option>N</option><option>E</option><option>S</option><option>W</option></select></label>
+    <label>Vul <select id="db-vul"><option value="none">none</option><option value="ns">N-S</option>
+      <option value="ew">E-W</option><option value="both">both</option></select></label>
+    <label>You sit <select id="db-seat"><option>N</option><option>E</option><option>S</option><option>W</option></select></label>
+    <label>Bidding <select id="db-m"></select></label>
+    <label>Cards <select id="db-pm"></select></label>
+  </div>
+  <p class="dbnote">All four hands face up, no hints, not rated. The address bar is the position; edit it to set one up:
+    <code>/debug#n=AQJ32.Q8.T32.K83&amp;e=…&amp;s=…&amp;w=…&amp;dealer=E&amp;vul=ns&amp;auction=1S-P-2C-P&amp;play=HK-HA&amp;seat=S</code>.
+    A hand left out is dealt at random. A new dealer or vulnerability starts the auction again.</p>
+  <p id="debug-err" role="alert"></p>
+</div>
 <div id="scrim"></div>
 <div id="err" role="alert"></div>
 
@@ -497,10 +527,12 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
         <option value="riviera">Riviera (four colours)</option><option value="champion" disabled>Champion (top of the leaderboard)</option>
       </select>
       <p class="hint" style="margin:6px 0 16px">The cards and the table, for the whole page. Kept in this browser.</p>
+      <div id="chair-set">
       <p class="sub">Your chair <em style="text-transform:none;font-weight:400">North deals, nobody vulnerable</em></p>
       <p class="hint" style="margin:0 0 10px">North always deals and nobody is vulnerable: the
         self-play table the hints quote was built that way. Changing your chair deals a fresh board.</p>
       <div class="actions" id="seats" style="margin:0"></div>
+      </div>
       <div class="actions" style="margin-top:8px">
         <button id="restart" title="Same thirteen cards, auction from the top">Restart this board</button>
       </div>
@@ -571,11 +603,18 @@ let HOLD = false;
 const PROCEEDS = /\/api\/table\/(call|card|advance|finish|new_board|restart|undo|claim|challenge(\/next|\/load)?)$/;
 let NOTICE_UNTIL = 0;          // a message about a bad link outlives the next request
 
+/* /debug is this same page: every hand face up, no hints, challenges or rating, and the
+   address bar holds the position in readable words (see "the shared link" below). */
+const DEBUG = /^\/debug\/?$/.test(location.pathname);
+document.documentElement.classList.toggle("debug", DEBUG);
+if(DEBUG){ document.title = "Debug a board"; document.querySelector("header h1").textContent = "Debug a board"; }
+
+const GAME_KEY = DEBUG ? "table-game-debug" : "table-game";   // its own game, apart from the table's
 let GAME_ID = null;
-try { GAME_ID = sessionStorage.getItem("table-game"); } catch(e) {}
+try { GAME_ID = sessionStorage.getItem(GAME_KEY); } catch(e) {}
 if(!GAME_ID){
   GAME_ID = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
-  try { sessionStorage.setItem("table-game", GAME_ID); } catch(e) {}
+  try { sessionStorage.setItem(GAME_KEY, GAME_ID); } catch(e) {}
 }
 /* Anything that goes wrong has to end up on the page. A silent failure here looks
    exactly like a dead button, which is how the New board bug hid. The body is read
@@ -716,6 +755,7 @@ function render(d){
     b.onclick = () => go(() => post("/api/table/hints", {hints: b.dataset.h === "1"}));
   });
   $("restart").disabled = d.auction.length === 0 || inChal;
+  if(d.debug) renderDebugBar(d);
   LAND = null; FRESH = -1;
   paint();
   schedule();
@@ -771,7 +811,7 @@ function frameOf(d, nCalls, nCards, full){
   f.seats = d.seats.map(s => {
     const back = later.filter(c => c.seat === s.seat);
     const hide = s.hidden ||
-      (ct && s.seat === ct.dummy && s.seat !== d.user_seat && nCards === 0);
+      (!d.debug && ct && s.seat === ct.dummy && s.seat !== d.user_seat && nCards === 0);
     const o = Object.assign({}, s, {left: 13 - played.slice(0, nCards).filter(c => c.seat === s.seat).length,
                                     hidden: hide});
     if(hide || !s.suits){ o.suits = null; o.spent = null; o.hcp = hide ? null : s.hcp; return o; }
@@ -995,8 +1035,8 @@ function renderPanel(d){
                                                    : `${SEATS[d.to_play]} is thinking…`;
     H.innerHTML = !d.your_turn
       ? `${HOLD ? "Opened from a link. Press Continue to go on." : "Waiting for " + SEATS[d.to_play] + "."} ${d.to_play === d.partner_seat ? "That is your partner." : "That is an opponent."}`
-      : d.suggest ? `${d.dealer_name} dealt, nobody vulnerable. Pick a call, or take the ringed one.`
-                  : `${d.dealer_name} dealt, nobody vulnerable. Pick a call in the box.`;
+      : d.suggest ? `${d.dealer_name} dealt, ${d.vul_name}. Pick a call, or take the ringed one.`
+                  : `${d.dealer_name} dealt, ${d.vul_name}. Pick a call in the box.`;
     B.innerHTML = biddingBox(d);
     panelTools(d);
     B.querySelectorAll(".bblv button").forEach(b => b.onclick = () => pickLevel(+b.dataset.lv));
@@ -1566,7 +1606,7 @@ function renderResult(d){
   const good = r.my_score >= 0;
   let s = `<div class="stat ${good?"good":"bad"}"><span>Your side scored</span>` +
           `<b class="num">${fmtPts(r.my_score)}</b>` +
-          `<span>duplicate scoring, nobody vulnerable</span></div>`;
+          `<span>duplicate scoring, ${d.vul_name}</span></div>`;
   if(r.par_mine !== null){
     const d1 = r.my_score - r.par_mine;
     s += `<div class="stat"><span>Double dummy par for your side</span>` +
@@ -1887,6 +1927,7 @@ them in `code`, and the page cuts `a` and `p` back to the frame it is drawing (o
 character per call, one per card), so a link copied mid-animation is exactly what
 is on the table. replaceState: no reload, no history entry per card. */
 function linkHash(){
+  if(DEBUG) return debugHash();
   if(SRV && SRV.challenge){        // a challenge link: every deal and the other table, never your own play
     const k = SRV.challenge.code, q = new URLSearchParams();
     q.set("c", k.c); q.set("ca", k.ca); q.set("cp", k.cp);
@@ -1907,6 +1948,58 @@ function linkHash(){
   q.set("h", c.h);
   return "#" + q.toString();
 }
+/* The debug page's link is the same position in words a person can read and type:
+  /debug#n=<hand>&e=<hand>&s=<hand>&w=<hand>&dealer=<N|E|S|W>&vul=<none|ns|ew|both>
+        &auction=<1S-P-2C-P>&play=<HK-HA-H2>&seat=<N|E|S|W>&m=<bid model>&pm=<play model>
+Hands are spades.hearts.diamonds.clubs with - for a void, always all thirteen cards.
+The server parses and checks it (`debug_board` in tabledesk.py); `debug_code` sends it
+back with one entry per call and per card, cut here to the frame on screen. */
+function debugHash(){
+  const c = SRV && SRV.debug_code;
+  if(!c) return null;
+  const q = [];
+  for(const k of ["n", "e", "s", "w", "dealer", "vul"]) q.push(`${k}=${encodeURIComponent(c[k])}`);
+  const a = c.auction.slice(0, VIEW.calls), p = c.play.slice(0, VIEW.cards);
+  if(a.length) q.push("auction=" + a.join("-"));
+  if(p.length) q.push("play=" + p.join("-"));
+  q.push("seat=" + c.seat);
+  if(c.m) q.push("m=" + encodeURIComponent(c.m));
+  if(c.pm) q.push("pm=" + encodeURIComponent(c.pm));
+  return "#" + q.join("&");
+}
+function debugBody(p, over){
+  const b = {n: p.get("n") || "", e: p.get("e") || "", s: p.get("s") || "", w: p.get("w") || "",
+             dealer: p.get("dealer") || "", vul: p.get("vul") || "", seat: p.get("seat") || "",
+             auction: p.get("auction") || "", play: p.get("play") || "",
+             model: p.get("m") || "", play_model: p.get("pm") || ""};
+  return Object.assign(b, over || {});
+}
+// Dealer, vul and chair from the bar: the same hands again. A new chair keeps the position;
+// a new dealer or vulnerability makes the calls mean something else, so the auction starts over.
+function debugReload(){
+  const c = SRV && SRV.debug_code;
+  if(!c) return;
+  const dealer = $("db-dealer").value, vul = $("db-vul").value, seat = $("db-seat").value;
+  const keep = dealer === c.dealer && vul === c.vul;
+  const body = {n: c.n, e: c.e, s: c.s, w: c.w, dealer, vul, seat, model: c.m, play_model: c.pm,
+                auction: keep ? c.auction.slice(0, VIEW.calls).join("-") : "",
+                play: keep ? c.play.slice(0, VIEW.cards).join("-") : ""};
+  goNow(async () => { const d = await post("/api/table/debug", body); HOLD = true; return d; });
+}
+function renderDebugBar(d){
+  const c = d.debug_code;
+  const opts = (list, cur) => list.map(m =>
+    `<option value="${esc(m.id)}"${m.id === cur ? " selected" : ""}>${esc(m.label)}</option>`).join("");
+  $("db-m").innerHTML = opts(d.models, d.model);
+  $("db-pm").innerHTML = opts(d.play_models, d.play_model);
+  $("db-dealer").value = c.dealer; $("db-vul").value = c.vul; $("db-seat").value = c.seat;
+}
+if(DEBUG){
+  for(const id of ["db-dealer", "db-vul", "db-seat"]) $(id).onchange = debugReload;
+  $("db-m").onchange = () => go(() => post("/api/table/models", {model: $("db-m").value}));
+  $("db-pm").onchange = () => go(() => post("/api/table/models", {play_model: $("db-pm").value}));
+}
+
 function syncLink(){
   const h = linkHash();
   if(!h) return;
@@ -1953,6 +2046,24 @@ function linkBody(p){
 
 function boot(){
   const p = new URLSearchParams(location.hash.slice(1));
+  if(DEBUG){
+    // Always through the debug loader: no hands at all is a random deal. A link that does not
+    // check out keeps its text on screen, next to the reason, and a random board comes up.
+    return goNow(async () => {
+      try {
+        const d = await post("/api/table/debug", debugBody(p));
+        $("debug-err").textContent = "";
+        HOLD = true;             // stop exactly at the position; Continue lets the nets go on
+        return d;
+      } catch(e){
+        $("debug-err").textContent = `Could not open that position — ${e.message}. ` +
+          `It was: ${decodeURIComponent(location.hash.slice(1)) || "(empty)"}. Here is a random board instead.`;
+        return await post("/api/table/debug", debugBody(new URLSearchParams(),
+          {dealer: p.get("dealer") || "", vul: p.get("vul") || "", seat: p.get("seat") || ""}))
+          .catch(() => post("/api/table/debug", {}));
+      }
+    });
+  }
   if(p.get("c") !== null){
     return goNow(async () => {
       // A reload of the same challenge keeps your place: this tab's game still holds it.
@@ -1990,6 +2101,7 @@ function boot(){
 // A different link pasted into the same tab opens it; our own replaceState never fires this.
 window.addEventListener("hashchange", () => {
   const p = new URLSearchParams(location.hash.slice(1));
+  if(DEBUG){ if(location.hash !== document.body.dataset.code) boot(); return; }
   if((p.get("d") !== null || p.get("c") !== null) && ("#" + p.toString()) !== document.body.dataset.code) boot();
 });
 

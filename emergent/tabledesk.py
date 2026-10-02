@@ -7,6 +7,8 @@ is the site's only page; the bid desk and play desk keep their APIs, not their p
     GET  /api/table/state       everything the page draws
     POST /api/table/new_board   deal again (optionally from a different chair)
     POST /api/table/load        open a shared link: that deal, chair, models, calls, cards
+    GET  /debug                 the same page in debug mode: all hands up, readable link
+    POST /api/table/debug       open a debug link (see "/debug" below)
     POST /api/table/restart     same cards, auction from the top
     POST /api/table/call        the user's call
     POST /api/table/card        the user's card
@@ -31,7 +33,8 @@ user who is dummy plays nothing while partner, the net, plays both hands.
 The bidding net comes from `models/models.json`, the E48 card-play net from
 `models/play_models.json`. Dealer is North and nobody is vulnerable, exactly as
 on the other two desks, because the offline "what this call means" corpus was
-built under those conditions.
+built under those conditions. A link (`dr`, `v`) or the debug page can set both;
+they reach the nets as real inputs.
 
 Nothing here reimplements a net. Every call and card the nets make comes from
 `emergent.engine` (the play on a `playdesk`-shaped game dict), so a board played
@@ -81,6 +84,8 @@ STATIC_DIR = os.path.join(HERE, "bidserver_static")
 
 SUIT_WORDS = {"S": "spade", "H": "heart", "D": "diamond", "C": "club"}
 DEALER = 0                                 # North, like both other desks
+VUL_NAMES = {(False, False): "nobody vulnerable", (True, False): "North-South vulnerable",
+             (False, True): "East-West vulnerable", (True, True): "both sides vulnerable"}
 MAX_GAMES = 300
 
 GAMES = OrderedDict()
@@ -112,7 +117,9 @@ def play_models():
 
 
 def new_board(user_seat=2, model=None, play_model=None, hints=False, peek=False,
-              owners=None, board_no=1):
+              owners=None, board_no=1, dealer=DEALER, vul=(False, False), debug=False):
+    """A fresh game dict. North deals and nobody is vulnerable unless a link or the
+    debug page says otherwise; the nets read both as real inputs either way."""
     bm, pm = bid_models(), play_models()
     if owners is None:
         owners = deal_owners(np.random.default_rng())
@@ -124,7 +131,11 @@ def new_board(user_seat=2, model=None, play_model=None, hints=False, peek=False,
         "calls": [],
         "model": model if model in bm else engine.default_bid_model(),
         "play_model": play_model if play_model in pm else engine.default_play_model(),
-        "hints": bool(hints),
+        "dealer": int(dealer) % 4,
+        "vul": (bool(vul[0]), bool(vul[1])),
+        # /debug: all four hands face up, no hints, never a challenge or a rating.
+        "debug": bool(debug),
+        "hints": bool(hints) and not debug,
         "peek": bool(peek),
         "search": engine.CONFIG.search,     # the page's toggle; see engine.choose_card
 
@@ -144,7 +155,7 @@ def reset_board(game):
 
 
 def auction_of(game):
-    return AuctionState.from_calls(game["calls"], dealer=DEALER)
+    return AuctionState.from_calls(game["calls"], dealer=game["dealer"])
 
 
 def bid_bot(game):
@@ -164,7 +175,7 @@ def net_call(game):
     if bot is None:
         return None
     seat = auction_of(game).turn
-    return engine.choose_call(bot, game["bitmaps"][seat], game["calls"], DEALER)[0]
+    return engine.choose_call(bot, game["bitmaps"][seat], game["calls"], game["dealer"], game["vul"])[0]
 
 
 def bid_view(game):
@@ -173,7 +184,8 @@ def bid_view(game):
     if bot is None:
         return None, legal_calls(game)
     legal = legal_calls(game)
-    return bot.view({"calls": game["calls"], "bitmaps": game["bitmaps"]}, legal), legal
+    return bot.view({"calls": game["calls"], "bitmaps": game["bitmaps"],
+                     "dealer": game["dealer"], "vul": game["vul"]}, legal), legal
 
 
 def add_call(game, call):
@@ -191,7 +203,7 @@ def begin_play(game):
     if st.passed_out or st.last_contract < 0:
         return
     game["pg"] = playdesk.new_game(owners=game["owners"], calls=list(game["calls"]),
-                                   dealer=DEALER, vul=(False, False),
+                                   dealer=game["dealer"], vul=game["vul"],
                                    model=game["play_model"])
     game["pg"]["search"] = game.get("search", engine.CONFIG.search)
     game["tricks"] = game["pg"]["tricks"]
@@ -317,7 +329,7 @@ def can_undo(game):
     """Something of the user's to take back. Every card the user played comes after a
     call of theirs, so one call of theirs in the auction is enough to know."""
     me = game["user_seat"]
-    return not game.get("challenge") and any((DEALER + i) % 4 == me for i in range(len(game["calls"])))
+    return not game.get("challenge") and any((game["dealer"] + i) % 4 == me for i in range(len(game["calls"])))
 
 
 def undo(game):
@@ -340,7 +352,7 @@ def undo(game):
             game.pop("_batch", None)
             return True
     me = game["user_seat"]
-    mine = [i for i in range(len(game["calls"])) if (DEALER + i) % 4 == me]
+    mine = [i for i in range(len(game["calls"])) if (game["dealer"] + i) % 4 == me]
     if not mine:
         return False
     reset_calls = game["calls"][:mine[-1]]
@@ -381,7 +393,7 @@ def claim(game):
 def visible_seats(game):
     """The chairs whose cards go into the payload. Never more than the user knows."""
     ph = phase(game)
-    if ph == "over":
+    if ph == "over" or game["debug"]:
         return {0, 1, 2, 3}
     me = game["user_seat"]
     if ph == "auction":
@@ -467,7 +479,7 @@ def result_view(game):
     if game["tricks"] is None:                       # a passed-out board never built one
         game["tricks"] = playdesk.dd_table(game["owners"])
     tricks = game["tricks"]
-    par = int(dd_par_score(tricks, False, False)) if tricks is not None else None
+    par = int(dd_par_score(tricks, *game["vul"])) if tricks is not None else None
     if st.passed_out or game["pg"] is None:
         my_par = None if par is None else (par if my_side == 0 else -par)
         return {"passed_out": True, "ns_score": 0, "my_score": 0,
@@ -481,7 +493,8 @@ def result_view(game):
         return None
     made = int(batch.declarer_tricks()[0])
     declarer = pg["declarer"]
-    raw = contract_score(pg["level"], TRUMP_TO_BID_STRAIN[pg["trump"]], made, pg["doubled"], False)
+    raw = contract_score(pg["level"], TRUMP_TO_BID_STRAIN[pg["trump"]], made, pg["doubled"],
+                         game["vul"][declarer % 2])
     ns = raw if declarer % 2 == 0 else -raw
     mine = ns if my_side == 0 else -ns
     par_mine = None if par is None else (par if my_side == 0 else -par)
@@ -527,8 +540,9 @@ def state_dump(game):
         "your_turn": user_on_turn(game),
         "seats": seats_view(game, seen),
         "your_hand": hand_facts(game["bitmaps"][me]),
-        "dealer": DEALER, "dealer_name": SEAT_NAMES[DEALER],
-        "auction": [{"seat": (DEALER + i) % 4, "call": c, "name": call_name(c)}
+        "dealer": game["dealer"], "dealer_name": SEAT_NAMES[game["dealer"]],
+        "vul": playdesk.vul_code(*game["vul"]), "vul_name": VUL_NAMES[game["vul"]],
+        "auction": [{"seat": (game["dealer"] + i) % 4, "call": c, "name": call_name(c)}
                     for i, c in enumerate(game["calls"])],
         "auction_over": st.ended, "passed_out": bool(st.ended and st.passed_out),
         "contract": contract_view(game),
@@ -550,13 +564,15 @@ def state_dump(game):
                       + (pmd[game["play_model"]].info if game["play_model"] in pmd else "no play model")),
         "hint": None, "suggest": None,
         "code": link_code(game),
+        "debug": game["debug"],
+        "debug_code": debug_code(game) if game["debug"] else None,
         "result": result_view(game),
         "review": None,
         "challenge": challenge_view(game),
         "can_undo": can_undo(game),
         "can_claim": False,
         "claim": game.get("claim"),
-        "me": players.me(players.current_id()) if has_request_context() else None,
+        "me": players.me(players.current_id()) if has_request_context() and not game["debug"] else None,
     }
     if pg is not None:
         declarer = pg["declarer"]
@@ -637,7 +653,7 @@ def partner_last(game):
     me = game["user_seat"]
     partner = (me + 2) % 4
     for i in range(len(game["calls"]) - 1, -1, -1):
-        if (DEALER + i) % 4 != partner:
+        if (game["dealer"] + i) % 4 != partner:
             continue
         entry = corpus_at(game, game["calls"][:i])
         token = call_token(game["calls"][i])
@@ -824,7 +840,7 @@ def recent_calls(game, limit=2):
     out = []
     for seat, who in wanted:
         for i in range(len(game["calls"]) - 1, -1, -1):
-            if (DEALER + i) % 4 != seat:
+            if (game["dealer"] + i) % 4 != seat:
                 continue
             before = game["calls"][:i]
             entry = corpus_at(game, before)
@@ -906,7 +922,7 @@ def corpus_rows(entry, legal, facts):
 NEAREST_KEEP = 4         # a front-trimmed stand-in keeps at least one whole round
 
 
-def nearby_auctions(calls, me):
+def nearby_auctions(calls, me, dealer=DEALER):
     """Stand-ins for an auction self-play never reached, most faithful first.
 
     Each is (calls, what changed). Every one keeps the user on turn next and
@@ -921,7 +937,7 @@ def nearby_auctions(calls, me):
     lead = next((i for i, c in enumerate(calls) if c != PASS), len(calls))
     for k in range(1, lead + 1):
         yield calls[k:], "the same calls with the opening passes left out"
-    theirs = [i for i, c in enumerate(calls) if c != PASS and (DEALER + i) % 2 != me % 2]
+    theirs = [i for i, c in enumerate(calls) if c != PASS and (dealer + i) % 2 != me % 2]
     for i in reversed(theirs):
         yield (calls[:i] + [PASS] + calls[i + 1:],
                f"the same, but with the opponents' {words([calls[i]])} replaced by a pass")
@@ -946,7 +962,7 @@ def nearest_position(game, legal, facts):
     table = corpus_table(game)
     if table is None:
         return None
-    for calls, change in nearby_auctions(game["calls"], game["user_seat"]):
+    for calls, change in nearby_auctions(game["calls"], game["user_seat"], game["dealer"]):
         if not any(c != PASS for c in calls):
             continue                          # all passes: nothing left that says anything
         key = "-".join(call_token(c) for c in calls)
@@ -1069,7 +1085,7 @@ def rule_hint(game, net):
             "net_call_name": net_top["call"] if net_top else None,
             "net_action": net_top["action"] if net_top else None}
     try:
-        out = teaching.advise(list(game["calls"]), DEALER, seat, cards, TEACH_RULES)
+        out = teaching.advise(list(game["calls"]), game["dealer"], seat, cards, TEACH_RULES)
     except Exception as e:                       # experimental: never break the hint
         return {**base, "covered": False, "note": f"The rule of thumb failed here ({e})."}
     if out is None:
@@ -1514,7 +1530,7 @@ def link_code(game):
         "d": DESK.encode_deal(game["owners"]) if DESK is not None else None,
         "a": "".join(DESK.CALL_CHARS[c] for c in game["calls"]) if DESK is not None else "",
         "p": playdesk.encode_cards(pg["played"]) if pg is not None else "",
-        "dr": DEALER, "v": "none",
+        "dr": game["dealer"], "v": playdesk.vul_code(*game["vul"]),
         "s": SEAT_LETTERS[game["user_seat"]],
         "m": game["model"], "pm": game["play_model"],
         "h": int(bool(game["hints"])),
@@ -1523,6 +1539,23 @@ def link_code(game):
 
 class LinkError(ValueError):
     pass
+
+
+LINK_VULS = {"none": (False, False), "ns": (True, False), "ew": (False, True),
+             "all": (True, True), "both": (True, True)}
+
+
+def link_text(body, key, limit):
+    """One field of a link body as a string ("" when missing), or `LinkError`."""
+    v = body.get(key, "")
+    if v is None:
+        v = ""
+    if not isinstance(v, (str, int)) or isinstance(v, bool):
+        raise LinkError(f"bad {key} in link")
+    v = str(v)
+    if len(v) > limit:
+        raise LinkError(f"{key} in link is too long")
+    return v
 
 
 def board_from_link(body, prev):
@@ -1536,15 +1569,7 @@ def board_from_link(body, prev):
     `advance`, and the page waits for the visitor before letting the nets go on.
     """
     def text(key, limit):
-        v = body.get(key, "")
-        if v is None:
-            v = ""
-        if not isinstance(v, (str, int)) or isinstance(v, bool):
-            raise LinkError(f"bad {key} in link")
-        v = str(v)
-        if len(v) > limit:
-            raise LinkError(f"{key} in link is too long")
-        return v
+        return link_text(body, key, limit)
 
     code = text("deal", 64)
     owners = DESK.decode_deal(code) if (code and DESK is not None) else None
@@ -1553,10 +1578,12 @@ def board_from_link(body, prev):
     seat = text("seat", 1).upper()
     if seat == "" or seat not in SEAT_LETTERS:
         raise LinkError("bad seat in link: it must be N, E, S or W")
-    if text("dealer", 2) not in ("", "0"):
-        raise LinkError("this table always has North dealing (dr=0)")
-    if text("vul", 8) not in ("", "none"):
-        raise LinkError("this table is always played with nobody vulnerable (v=none)")
+    dealer = text("dealer", 2) or "0"
+    if dealer not in ("0", "1", "2", "3"):
+        raise LinkError("bad dealer in link: dr must be 0, 1, 2 or 3 (North, East, South, West)")
+    vul = text("vul", 8) or "none"
+    if vul not in LINK_VULS:
+        raise LinkError("bad vulnerability in link: v must be none, ns, ew or all")
     model, play_model = text("model", 64), text("play_model", 64)
     if model and model not in bid_models():
         raise LinkError(f"bidding model {model!r} is not on this server")
@@ -1568,7 +1595,7 @@ def board_from_link(body, prev):
     game = new_board(user_seat=SEAT_LETTERS.index(seat),
                      model=model or prev["model"], play_model=play_model or prev["play_model"],
                      hints=hints, peek=prev["peek"], owners=owners,
-                     board_no=prev["board_no"] + 1)
+                     board_no=prev["board_no"] + 1, dealer=int(dealer), vul=LINK_VULS[vul])
     game["search"] = prev.get("search", engine.CONFIG.search)
 
     replay_moves(game, text("auction", 400), text("played", 64))
@@ -1609,6 +1636,146 @@ def replay_moves(game, auction, cards):
             raise LinkError(f"card {i + 1} in link, {card_name(card)} by "
                             f"{SEAT_NAMES[int(batch.to_play()[0])]}, is not legal there")
         game.pop("_batch", None)
+
+
+# -------------------------------------------------------------------- /debug
+#
+# The table with all four hands face up and the position in the address bar in
+# words a person can read and type, so a board can be set up by hand and copied
+# at any point:
+#
+#   /debug#n=AQJ32.Q8.T32.K83&e=T54.KT63.875.AJ9&s=K987.AJ.AKQJ.QT4&w=6.97542.964.7652
+#          &dealer=E&vul=ns&auction=1S-P-2C-P&play=HK-HA-H2-H3&seat=S&m=<bid model>&pm=<play model>
+#
+# - `n` `e` `s` `w`  hands as spades.hearts.diamonds.clubs, ranks AKQJT98765432
+#                    (10 reads as T), `-` or nothing for a void. A hand left out is
+#                    dealt at random from the cards nobody holds; all four out is a
+#                    random deal.
+# - `dealer`         N, E, S or W (default N).   `vul`  none, ns, ew or both (default none).
+# - `auction`        calls from the dealer joined by `-`: P, X, XX, 1C ... 7NT (1N works too).
+# - `play`           cards in play order joined by `-`, suit then rank: HK-HA-H2-H3.
+# - `seat`           your chair, N/E/S/W (default S).   `m`, `pm`  the models, as on /.
+#
+# Everything is checked like a link on /, and the board stops at the position the
+# same way. A debug game never shows hints and never starts a challenge, so it
+# cannot reach the rating or the leaderboard.
+
+DEBUG_VULS = {"none": (False, False), "-": (False, False), "ns": (True, False),
+              "ew": (False, True), "both": (True, True), "all": (True, True)}
+DEBUG_VUL_CODES = {v: k for k, v in DEBUG_VULS.items() if k in ("none", "ns", "ew", "both")}
+CALL_WORDS = {**{n: i for i, n in enumerate(NAMES)},
+              **{n[:-1]: i for i, n in enumerate(NAMES) if n.endswith("NT")},
+              "P": PASS, "PASS": PASS, "X": DOUBLE, "D": DOUBLE, "DBL": DOUBLE,
+              "XX": REDOUBLE, "R": REDOUBLE, "RDBL": REDOUBLE}
+
+
+def parse_hand(text, seat):
+    """'AQJ32.Q8.T32.K83' -> 13 card indices, or `LinkError` naming what is wrong."""
+    name = SEAT_NAMES[seat]
+    parts = text.strip().upper().replace("10", "T").split(".")
+    if len(parts) != 4:
+        raise LinkError(f"{name}'s hand needs four suits, spades.hearts.diamonds.clubs "
+                        f"(like AQJ32.Q8.T32.K83), not {text!r}")
+    cards = []
+    for s, part in enumerate(parts):
+        for ch in ("" if part == "-" else part):
+            r = RANKS.find(ch)
+            if r < 0:
+                raise LinkError(f"{name}'s {SUIT_WORDS[SUITS[s]]}s: {ch!r} is not a rank "
+                                f"(AKQJT98765432, - for a void)")
+            if s * 13 + r in cards:
+                raise LinkError(f"{name} holds the {card_text(s * 13 + r)} twice")
+            cards.append(s * 13 + r)
+    if len(cards) != 13:
+        raise LinkError(f"{name} has {len(cards)} cards, not 13")
+    return cards
+
+
+def parse_tokens(text, what, lookup):
+    """'1S-P-2C' -> indices through `lookup(token)`, or `LinkError` naming the bad one."""
+    out = []
+    for i, tok in enumerate(t for t in text.replace(",", "-").replace(" ", "-").split("-") if t):
+        v = lookup(tok.upper())
+        if v is None:
+            raise LinkError(f"{what} {i + 1} ({tok!r}) is not a "
+                            + ("call: use P, X, XX or 1C ... 7NT" if what == "call"
+                               else "card: use suit then rank, like HK or D10"))
+        out.append(v)
+    return out
+
+
+def card_word(tok):
+    tok = tok.replace("10", "T")
+    if len(tok) != 2 or tok[0] not in SUITS or tok[1] not in RANKS:
+        return None
+    return SUITS.index(tok[0]) * 13 + RANKS.index(tok[1])
+
+
+def debug_board(body, prev):
+    """A debug game dict at exactly the position in `body` (the readable link), or `LinkError`."""
+    hands, held = {}, {}
+    for seat, key in enumerate("nesw"):
+        text = link_text(body, key, 40)
+        if not text:
+            continue
+        hands[seat] = parse_hand(text, seat)
+        for c in hands[seat]:
+            if c in held:
+                raise LinkError(f"the {card_text(c)} is in both {SEAT_NAMES[held[c]]}'s "
+                                f"and {SEAT_NAMES[seat]}'s hands")
+            held[c] = seat
+    owners = np.full(52, -1, dtype=np.int64)
+    for seat, cards in hands.items():
+        owners[cards] = seat
+    rest = [s for s in range(4) if s not in hands]          # deal what nobody holds
+    free = np.flatnonzero(owners < 0)
+    owners[np.random.default_rng().permutation(free)] = np.repeat(rest, 13)
+
+    dealer = link_text(body, "dealer", 5).upper() or "N"
+    if dealer not in SEAT_LETTERS or len(dealer) != 1:
+        raise LinkError("bad dealer: it must be N, E, S or W")
+    vul = link_text(body, "vul", 5).lower() or "none"
+    if vul not in DEBUG_VULS:
+        raise LinkError("bad vul: it must be none, ns, ew or both")
+    seat = link_text(body, "seat", 5).upper() or "S"
+    if seat not in SEAT_LETTERS or len(seat) != 1:
+        raise LinkError("bad seat: it must be N, E, S or W")
+    model, play_model = link_text(body, "model", 64), link_text(body, "play_model", 64)
+    if model and model not in bid_models():
+        raise LinkError(f"bidding model {model!r} is not on this server")
+    if play_model and play_model not in play_models():
+        raise LinkError(f"card-play model {play_model!r} is not on this server")
+
+    calls = parse_tokens(link_text(body, "auction", 600), "call", CALL_WORDS.get)
+    cards = parse_tokens(link_text(body, "play", 300), "card", card_word)
+    game = new_board(user_seat=SEAT_LETTERS.index(seat),
+                     model=model or prev["model"], play_model=play_model or prev["play_model"],
+                     owners=owners, board_no=prev["board_no"] + 1,
+                     dealer=SEAT_LETTERS.index(dealer), vul=DEBUG_VULS[vul], debug=True)
+    game["search"] = prev.get("search", engine.CONFIG.search)
+    replay_moves(game, "".join(DESK.CALL_CHARS[c] for c in calls),
+                 playdesk.encode_cards(cards))
+    return game
+
+
+def hand_text(owners, seat):
+    """A whole hand as the debug link spells it, played cards included."""
+    return ".".join("".join(RANKS[c % 13] for c in range(s * 13, s * 13 + 13) if owners[c] == seat)
+                    or "-" for s in range(4))
+
+
+def debug_code(game):
+    """The readable link's pieces. `auction` and `play` are lists, one entry per call and
+    per card, so the page can cut them back to the frame it is drawing."""
+    pg = game["pg"]
+    return {
+        **{key: hand_text(game["owners"], seat) for seat, key in enumerate("nesw")},
+        "dealer": SEAT_LETTERS[game["dealer"]], "vul": DEBUG_VUL_CODES[game["vul"]],
+        "auction": [call_token(c) for c in game["calls"]],
+        "play": [card_name(c) for c in pg["played"]] if pg is not None else [],
+        "seat": SEAT_LETTERS[game["user_seat"]],
+        "m": game["model"], "pm": game["play_model"],
+    }
 
 
 # ---------------------------------------------------------------- challenge
@@ -1661,7 +1828,7 @@ def board_summary(game):
     r = result_view(game)
     ct = contract_view(game)
     return {
-        "auction": [{"seat": (DEALER + i) % 4, "name": call_name(c)}
+        "auction": [{"seat": (game["dealer"] + i) % 4, "name": call_name(c)}
                     for i, c in enumerate(game["calls"])],
         "contract": ct,
         "passed_out": r["passed_out"],
@@ -1857,6 +2024,11 @@ def register(app):
     def table_page():
         return send_from_directory(STATIC_DIR, "table.html")
 
+    @app.get("/debug")
+    def debug_page():
+        """The same page; it sees /debug in its own address and loads through /api/table/debug."""
+        return send_from_directory(STATIC_DIR, "table.html")
+
     # The phone stylesheet and what "Add to Home Screen" reads. Named one by one, so
     # nothing else in the static folder is served by accident.
     @app.get("/<any('table.mobile.css', 'table.webmanifest', 'table-icon.svg', 'table-icon-180.png'):name>")
@@ -1874,10 +2046,12 @@ def register(app):
     def api_table_new_board(game):
         body = body_of(request)
         seat = int(body.get("seat", game["user_seat"])) % 4
+        # A debug table keeps its dealer and vulnerability; / always goes back to North, nobody.
+        keep = {"dealer": game["dealer"], "vul": game["vul"], "debug": True} if game["debug"] else {}
         fresh = new_board(user_seat=seat, model=body.get("model") or game["model"],
                           play_model=body.get("play_model") or game["play_model"],
                           hints=game["hints"], peek=game["peek"],
-                          board_no=game["board_no"] + 1)
+                          board_no=game["board_no"] + 1, **keep)
         game.clear()
         game.update(fresh)
         advance(game)
@@ -1895,8 +2069,30 @@ def register(app):
         game.update(fresh)
         return jsonify(state_dump(game))
 
+    @app.post("/api/table/debug")
+    @with_game
+    def api_table_debug(game):
+        """Open the /debug page's readable link (no hands: a random deal). Stops at its position."""
+        try:
+            fresh = debug_board(body_of(request), game)
+        except LinkError as e:
+            return jsonify(error=str(e)), 400
+        game.clear()
+        game.update(fresh)
+        return jsonify(state_dump(game))
+
+    def no_debug(fn):
+        """Challenges are rated; a debug table never starts one."""
+        def wrapped(game):
+            if game.get("debug"):
+                return jsonify(error="no challenges on the debug table"), 400
+            return fn(game)
+        wrapped.__name__ = fn.__name__
+        return wrapped
+
     @app.post("/api/table/challenge")
     @with_game
+    @no_debug
     def api_table_challenge(game):
         """Start a challenge: deal the boards and play the other table now."""
         n = int_field(body_of(request), "boards")
@@ -1913,6 +2109,7 @@ def register(app):
 
     @app.post("/api/table/challenge/job")
     @with_game
+    @no_debug
     def api_table_challenge_job(game):
         n = int_field(body_of(request), "boards")
         n = CHALLENGE_BOARDS if n < 1 else min(n, CHALLENGE_MAX)
@@ -1951,6 +2148,7 @@ def register(app):
 
     @app.post("/api/table/challenge/start")
     @with_game
+    @no_debug
     def api_table_challenge_start(game):
         job = own_job()
         if job is None or job["state"] != "ready":
@@ -1968,6 +2166,7 @@ def register(app):
 
     @app.post("/api/table/challenge/load")
     @with_game
+    @no_debug
     def api_table_challenge_load(game):
         """Open a challenge link: the same deals and the same other table, from board 1."""
         try:
@@ -2013,6 +2212,8 @@ def register(app):
         body = body_of(request)
         if game.get("challenge") and any(k in body for k in ("hints", "peek", "search")):
             return jsonify(error="hints, the solver and search are fixed during a challenge"), 400
+        if game["debug"] and body.get("hints"):
+            return jsonify(error="hints are off on the debug table"), 400
         if "hints" in body:
             game["hints"] = bool(body["hints"])
         if "peek" in body:

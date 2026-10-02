@@ -129,8 +129,9 @@ class FourSeatBot:
 
     @torch.no_grad()
     def view(self, game, legal):
-        seat = len(game["calls"]) % 4
-        d = self.decide(hand_tensor(game, seat), game["calls"], 0, (False, False), legal)
+        dealer, vul = game.get("dealer", 0), game.get("vul", (False, False))
+        seat = (dealer + len(game["calls"])) % 4
+        d = self.decide(hand_tensor(game, seat), game["calls"], dealer, vul, legal)
         out, policy, q, pick = d["out"], d["policy"], d["q"], d["pick"]
         f = d["feats"][0].tolist()
         tricks = torch.softmax(out["trick_logits"][0], -1)          # (2 declarers, 5 strains, 14)
@@ -209,8 +210,9 @@ class BrlBot:
 
     @torch.no_grad()
     def view(self, game, legal):
-        seat = len(game["calls"]) % 4
-        d = self.decide(hand_tensor(game, seat), game["calls"], 0, (False, False), legal)
+        dealer, vul = game.get("dealer", 0), game.get("vul", (False, False))
+        seat = (dealer + len(game["calls"])) % 4
+        d = self.decide(hand_tensor(game, seat), game["calls"], dealer, vul, legal)
         f = d["x"][0].tolist()
         rel = ["me", "LHO", "partner", "RHO"]
         segments = [{"name": "vulnerability", "values": f[0:4]},
