@@ -99,11 +99,12 @@ class FourSeatBot:
     # ---- batched helpers, used by emergent/explain.py
     explains = True
 
-    def features(self, history, seats):
-        """(B, width) inputs for B rows, each row's own seat on turn (dealer North, no vul)."""
-        z = torch.zeros(len(history))
-        return engine.fourseat_features(self, history, torch.zeros(len(history), dtype=torch.long),
-                                        z, z, seats)
+    def features(self, history, seats, vul=(False, False)):
+        """(B, width) inputs for B rows, each row's own seat on turn (dealer North)."""
+        b = len(history)
+        return engine.fourseat_features(self, history, torch.zeros(b, dtype=torch.long),
+                                        torch.full((b,), float(vul[0])), torch.full((b,), float(vul[1])),
+                                        seats)
 
     def log_probs(self, out, mask):
         return (competitive_log_probs(out, mask) if self.competitive

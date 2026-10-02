@@ -133,9 +133,9 @@ def new_board(user_seat=2, model=None, play_model=None, hints=False, peek=False,
         "play_model": play_model if play_model in pm else engine.default_play_model(),
         "dealer": int(dealer) % 4,
         "vul": (bool(vul[0]), bool(vul[1])),
-        # /debug: all four hands face up, no hints, never a challenge or a rating.
+        # /debug: all four hands face up, never a challenge or a rating.
         "debug": bool(debug),
-        "hints": bool(hints) and not debug,
+        "hints": bool(hints),
         "peek": bool(peek),
         "search": engine.CONFIG.search,     # the page's toggle; see engine.choose_card
 
@@ -391,9 +391,14 @@ def claim(game):
 # ------------------------------------------------------------------- the view
 
 def visible_seats(game):
-    """The chairs whose cards go into the payload. Never more than the user knows."""
+    """The chairs whose cards go into the payload: what the user knows, and on /debug all four."""
+    return {0, 1, 2, 3} if game["debug"] else known_seats(game)
+
+
+def known_seats(game):
+    """The chairs the user may see at a real table. The hints read only these, on /debug too."""
     ph = phase(game)
-    if ph == "over" or game["debug"]:
+    if ph == "over":
         return {0, 1, 2, 3}
     me = game["user_seat"]
     if ph == "auction":
@@ -1038,7 +1043,19 @@ def auction_hint(game):
         "your_hand": facts,
         "has_corpus": corpus_table(game) is not None,
         "rule": rule_hint(game, net),
+        "conditions_note": conditions_note(game),
     }
+
+
+def conditions_note(game):
+    """The self-play table and the rules were measured with nobody vulnerable. Dealer is
+    no matter: both are keyed by the calls from the dealer and seats relative to it, as
+    the nets see them. Vulnerability they never saw, so say so when it is not 'none'."""
+    if game["vul"] == (False, False):
+        return None
+    return (f"This board is {VUL_NAMES[game['vul']]}. The self-play meanings and the rule of "
+            f"thumb were measured with nobody vulnerable; the net's own numbers use the real "
+            f"vulnerability.")
 
 
 # ------------------------------------------------- rule of thumb (experimental)
@@ -1404,7 +1421,7 @@ def play_hint(game):
     contracts = playdesk.contracts_of(pg)
     batch = batch_for(game)
     turn = int(batch.to_play()[0])
-    seen = visible_seats(game)
+    seen = known_seats(game)
     bot = play_models().get(game["play_model"])
     view = None if bot is None else bot.view(contracts, batch, len(pg["played"]))
     out = {
@@ -1493,9 +1510,15 @@ def _explain_worker():
         try:
             from emergent.explain import explain as run_explain
             bot = bid_models()[snapshot["model"]]
-            entry = {"status": "done",
-                     "result": run_explain(bot, snapshot, snapshot["candidates"],
-                                           snapshot["samples"])}
+            result = run_explain(bot, snapshot, snapshot["candidates"], snapshot["samples"])
+            d = snapshot["dealer"]
+            for p in result["picture"]:
+                p["seat"] = (p["seat"] + d) % 4
+            for c in result["candidates"]:
+                for line in c["lines"]:
+                    if line["declarer"] is not None:
+                        line["declarer"] = (line["declarer"] + d) % 4
+            entry = {"status": "done", "result": result}
         except Exception as exc:                        # keep the desk alive on any failure
             entry = {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
         with EXPLAIN["lock"]:
@@ -1655,10 +1678,11 @@ def replay_moves(game, auction, cards):
 # - `auction`        calls from the dealer joined by `-`: P, X, XX, 1C ... 7NT (1N works too).
 # - `play`           cards in play order joined by `-`, suit then rank: HK-HA-H2-H3.
 # - `seat`           your chair, N/E/S/W (default S).   `m`, `pm`  the models, as on /.
+# - `hints`          1 or 0, the hints toggle (left out: as the tab had it).
 #
 # Everything is checked like a link on /, and the board stops at the position the
-# same way. A debug game never shows hints and never starts a challenge, so it
-# cannot reach the rating or the leaderboard.
+# same way. The hints read only what the user's chair may see, as on /. A debug game
+# never starts a challenge, so it cannot reach the rating or the leaderboard.
 
 DEBUG_VULS = {"none": (False, False), "-": (False, False), "ns": (True, False),
               "ew": (False, True), "both": (True, True), "all": (True, True)}
@@ -1746,11 +1770,15 @@ def debug_board(body, prev):
     if play_model and play_model not in play_models():
         raise LinkError(f"card-play model {play_model!r} is not on this server")
 
+    hints = link_text(body, "hints", 5)
+    if hints not in ("", "0", "1"):
+        raise LinkError("bad hints: it must be 0 or 1")
     calls = parse_tokens(link_text(body, "auction", 600), "call", CALL_WORDS.get)
     cards = parse_tokens(link_text(body, "play", 300), "card", card_word)
     game = new_board(user_seat=SEAT_LETTERS.index(seat),
                      model=model or prev["model"], play_model=play_model or prev["play_model"],
                      owners=owners, board_no=prev["board_no"] + 1,
+                     hints=prev["hints"] if hints == "" else hints == "1", peek=prev["peek"],
                      dealer=SEAT_LETTERS.index(dealer), vul=DEBUG_VULS[vul], debug=True)
     game["search"] = prev.get("search", engine.CONFIG.search)
     replay_moves(game, "".join(DESK.CALL_CHARS[c] for c in calls),
@@ -1774,7 +1802,7 @@ def debug_code(game):
         "auction": [call_token(c) for c in game["calls"]],
         "play": [card_name(c) for c in pg["played"]] if pg is not None else [],
         "seat": SEAT_LETTERS[game["user_seat"]],
-        "m": game["model"], "pm": game["play_model"],
+        "m": game["model"], "pm": game["play_model"], "hints": int(bool(game["hints"])),
     }
 
 
@@ -2212,8 +2240,6 @@ def register(app):
         body = body_of(request)
         if game.get("challenge") and any(k in body for k in ("hints", "peek", "search")):
             return jsonify(error="hints, the solver and search are fixed during a challenge"), 400
-        if game["debug"] and body.get("hints"):
-            return jsonify(error="hints are off on the debug table"), 400
         if "hints" in body:
             game["hints"] = bool(body["hints"])
         if "peek" in body:
@@ -2324,9 +2350,15 @@ def register(app):
                         reverse=True)[:2]
         candidates = [c for _, c in ranked]
         key = (f"{game['model']}|{DESK.encode_deal(game['owners'])}|"
-               f"{''.join(DESK.CALL_CHARS[c] for c in game['calls'])}|{samples}")
+               f"{''.join(DESK.CALL_CHARS[c] for c in game['calls'])}|{samples}|"
+               f"{game['dealer']}{playdesk.vul_code(*game['vul'])}")
+        # `explain` deals from North. Turn the table so the dealer sits there (the nets see
+        # seats relative to the dealer, so nothing else changes) and turn the seats back after.
+        d = game["dealer"]
         snapshot = {"model": game["model"], "calls": list(game["calls"]),
-                    "bitmaps": game["bitmaps"], "candidates": candidates, "samples": samples}
+                    "bitmaps": np.roll(game["bitmaps"], -d, axis=0), "dealer": d,
+                    "vul": game["vul"] if d % 2 == 0 else game["vul"][::-1],
+                    "candidates": candidates, "samples": samples}
         with EXPLAIN["lock"]:
             done = EXPLAIN["jobs"].get(key)
             if done and done["status"] == "done":

@@ -414,7 +414,7 @@ table.rv th{font-size:13px; color:var(--dim); font-weight:600; text-align:left; 
 table.rv td{background:var(--neg-bg); padding:6px 10px; font-family:var(--mono)}
 table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border-radius:0 7px 7px 0}
 /* ---- /debug: the same page, all four hands up, the position spelled out in the address bar */
-.debug #hintseg, .debug #challenge, .debug #rank, .debug #chair-set{display:none}
+.debug #challenge, .debug #rank, .debug #chair-set{display:none}
 #debugbar{display:none; margin:0 0 14px; padding:10px 12px; border:1px dashed var(--pick); border-radius:12px;
   background:var(--card); font-size:14px}
 .debug #debugbar{display:block}
@@ -477,8 +477,8 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
     <label>Bidding <select id="db-m"></select></label>
     <label>Cards <select id="db-pm"></select></label>
   </div>
-  <p class="dbnote">All four hands face up, no hints, not rated. The address bar is the position; edit it to set one up:
-    <code>/debug#n=AQJ32.Q8.T32.K83&amp;e=…&amp;s=…&amp;w=…&amp;dealer=E&amp;vul=ns&amp;auction=1S-P-2C-P&amp;play=HK-HA&amp;seat=S</code>.
+  <p class="dbnote">All four hands face up, not rated; hints see only your chair's cards. The address bar is the position; edit it to set one up:
+    <code>/debug#n=AQJ32.Q8.T32.K83&amp;e=…&amp;s=…&amp;w=…&amp;dealer=E&amp;vul=ns&amp;auction=1S-P-2C-P&amp;play=HK-HA&amp;seat=S&amp;hints=1</code>.
     A hand left out is dealt at random. A new dealer or vulnerability starts the auction again.</p>
   <p id="debug-err" role="alert"></p>
 </div>
@@ -603,7 +603,7 @@ let HOLD = false;
 const PROCEEDS = /\/api\/table\/(call|card|advance|finish|new_board|restart|undo|claim|challenge(\/next|\/load)?)$/;
 let NOTICE_UNTIL = 0;          // a message about a bad link outlives the next request
 
-/* /debug is this same page: every hand face up, no hints, challenges or rating, and the
+/* /debug is this same page: every hand face up, no challenges or rating, and the
    address bar holds the position in readable words (see "the shared link" below). */
 const DEBUG = /^\/debug\/?$/.test(location.pathname);
 document.documentElement.classList.toggle("debug", DEBUG);
@@ -1189,8 +1189,11 @@ function renderAdvice(d, preview){
     return;
   }
   let out = "";
-  if(h.kind === "auction") out = preview !== undefined ? previewAdvice(h, preview) : auctionAdvice(h);
-  else {
+  if(h.kind === "auction"){
+    out = preview !== undefined ? previewAdvice(h, preview) : auctionAdvice(h);
+    // Measured with nobody vulnerable: say so on a board that is not.
+    if(h.conditions_note) out += `<p class="aside">${APPROX} ${h.conditions_note}</p>`;
+  } else {
     if(h.context) out += `<p class="aside">${h.context}</p>`;
     if(h.advice) out += `<p class="say">${h.advice}</p>`;
     if(h.finesse) out += `<p class="aside">${h.finesse.text}</p>`;
@@ -1950,7 +1953,7 @@ function linkHash(){
 }
 /* The debug page's link is the same position in words a person can read and type:
   /debug#n=<hand>&e=<hand>&s=<hand>&w=<hand>&dealer=<N|E|S|W>&vul=<none|ns|ew|both>
-        &auction=<1S-P-2C-P>&play=<HK-HA-H2>&seat=<N|E|S|W>&m=<bid model>&pm=<play model>
+        &auction=<1S-P-2C-P>&play=<HK-HA-H2>&seat=<N|E|S|W>&m=<bid model>&pm=<play model>&hints=<0|1>
 Hands are spades.hearts.diamonds.clubs with - for a void, always all thirteen cards.
 The server parses and checks it (`debug_board` in tabledesk.py); `debug_code` sends it
 back with one entry per call and per card, cut here to the frame on screen. */
@@ -1965,13 +1968,14 @@ function debugHash(){
   q.push("seat=" + c.seat);
   if(c.m) q.push("m=" + encodeURIComponent(c.m));
   if(c.pm) q.push("pm=" + encodeURIComponent(c.pm));
+  q.push("hints=" + c.hints);
   return "#" + q.join("&");
 }
 function debugBody(p, over){
   const b = {n: p.get("n") || "", e: p.get("e") || "", s: p.get("s") || "", w: p.get("w") || "",
              dealer: p.get("dealer") || "", vul: p.get("vul") || "", seat: p.get("seat") || "",
              auction: p.get("auction") || "", play: p.get("play") || "",
-             model: p.get("m") || "", play_model: p.get("pm") || ""};
+             model: p.get("m") || "", play_model: p.get("pm") || "", hints: p.get("hints") || ""};
   return Object.assign(b, over || {});
 }
 // Dealer, vul and chair from the bar: the same hands again. A new chair keeps the position;
@@ -1981,7 +1985,7 @@ function debugReload(){
   if(!c) return;
   const dealer = $("db-dealer").value, vul = $("db-vul").value, seat = $("db-seat").value;
   const keep = dealer === c.dealer && vul === c.vul;
-  const body = {n: c.n, e: c.e, s: c.s, w: c.w, dealer, vul, seat, model: c.m, play_model: c.pm,
+  const body = {n: c.n, e: c.e, s: c.s, w: c.w, dealer, vul, seat, model: c.m, play_model: c.pm, hints: String(c.hints),
                 auction: keep ? c.auction.slice(0, VIEW.calls).join("-") : "",
                 play: keep ? c.play.slice(0, VIEW.cards).join("-") : ""};
   goNow(async () => { const d = await post("/api/table/debug", body); HOLD = true; return d; });

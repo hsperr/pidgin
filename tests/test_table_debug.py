@@ -105,7 +105,6 @@ def test_debug_never_rates(client):
                 "/api/table/challenge/start", "/api/table/challenge/load"):
         r = client.post(url, json={"boards": 1}, headers=h)
         assert r.status_code == 400 and "debug" in r.json["error"], url
-    assert client.post("/api/table/hints", json={"hints": True}, headers=h).status_code == 400
     # New board stays a debug table, with its dealer and vulnerability.
     load(client, "dbg-4", dealer="W", vul="ew")
     d = client.post("/api/table/new_board", json={}, headers=h).json
@@ -135,3 +134,36 @@ def test_table_links_carry_dealer_and_vul(client):
     assert r.status_code == 400
     d = client.post("/api/table/new_board", json={}, headers={"X-Game": "dbg-6"}).json
     assert d["dealer"] == 0 and d["vul"] == "none"                        # a new board on / goes back
+
+
+def test_hints_on_the_debug_table(client):
+    h = {"X-Game": "dbg-7"}
+    d = load(client, "dbg-7", **HANDS, dealer="E", vul="ns", auction="1S", seat="S").json
+    assert not d["hints"] and d["debug_code"]["hints"] == 0 and d["your_turn"]
+    d = client.post("/api/table/hints", json={"hints": True}, headers=h).json
+    assert d["hints"] and d["debug_code"]["hints"] == 1 and d["hint"]["kind"] == "auction"
+    assert "measured with nobody vulnerable" in d["hint"]["conditions_note"]
+    assert d["me"] is None and d["challenge"] is None
+    # The hints read only South's chair, though the page shows all four hands.
+    game = bidserver.tabledesk.GAMES["dbg-7"]
+    assert bidserver.tabledesk.known_seats(game) == {2}
+    assert bidserver.tabledesk.visible_seats(game) == {0, 1, 2, 3}
+    # The readable link carries the toggle; nobody vulnerable needs no note.
+    d = load(client, "dbg-8", **HANDS, auction="1S-P", seat="S", hints="1").json
+    assert d["hints"] and d["hint"] is not None and d["hint"]["conditions_note"] is None
+    assert load(client, "dbg-8", **HANDS, hints="2").status_code == 400
+
+
+def test_rollout_turns_the_table_for_the_dealer(client):
+    """`explain` deals from North; with East dealing its seats must come back as the real ones."""
+    import time
+    h = {"X-Game": "dbg-9"}
+    load(client, "dbg-9", **HANDS, dealer="E", vul="ew", auction="1S", seat="S", hints="1")
+    r = client.post("/api/table/explain", json={"samples": 32}, headers=h).json
+    for _ in range(300):
+        if r.get("status") in ("done", "error"):
+            break
+        time.sleep(0.1)
+        r = client.get("/api/table/explain", query_string={"job": r["job"]}).json
+    assert r["status"] == "done", r
+    assert sorted(p["seat"] for p in r["result"]["picture"]) == [0, 1, 3]     # everyone but South

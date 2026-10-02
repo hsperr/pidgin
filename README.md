@@ -226,16 +226,18 @@ debug mode (`DEBUG` in the script). Bidding, play, undo, new board and the nets 
 exactly the table's. What changes:
 
 - all four hands are face up the whole time (`visible_seats`), dummy before the lead too;
-- hints, challenges, the rating and the leaderboard are hidden, and the server refuses
-  them for a debug game (`game["debug"]`): no challenge can start, so nothing is ever
+- challenges, the rating and the leaderboard are hidden, and the server refuses
+  challenges for a debug game (`game["debug"]`): none can start, so nothing is ever
   written to `players.db`, and `me` is not sent;
+- the hints toggle works as on `/`, and the hints still read only what your chair may
+  see (`known_seats`), not the four hands on screen;
 - a bar under the header picks dealer, vulnerability, your chair and both models;
 - the tab keeps its own `X-Game` (`table-game-debug`), apart from a `/` tab.
 
 The address bar always holds the position in plain words, cut to the frame on screen:
 
     /debug#n=<hand>&e=<hand>&s=<hand>&w=<hand>&dealer=<N|E|S|W>&vul=<none|ns|ew|both>
-           &auction=<calls>&play=<cards>&seat=<N|E|S|W>&m=<bid model>&pm=<play model>
+           &auction=<calls>&play=<cards>&seat=<N|E|S|W>&m=<bid model>&pm=<play model>&hints=<0|1>
     /debug#n=AQJ32.Q8.T32.K83&e=T54.KT63.875.AJ9&s=K987.AJ.AKQJ.QT4&w=6.97542.964.7652&dealer=E&vul=ns&auction=1S-P-2C-P&seat=S
 
 - hands: `spades.hearts.diamonds.clubs`, ranks `AKQJT98765432` (`10` reads as `T`),
@@ -244,7 +246,16 @@ The address bar always holds the position in plain words, cut to the frame on sc
 - `dealer` defaults to N, `vul` to none (`all` works too), `seat` to S.
 - `auction`: calls from the dealer joined by `-`: `P`, `X`, `XX`, `1C` … `7NT` (`1N` works).
 - `play`: cards in play order joined by `-`, suit then rank: `H7-HQ-HK-HA`.
+- `hints`: 1 or 0; left out, the tab keeps what it had.
 - Case does not matter on the way in; the page writes it back in this form.
+
+Hints for another dealer or vulnerability: the self-play meanings and the rule of thumb
+are keyed by the calls from the dealer with seats relative to it, as the nets see them,
+so they hold for any dealer. The "where does each call lead" rollout deals from North,
+so the table turns the board round for it and turns the seats back. Vulnerability is
+not in the corpus or the rules (both measured with nobody vulnerable): the hint carries
+`conditions_note` and the page shows it, tagged approximate. The net's own numbers, the
+play hints and the solver use the real vulnerability.
 
 It opens through `POST /api/table/debug` (`debug_board` in `tabledesk.py`), checked
 like a `/` link: 13 cards a hand, no card twice, every call and card legal in turn. A
@@ -388,7 +399,7 @@ not have. Every claim carries a tag saying where it came from:
   payload as `hint.rule` (`rule_hint`), next to and independent of the other hint
   fields, and says neutrally when the rule's call and the net's top call differ.
   Opening bids are not covered (`covered: false`). The rules were measured with
-  dealer North and nobody vulnerable, the table's own setting, and describe D
+  nobody vulnerable (dealer North; they are relative to the dealer), and describe D
   (`D_cw_s75k`); with another bidding model the card says so. Folded, the card has a
   fixed height and is hidden (not removed) when it is not the user's call.
 - **solver** — double dummy, which looks at all four hands. Off by default,

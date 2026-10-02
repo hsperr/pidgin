@@ -36,16 +36,16 @@ def sample_owners(bitmaps, actor_seat, n, rng):
 
 
 @torch.no_grad()
-def _log_probs(bot, hands, history, seat, legal_mask):
+def _log_probs(bot, hands, history, seat, legal_mask, vul=(False, False)):
     """(B, n_actions) log policy for one seat holding each sampled hand at one prefix."""
     hist = torch.as_tensor(history, dtype=torch.long)[None].expand(len(hands), -1)
-    feats = bot.features(hist, torch.full((len(hands),), seat, dtype=torch.long))
+    feats = bot.features(hist, torch.full((len(hands),), seat, dtype=torch.long), vul)
     out = bot.net(torch.as_tensor(hands), feats)
     mask = torch.as_tensor(legal_mask[:bot.net.n_actions], dtype=torch.bool)[None]
     return bot.log_probs(out, mask.expand(len(hands), -1))
 
 
-def auction_weights(bot, calls, hands, actor_seat, eps=0.02, target=0.25):
+def auction_weights(bot, calls, hands, actor_seat, eps=0.02, target=0.25, vul=(False, False)):
     """Weights over the samples, plus the effective sample size and the softening used.
 
     A confident net gives one lucky sample almost all the weight, which makes the ranking
@@ -60,7 +60,7 @@ def auction_weights(bot, calls, hands, actor_seat, eps=0.02, target=0.25):
         seat = t % 4
         if seat != actor_seat:                       # the actor's own calls carry no information
             mask = bot.mask(st)
-            lp = _log_probs(bot, hands[:, seat], calls[:t], seat, mask)
+            lp = _log_probs(bot, hands[:, seat], calls[:t], seat, mask, vul)
             flat = float(np.log(eps / max(1, int(mask[:bot.net.n_actions].sum()))))
             log_w += torch.logaddexp(lp[:, call] + float(np.log(1 - eps)),
                                      torch.full((n,), flat))
@@ -86,7 +86,7 @@ def auction_weights(bot, calls, hands, actor_seat, eps=0.02, target=0.25):
 
 
 @torch.no_grad()
-def _batch_step(bot, states, hands, live):
+def _batch_step(bot, states, hands, live, vul=(False, False)):
     """Greedy call for every live sample, one forward pass over the padded histories."""
     rows = [i for i in live]
     width = max(len(states[i].calls) for i in rows)
@@ -100,12 +100,12 @@ def _batch_step(bot, states, hands, live):
         seats[j] = st.turn
         hand[j] = torch.as_tensor(hands[i, st.turn])
         legal[j] = torch.as_tensor(bot.mask(st)[:bot.net.n_actions], dtype=torch.bool)
-    feats = bot.features(hist, seats)
+    feats = bot.features(hist, seats, vul)
     out = bot.net(hand, feats)
     return rows, bot.log_probs(out, legal).argmax(-1).tolist()
 
 
-def continuations(bot, calls, hands, weights, first_call, top=5):
+def continuations(bot, calls, hands, weights, first_call, top=5, vul=(False, False)):
     """Play the auction out after ``first_call`` on every sample; group and rank the results."""
     n = len(hands)
     states = []
@@ -118,7 +118,7 @@ def continuations(bot, calls, hands, weights, first_call, top=5):
         live = [i for i in range(n) if not states[i].ended]
         if not live:
             break
-        rows, picks = _batch_step(bot, states, hands, live)
+        rows, picks = _batch_step(bot, states, hands, live, vul)
         for i, call in zip(rows, picks):
             states[i] = states[i].apply(int(call))
     groups = {}
@@ -141,12 +141,16 @@ def continuations(bot, calls, hands, weights, first_call, top=5):
 
 @torch.no_grad()
 def explain(bot, game, candidates, samples=256, seed=0, top=5):
-    """The whole job for one position: sample, weigh, then play out each candidate call."""
+    """The whole job for one position: sample, weigh, then play out each candidate call.
+
+    North deals; `game["vul"]` (N/S, E/W) defaults to nobody. The table turns a board with
+    another dealer round before it gets here."""
     calls = list(game["calls"])
+    vul = game.get("vul", (False, False))
     actor = len(calls) % 4
     rng = np.random.default_rng(seed)
     hands = sample_owners(game["bitmaps"], actor, samples, rng)
-    weights, ess, beta = auction_weights(bot, calls, hands, actor)
+    weights, ess, beta = auction_weights(bot, calls, hands, actor, vul=vul)
     seen = torch.as_tensor(hands)[:, [(actor + k) % 4 for k in (1, 2, 3)]]
     hcp = (seen.view(samples, 3, 4, 13)[:, :, :, :4] * torch.tensor([4., 3., 2., 1.])).sum((2, 3))
     picture = [{"seat": (actor + k + 1) % 4,
@@ -155,7 +159,7 @@ def explain(bot, game, candidates, samples=256, seed=0, top=5):
                for k in range(3)]
     return {"samples": samples, "ess": round(ess, 1), "beta": beta, "picture": picture,
             "candidates": [{"call": call_name(c),
-                            "lines": continuations(bot, calls, hands, weights, c, top)}
+                            "lines": continuations(bot, calls, hands, weights, c, top, vul)}
                            for c in candidates]}
 
 
