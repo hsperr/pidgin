@@ -179,3 +179,74 @@ def test_a_lost_debug_game_reopens_from_the_address_bar(client):
     page = client.get("/debug").data.decode()
     assert 'if(DEBUG && !d.debug){ boot({hints: d.hints ? "1" : "0"}); return; }' in page
     assert "debugBody(p, over)" in page
+
+
+# ---- who plays what: by default the user holds all four chairs and the nets wait
+
+def post(client, gid, url, **body):
+    return client.post(url, json=body, headers={"X-Game": gid})
+
+
+def test_you_hold_every_chair_by_default(client):
+    d = load(client, "dbg-all", **HANDS, dealer="E", vul="ns", hints="1").json
+    assert d["user_chairs"] == [0, 1, 2, 3] and d["debug_code"]["bots"] == ""
+    assert d["view_seat"] == 2 and d["debug_code"]["seat"] == "S"
+    # Every chair calls by hand, East first; the nets never move on their own, and the
+    # hints follow the chair on turn, reading only that chair's cards.
+    for want, call in zip([1, 2, 3, 0, 1, 2, 3], ["1H", "1NT", "P", "2C", "P", "2NT", "P"]):
+        assert d["your_turn"] and d["to_play"] == want and d["user_seat"] == want
+        assert d["hint"]["kind"] == "auction" and d["hint"]["seat"] == want
+        assert d["your_hand"]["hcp"] == bidserver.tabledesk.hand_facts(
+            bidserver.tabledesk.GAMES["dbg-all"]["bitmaps"][want])["hcp"]
+        assert bidserver.tabledesk.known_seats(bidserver.tabledesk.GAMES["dbg-all"]) == {want}
+        n = len(d["auction"])
+        d = post(client, "dbg-all", "/api/table/call",
+                 call=bidserver.tabledesk.CALL_WORDS[call]).json
+        assert len(d["auction"]) == n + 1                        # nothing more than our call
+    # Undo takes back the last call, whoever made it.
+    d = post(client, "dbg-all", "/api/table/undo").json
+    assert [a["name"] for a in d["auction"]][-1] == "2NT" and d["to_play"] == 3
+
+
+def test_you_play_every_card_dummy_through_declarer(client):
+    # 1NT by South, West leads: West, then North (dummy, played by South), East, South.
+    d = load(client, "dbg-all2", **HANDS, dealer="S", auction="1NT-P-P-P", hints="1").json
+    assert d["phase"] == "play" and d["to_play"] == 3 and d["user_seat"] == 3
+    assert d["hint"]["kind"] == "play" and d["hint"]["seat"] == 3
+    order = []
+    for _ in range(4):
+        order.append((d["to_play"], d["user_seat"]))
+        assert d["your_turn"]
+        d = post(client, "dbg-all2", "/api/table/card", card=d["legal_cards"].index(True)).json
+    assert order == [(3, 3), (0, 2), (1, 1), (2, 2)]             # dummy's card is South's to pick
+    # The step button: the net makes the one card on turn, and only that.
+    n = d["trick_no"] * 4 + len(d["trick"])
+    d = post(client, "dbg-all2", "/api/table/step").json
+    assert d["trick_no"] * 4 + len(d["trick"]) == n + 1 and d["your_turn"]
+    # Play to the end: the nets take every chair.
+    d = post(client, "dbg-all2", "/api/table/finish").json
+    assert d["phase"] == "over" and d["result"] is not None
+
+
+def test_seat_and_bots_give_the_nets_chairs(client):
+    d = load(client, "dbg-one", **HANDS, dealer="E", seat="S").json        # as on /
+    assert d["user_chairs"] == [2] and d["debug_code"]["bots"] == "NEW"
+    assert [a["name"] for a in d["auction"]] == []                          # stopped at the link
+    d = post(client, "dbg-one", "/api/table/advance").json
+    assert d["auction"] and d["your_turn"] and d["to_play"] == 2           # East bid by itself
+    d = load(client, "dbg-mix", **HANDS, dealer="N", bots="EW", seat="N").json
+    assert d["user_chairs"] == [0, 2] and d["view_seat"] == 0 and d["debug_code"]["bots"] == "EW"
+    d = post(client, "dbg-mix", "/api/table/call", call=PASS).json         # North by hand
+    assert [a["seat"] for a in d["auction"]] == [0, 1] and d["to_play"] == 2   # East by the net
+    d = post(client, "dbg-mix", "/api/table/new_board").json
+    assert d["user_chairs"] == [0, 2] and d["view_seat"] == 0               # new board keeps it
+    assert load(client, "dbg-mix", bots="NESW").status_code == 400
+    assert load(client, "dbg-mix", bots="EQ").status_code == 400
+    d = load(client, "dbg-mix", bots="-", seat="E").json                    # all four, East at the bottom
+    assert d["user_chairs"] == [0, 1, 2, 3] and d["view_seat"] == 1
+
+
+def test_step_and_finish_on_the_main_table(client):
+    d = client.post("/api/table/new_board", json={}, headers={"X-Game": "dbg-main"}).json
+    assert d["user_chairs"] == [2] and d["view_seat"] == d["user_seat"] == 2
+    assert post(client, "dbg-main", "/api/table/step").status_code == 400   # /debug only

@@ -422,11 +422,27 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
 #debugbar label{display:inline-flex; gap:6px; align-items:center; color:var(--dim)}
 #debugbar select{font:inherit; font-size:14px; min-height:34px; max-width:100%; border:1px solid var(--line);
   border-radius:8px; background:var(--bg); color:var(--text); padding:2px 6px}
-#db-m, #db-pm{max-width:min(300px, 70vw)}
+#debugbar #db-m, #debugbar #db-pm{max-width:min(300px, 70vw)}   /* beats "#debugbar select" */
 #debugbar b.tag{color:var(--pick)}
 #debugbar .dbnote{margin:6px 0 0; color:var(--dim); font-size:13px}
 #debugbar .dbnote code{font-family:var(--mono); font-size:12.5px}
 #debug-err{margin:6px 0 0; color:var(--neg); font-weight:600; overflow-wrap:anywhere}
+/* The auction, kept in the panel during the play */
+details.recap{margin:0 0 10px; border:1px solid var(--line); border-radius:10px; padding:6px 10px}
+details.recap > summary{cursor:pointer; list-style:none; display:flex; flex-wrap:wrap; gap:2px 8px; align-items:baseline;
+  font-size:14px; min-height:28px}
+details.recap > summary::-webkit-details-marker{display:none}
+details.recap > summary::before{content:"▸"; color:var(--dim)}
+details.recap[open] > summary::before{content:"▾"}
+details.recap .dim{color:var(--dim); font-size:13px}
+details.recap .rline{font-family:var(--mono); font-size:13.5px; flex:1 1 100%; overflow-wrap:anywhere}
+details.recap[open] .rline{display:none}
+details.recap .aqwrap{margin-top:6px}
+details.recap .aq{font-size:15px; color:var(--text)}
+details.recap .aq th{position:static; background:none; color:var(--dim)}
+details.recap .aq td{height:24px}
+details.recap .aq td.me{background:var(--accent-bg)}
+details.recap .aq .redc{color:var(--red)}
 #debug-err:empty{display:none}
 </style>
 <link rel="stylesheet" href="/table.mobile.css" media="(max-width:640px)">
@@ -473,12 +489,17 @@ table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border
     <label>Dealer <select id="db-dealer"><option>N</option><option>E</option><option>S</option><option>W</option></select></label>
     <label>Vul <select id="db-vul"><option value="none">none</option><option value="ns">N-S</option>
       <option value="ew">E-W</option><option value="both">both</option></select></label>
-    <label>You sit <select id="db-seat"><option>N</option><option>E</option><option>S</option><option>W</option></select></label>
+    <label>You play <select id="db-seat"><option value="">all four</option><option value="N">N only</option>
+      <option value="E">E only</option><option value="S">S only</option><option value="W">W only</option>
+      <option value="custom" hidden></option></select></label>
     <label>Bidding <select id="db-m"></select></label>
     <label>Cards <select id="db-pm"></select></label>
   </div>
-  <p class="dbnote">All four hands face up, not rated; hints see only your chair's cards. The address bar is the position; edit it to set one up:
-    <code>/debug#n=AQJ32.Q8.T32.K83&amp;e=…&amp;s=…&amp;w=…&amp;dealer=E&amp;vul=ns&amp;auction=1S-P-2C-P&amp;play=HK-HA&amp;seat=S&amp;hints=1</code>.
+  <p class="dbnote">All four hands face up, not rated. You call and play for every chair the nets do not
+    (all four by default); the hints follow the chair on turn and see only what it could see. The address bar
+    is the position; edit it to set one up:
+    <code>/debug#n=AQJ32.Q8.T32.K83&amp;e=…&amp;s=…&amp;w=…&amp;dealer=E&amp;vul=ns&amp;auction=1S-P-2C-P&amp;play=HK-HA&amp;hints=1</code>.
+    Add <code>seat=S</code> to hold South only, or <code>bots=EW</code> to give the nets some chairs.
     A hand left out is dealt at random. A new dealer or vulnerability starts the auction again.</p>
   <p id="debug-err" role="alert"></p>
 </div>
@@ -600,7 +621,7 @@ const suitWord = l => ({S:"spades", H:"hearts", D:"diamonds", C:"clubs"})[l] || 
    on turn there: nothing auto-advances until the visitor presses Continue, or
    plays, or starts something new. Any of those requests releases the hold. */
 let HOLD = false;
-const PROCEEDS = /\/api\/table\/(call|card|advance|finish|new_board|restart|undo|claim|challenge(\/next|\/load)?)$/;
+const PROCEEDS = /\/api\/table\/(call|card|advance|step|finish|new_board|restart|undo|claim|challenge(\/next|\/load)?)$/;
 let NOTICE_UNTIL = 0;          // a message about a bad link outlives the next request
 
 /* /debug is this same page: every hand face up, no challenges or rating, and the
@@ -877,7 +898,10 @@ function skip(){                           // straight to whatever the server la
 }
 
 /* ------------------------------------------------ the table, you at the bottom */
-const slotOf = (d, seat) => (seat - d.user_seat + 4) % 4;   // 0 bottom, 1 left, 2 top, 3 right
+const slotOf = (d, seat) => (seat - (d.view_seat ?? d.user_seat) + 4) % 4;   // 0 bottom, 1 left, 2 top, 3 right
+// /debug with more than one chair: you act for each of them in turn, and `user_seat` is the one acting.
+const multi = d => !!(d.user_chairs && d.user_chairs.length > 1);
+const chairsText = d => d.user_chairs.length === 4 ? "all four" : d.user_chairs.map(s => SEATS[s][0]).join(" ");
 
 function seatRole(d, seat){
   if(!d.contract) return null;
@@ -908,6 +932,7 @@ function renderTable(d){
     const youPlayIt = role === "dummy" && !mine && d.role === "declarer" && d.phase === "play";
     const partnerPlaysYou = mine && d.role === "dummy" && d.phase === "play";
     const who = (mine ? "you"
+      : multi(d) ? (d.user_chairs.includes(s.seat) ? "yours" : "the net")
       : s.seat === d.partner_seat ? (youPlayIt ? "your partner" : "your partner · net") : "the net") +
       (role ? " · " + role : "") + (youPlayIt ? " · you play it" : "") +
       (partnerPlaysYou ? " · partner plays it" : "");
@@ -933,12 +958,15 @@ function renderTable(d){
   const left = ct ? `<div class="corner tl">Contract<b>${contractHTML(ct)} ${ct.declarer_name[0]}</b></div>`
                   : `<div class="corner tl">Board<b class="num">#${d.board_no}</b></div>`;
   const tw = d.tricks_won;
-  const tr = tw
+  const tr = tw && multi(d)
+    ? `<div class="corner tr">Tricks: N-S – E-W<b class="num">${tw.ns} – ${tw.ew}</b></div>`
+    : tw
     ? `<div class="corner tr">Tricks: you – them` +
       `<b class="num">${tw.mine} – ${tw.ns + tw.ew - tw.mine}</b></div>`
     : `<div class="corner tr">Dealer<b>${d.dealer_name[0]}</b></div>`;
   t.insertAdjacentHTML("beforeend", left + tr +
-    `<div class="corner bl">You sit<b>${d.user_seat_name}</b></div>` +
+    (multi(d) ? `<div class="corner bl">You play<b>${chairsText(d)}</b></div>`
+              : `<div class="corner bl">You sit<b>${d.user_seat_name}</b></div>`) +
     (ct ? `<div class="corner br">${d.phase === "over" ? "Declarer made" : "Declarer needs"}` +
           `<b class="num">${d.phase === "over" && d.result ? d.result.tricks : ct.needs}</b></div>`
         : `<div class="corner br">Your hand<b class="num">${d.your_hand.hcp} HCP</b></div>`));
@@ -1034,7 +1062,7 @@ function renderPanel(d){
   B.innerHTML = ""; A.innerHTML = "";
 
   if(d.phase === "auction"){
-    T.innerHTML = d.your_turn ? "Your call" : HOLD ? `${SEATS[d.to_play]} calls next`
+    T.innerHTML = d.your_turn ? (multi(d) ? `${SEATS[d.to_play]}'s call` : "Your call") : HOLD ? `${SEATS[d.to_play]} calls next`
                                                    : `${SEATS[d.to_play]} is thinking…`;
     H.innerHTML = !d.your_turn
       ? `${HOLD ? "Opened from a link. Press Continue to go on." : "Waiting for " + SEATS[d.to_play] + "."} ${d.to_play === d.partner_seat ? "That is your partner." : "That is an opponent."}`
@@ -1065,7 +1093,8 @@ function renderPanel(d){
     T.innerHTML = `Thirteen tricks played`;
     H.innerHTML = `${contractHTML(ct)} by ${ct.declarer_name} — the result is below.`;
   } else if(d.your_turn){
-    T.innerHTML = `Your card`;
+    T.innerHTML = multi(d) ? (d.to_play === ct.dummy ? `${ct.declarer_name} plays dummy's card`
+                                                     : `${SEATS[d.to_play]}'s card`) : `Your card`;
     H.innerHTML = role !== "declarer"
       ? `You defend ${contractHTML(ct)} by ${ct.declarer_name}. Pick a card in your hand.`
       : d.to_play === ct.dummy
@@ -1086,7 +1115,7 @@ function renderPanel(d){
   const job = role === "dummy" ? "your partner plays both hands"
             : role === "declarer" ? "you play your own hand and dummy's"
             : "you play your own hand";
-  B.innerHTML =
+  B.innerHTML = auctionRecap(d) +
     `<div class="counts">` +
     `<div class="stat"><span>Declaring side</span><b class="num">${tw.declaring}</b>` +
       `<span>of ${need} needed</span></div>` +
@@ -1094,6 +1123,8 @@ function renderPanel(d){
       `<span>of ${14-need} to beat it</span></div></div>` +
     `<div class="stat"><span>You are</span><b style="font-size:18px">${role}</b>` +
       `<span>${d.user_seat_name}, partner ${d.partner_name} — ${job}</span></div>`;
+  const rec = B.querySelector("details.recap");
+  if(rec) rec.ontoggle = () => { RECAP_OPEN = rec.open; };
 
   if(d.phase === "over" && !d.challenge){       // a challenge board is played once
     A.innerHTML = `<button id="replay">Replay this board</button>`;
@@ -1102,9 +1133,29 @@ function renderPanel(d){
   panelTools(d);
 }
 
+/* The finished auction, kept in the panel while the cards are played: one line of calls
+   as the summary, the full W N E S grid when opened. Open on a desk, closed on a phone. */
+let RECAP_OPEN = !(window.matchMedia && matchMedia("(max-width:640px)").matches);
+function auctionRecap(d){
+  if(!d.auction.length) return "";
+  const line = d.auction.map(a => a.name === "Pass" ? "P" : pretty(a.name)).join(" ");
+  return `<details class="recap"${RECAP_OPEN ? " open" : ""}><summary><b>Auction</b> ` +
+    `<span class="dim">${d.dealer_name} dealt, ${d.vul_name}</span><span class="rline">${line}</span></summary>` +
+    auctionTable(Object.assign({}, d, {auction_over: true})) + `</details>`;
+}
+
 // Undo and claim, under the panel, in every phase they apply to.
 function panelTools(d){
   const A = $("panel-actions");
+  if(d.debug && d.phase !== "over" && !d.challenge){
+    // /debug: the nets act only when asked, for the chair on turn or for every chair to the end.
+    const one = d.phase === "auction" ? "call" : "card";
+    A.insertAdjacentHTML("beforeend",
+      `<button id="db-step" title="The net makes this one ${one} for ${SEATS[d.to_play]}">Net: this ${one} ▸</button>` +
+      `<button id="db-finish" title="The nets bid and play every chair from here to the end">Nets play to the end ▸▸</button>`);
+    A.querySelector("#db-step").onclick = () => move(() => post("/api/table/step"));
+    A.querySelector("#db-finish").onclick = () => goNow(() => post("/api/table/finish"));
+  }
   if(d.phase === "play" && d.your_turn && d.can_claim){
     A.insertAdjacentHTML("beforeend", `<button id="claim" title="Your side takes every trick that is left, ` +
       `whatever the others do. The solver checks it with all four hands face up.">Claim the rest</button>`);
@@ -1968,7 +2019,11 @@ function debugHash(){
   const a = c.auction.slice(0, VIEW.calls), p = c.play.slice(0, VIEW.cards);
   if(a.length) q.push("auction=" + a.join("-"));
   if(p.length) q.push("play=" + p.join("-"));
-  q.push("seat=" + c.seat);
+  // Who plays what: nothing for "you play all four" (South at the bottom), seat=X for one
+  // chair against three nets, or bots=<chairs the nets play> with the bottom chair.
+  const others = "NESW".replace(c.seat, "");
+  if(c.bots === others) q.push("seat=" + c.seat);
+  else if(c.bots || c.seat !== "S") q.push("bots=" + (c.bots || "-"), "seat=" + c.seat);
   if(c.m) q.push("m=" + encodeURIComponent(c.m));
   if(c.pm) q.push("pm=" + encodeURIComponent(c.pm));
   q.push("hints=" + c.hints);
@@ -1977,6 +2032,7 @@ function debugHash(){
 function debugBody(p, over){
   const b = {n: p.get("n") || "", e: p.get("e") || "", s: p.get("s") || "", w: p.get("w") || "",
              dealer: p.get("dealer") || "", vul: p.get("vul") || "", seat: p.get("seat") || "",
+             bots: p.get("bots") || "",
              auction: p.get("auction") || "", play: p.get("play") || "",
              model: p.get("m") || "", play_model: p.get("pm") || "", hints: p.get("hints") || ""};
   return Object.assign(b, over || {});
@@ -1986,9 +2042,11 @@ function debugBody(p, over){
 function debugReload(){
   const c = SRV && SRV.debug_code;
   if(!c) return;
-  const dealer = $("db-dealer").value, vul = $("db-vul").value, seat = $("db-seat").value;
+  const dealer = $("db-dealer").value, vul = $("db-vul").value, pick = $("db-seat").value;
   const keep = dealer === c.dealer && vul === c.vul;
-  const body = {n: c.n, e: c.e, s: c.s, w: c.w, dealer, vul, seat, model: c.m, play_model: c.pm, hints: String(c.hints),
+  // "all four" is no seat; "N only" is that seat; an unchanged custom mix keeps its bots.
+  const who = pick === "custom" ? {seat: c.seat, bots: c.bots || "-"} : {seat: pick, bots: ""};
+  const body = {n: c.n, e: c.e, s: c.s, w: c.w, dealer, vul, ...who, model: c.m, play_model: c.pm, hints: String(c.hints),
                 auction: keep ? c.auction.slice(0, VIEW.calls).join("-") : "",
                 play: keep ? c.play.slice(0, VIEW.cards).join("-") : ""};
   goNow(async () => { const d = await post("/api/table/debug", body); HOLD = true; return d; });
@@ -1999,7 +2057,12 @@ function renderDebugBar(d){
     `<option value="${esc(m.id)}"${m.id === cur ? " selected" : ""}>${esc(m.label)}</option>`).join("");
   $("db-m").innerHTML = opts(d.models, d.model);
   $("db-pm").innerHTML = opts(d.play_models, d.play_model);
-  $("db-dealer").value = c.dealer; $("db-vul").value = c.vul; $("db-seat").value = c.seat;
+  $("db-dealer").value = c.dealer; $("db-vul").value = c.vul;
+  const custom = $("db-seat").querySelector('option[value="custom"]');
+  const pick = !c.bots ? "" : c.bots === "NESW".replace(c.seat, "") ? c.seat : "custom";
+  custom.hidden = pick !== "custom";
+  custom.textContent = "you: " + d.user_chairs.map(s => SEATS[s][0]).join(" ");
+  $("db-seat").value = pick;
 }
 if(DEBUG){
   for(const id of ["db-dealer", "db-vul", "db-seat"]) $(id).onchange = debugReload;
@@ -2066,7 +2129,7 @@ function boot(over){
         $("debug-err").textContent = `Could not open that position — ${e.message}. ` +
           `It was: ${decodeURIComponent(location.hash.slice(1)) || "(empty)"}. Here is a random board instead.`;
         return await post("/api/table/debug", debugBody(new URLSearchParams(),
-          {dealer: p.get("dealer") || "", vul: p.get("vul") || "", seat: p.get("seat") || ""}))
+          {dealer: p.get("dealer") || "", vul: p.get("vul") || "", seat: p.get("seat") || "", bots: p.get("bots") || ""}))
           .catch(() => post("/api/table/debug", {}));
       }
     });

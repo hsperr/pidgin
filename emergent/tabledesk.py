@@ -14,6 +14,7 @@ is the site's only page; the bid desk and play desk keep their APIs, not their p
     POST /api/table/card        the user's card
     POST /api/table/advance     let the nets act until it is the user's turn again
     POST /api/table/finish      let them run the rest of the deal out
+    POST /api/table/step        /debug: the nets make the one call or card on turn
     POST /api/table/undo        take back the user's last call or card
     POST /api/table/claim       claim every trick left; the solver checks and plays it out
     POST /api/table/hints       teaching on/off, solver peek on/off
@@ -117,9 +118,13 @@ def play_models():
 
 
 def new_board(user_seat=2, model=None, play_model=None, hints=False, peek=False,
-              owners=None, board_no=1, dealer=DEALER, vul=(False, False), debug=False):
+              owners=None, board_no=1, dealer=DEALER, vul=(False, False), debug=False, bots=None):
     """A fresh game dict. North deals and nobody is vulnerable unless a link or the
-    debug page says otherwise; the nets read both as real inputs either way."""
+    debug page says otherwise; the nets read both as real inputs either way.
+
+    `bots` (debug only) is the set of chairs the nets play; the user acts for every
+    other chair, and `user_seat` then follows the turn (see `follow_turn`). None, as on
+    /, means the nets play every chair but `user_seat`."""
     bm, pm = bid_models(), play_models()
     if owners is None:
         owners = deal_owners(np.random.default_rng())
@@ -128,6 +133,8 @@ def new_board(user_seat=2, model=None, play_model=None, hints=False, peek=False,
         "owners": owners,
         "bitmaps": owners_to_bitmaps(owners),
         "user_seat": int(user_seat) % 4,
+        "view_seat": int(user_seat) % 4,     # the chair at the bottom of the page
+        "bots": None if bots is None else frozenset(int(b) % 4 for b in bots),
         "calls": [],
         "model": model if model in bm else engine.default_bid_model(),
         "play_model": play_model if play_model in pm else engine.default_play_model(),
@@ -242,28 +249,53 @@ def declarer_dummy(game):
     return pg["declarer"], (pg["declarer"] + 2) % 4
 
 
+def user_chairs(game):
+    """The chairs the user acts for: `user_seat` on /, on /debug every chair the nets do not play."""
+    if game.get("bots") is None:
+        return {game["user_seat"]}
+    return {0, 1, 2, 3} - game["bots"]
+
+
+def player_of(game, seat):
+    """The chair that chooses the card for `seat`: declarer for dummy, else the seat itself."""
+    if game["pg"] is not None and seat == declarer_dummy(game)[1]:
+        return declarer_dummy(game)[0]
+    return seat
+
+
 def user_plays(game, seat):
     """Whether the user chooses the card for ``seat``, by the rules of a real table.
 
     Declarer plays both of the declaring side's hands, so a declaring user plays
     dummy's cards too, and a user who is dummy plays none: partner, the net,
     plays both hands while dummy lies face up. A defender plays their own hand.
+    On /debug the user may hold several chairs (`user_chairs`); the same rule holds.
     """
-    me = game["user_seat"]
-    if game["pg"] is None:
-        return seat == me
-    declarer, dummy = declarer_dummy(game)
-    if me == declarer:
-        return seat in (declarer, dummy)
-    if me == dummy:
-        return False
-    return seat == me
+    return player_of(game, seat) in user_chairs(game)
+
+
+def follow_turn(game):
+    """/debug with more than one chair: the user is whichever of them acts now, so the
+    hints, the "you" on the page and what may be seen follow the turn. Declarer acts
+    for dummy. At the end of the board it is the bottom chair again."""
+    chairs = user_chairs(game)
+    if len(chairs) < 2:
+        return
+    ph = phase(game)
+    if ph == "auction":
+        actor = auction_of(game).turn
+    elif ph == "play":
+        actor = player_of(game, int(batch_for(game).to_play()[0]))
+    else:
+        actor = game["view_seat"]
+    if actor in chairs or ph == "over":
+        game["user_seat"] = actor
 
 
 def user_on_turn(game):
     ph = phase(game)
     if ph == "auction":
-        return auction_of(game).turn == game["user_seat"]
+        return auction_of(game).turn in user_chairs(game)
     if ph == "play":
         return user_plays(game, int(batch_for(game).to_play()[0]))
     return False
@@ -288,29 +320,30 @@ def advance(game, limit=60):
     """
     acted = 0
     for _ in range(limit):
-        ph = phase(game)
-        if ph == "auction":
-            if auction_of(game).turn == game["user_seat"]:
-                return acted
-            call = net_call(game)
-            if call is None or not add_call(game, call):
-                return acted
-            acted += 1
-            continue
-        if ph != "play":
+        if phase(game) not in ("auction", "play") or user_on_turn(game):
             return acted
-        pg = game["pg"]
-        batch = batch_for(game)
-        if user_plays(game, int(batch.to_play()[0])):
+        if not net_act(game):
             return acted
-        card = playdesk.net_card(pg, playdesk.contracts_of(pg), batch)
-        if card is None or not playdesk.play_card(pg, card, batch):
-            return acted
-        game.pop("_batch", None)                  # `play_card` moved the batch on
         acted += 1
-        if len(pg["played"]) % 4 == 0:            # a trick just filled up
-            return acted
+        if phase(game) == "play" and len(game["pg"]["played"]) % 4 == 0 and game["pg"]["played"]:
+            return acted                          # a trick just filled up
     return acted
+
+
+def net_act(game):
+    """One call or card by the nets for the seat on turn, whoever holds it. False if none."""
+    ph = phase(game)
+    if ph == "auction":
+        call = net_call(game)
+        return call is not None and add_call(game, call)
+    if ph != "play":
+        return False
+    pg, batch = game["pg"], batch_for(game)
+    card = playdesk.net_card(pg, playdesk.contracts_of(pg), batch)
+    if card is None or not playdesk.play_card(pg, card, batch):
+        return False
+    game.pop("_batch", None)                      # `play_card` moved the batch on
+    return True
 
 
 # ------------------------------------------------------------ undo and claim
@@ -328,8 +361,8 @@ def played_seats(pg):
 def can_undo(game):
     """Something of the user's to take back. Every card the user played comes after a
     call of theirs, so one call of theirs in the auction is enough to know."""
-    me = game["user_seat"]
-    return not game.get("challenge") and any((game["dealer"] + i) % 4 == me for i in range(len(game["calls"])))
+    chairs = user_chairs(game)
+    return not game.get("challenge") and any((game["dealer"] + i) % 4 in chairs for i in range(len(game["calls"])))
 
 
 def undo(game):
@@ -351,8 +384,8 @@ def undo(game):
             del pg["played"][cut:]
             game.pop("_batch", None)
             return True
-    me = game["user_seat"]
-    mine = [i for i in range(len(game["calls"])) if (game["dealer"] + i) % 4 == me]
+    chairs = user_chairs(game)
+    mine = [i for i in range(len(game["calls"])) if (game["dealer"] + i) % 4 in chairs]
     if not mine:
         return False
     reset_calls = game["calls"][:mine[-1]]
@@ -522,6 +555,7 @@ def result_view(game):
 
 
 def state_dump(game):
+    follow_turn(game)
     ph = phase(game)
     st = auction_of(game)
     seen = visible_seats(game)
@@ -539,6 +573,7 @@ def state_dump(game):
         "phase": ph,
         "board_no": game["board_no"],
         "user_seat": me, "user_seat_name": SEAT_NAMES[me],
+        "view_seat": game["view_seat"], "user_chairs": sorted(user_chairs(game)),
         "partner_seat": (me + 2) % 4, "partner_name": SEAT_NAMES[(me + 2) % 4],
         "role": user_role(game),
         "to_play": turn,
@@ -1677,7 +1712,11 @@ def replay_moves(game, auction, cards):
 # - `dealer`         N, E, S or W (default N).   `vul`  none, ns, ew or both (default none).
 # - `auction`        calls from the dealer joined by `-`: P, X, XX, 1C ... 7NT (1N works too).
 # - `play`           cards in play order joined by `-`, suit then rank: HK-HA-H2-H3.
-# - `seat`           your chair, N/E/S/W (default S).   `m`, `pm`  the models, as on /.
+# - `seat`, `bots`   who plays what. Neither: you call and play for all four chairs and
+#                    the nets only move when asked (a step, or play to the end); South
+#                    sits at the bottom. `seat=S`: you hold South and the nets the other
+#                    three, as on /. `bots=EW` (chairs the nets play; `-` for none) with
+#                    `seat` as the bottom chair: any mix.   `m`, `pm`  the models, as on /.
 # - `hints`          1 or 0, the hints toggle (left out: as the tab had it).
 #
 # Everything is checked like a link on /, and the board stops at the position the
@@ -1761,9 +1800,21 @@ def debug_board(body, prev):
     vul = link_text(body, "vul", 5).lower() or "none"
     if vul not in DEBUG_VULS:
         raise LinkError("bad vul: it must be none, ns, ew or both")
-    seat = link_text(body, "seat", 5).upper() or "S"
-    if seat not in SEAT_LETTERS or len(seat) != 1:
+    seat = link_text(body, "seat", 5).upper()
+    if seat and (seat not in SEAT_LETTERS or len(seat) != 1):
         raise LinkError("bad seat: it must be N, E, S or W")
+    bots_text = link_text(body, "bots", 5).upper()
+    if bots_text and (bots_text != "-" and any(b not in SEAT_LETTERS for b in bots_text)):
+        raise LinkError("bad bots: the chairs the nets play, like EW, or - for none")
+    if bots_text:                                          # any mix
+        bots = {SEAT_LETTERS.index(b) for b in bots_text if b != "-"}
+    elif seat:                                             # one chair, as on /
+        bots = {0, 1, 2, 3} - {SEAT_LETTERS.index(seat)}
+    else:                                                  # every chair is yours
+        bots = set()
+    if len(bots) == 4:
+        raise LinkError("bad bots: keep at least one chair for yourself")
+    seat = seat or "S"
     model, play_model = link_text(body, "model", 64), link_text(body, "play_model", 64)
     if model and model not in bid_models():
         raise LinkError(f"bidding model {model!r} is not on this server")
@@ -1779,7 +1830,7 @@ def debug_board(body, prev):
                      model=model or prev["model"], play_model=play_model or prev["play_model"],
                      owners=owners, board_no=prev["board_no"] + 1,
                      hints=prev["hints"] if hints == "" else hints == "1", peek=prev["peek"],
-                     dealer=SEAT_LETTERS.index(dealer), vul=DEBUG_VULS[vul], debug=True)
+                     dealer=SEAT_LETTERS.index(dealer), vul=DEBUG_VULS[vul], debug=True, bots=bots)
     game["search"] = prev.get("search", engine.CONFIG.search)
     replay_moves(game, "".join(DESK.CALL_CHARS[c] for c in calls),
                  playdesk.encode_cards(cards))
@@ -1801,7 +1852,8 @@ def debug_code(game):
         "dealer": SEAT_LETTERS[game["dealer"]], "vul": DEBUG_VUL_CODES[game["vul"]],
         "auction": [call_token(c) for c in game["calls"]],
         "play": [card_name(c) for c in pg["played"]] if pg is not None else [],
-        "seat": SEAT_LETTERS[game["user_seat"]],
+        "seat": SEAT_LETTERS[game["view_seat"]],
+        "bots": "".join(SEAT_LETTERS[b] for b in sorted(game["bots"] or ())),
         "m": game["model"], "pm": game["play_model"], "hints": int(bool(game["hints"])),
     }
 
@@ -2039,6 +2091,7 @@ def with_game(fn):
             GAMES.move_to_end(gid)
             while len(GAMES) > MAX_GAMES:
                 GAMES.popitem(last=False)
+            follow_turn(GAMES[gid])
             return fn(GAMES[gid])
     wrapped.__name__ = fn.__name__
     return wrapped
@@ -2073,9 +2126,11 @@ def register(app):
     @with_game
     def api_table_new_board(game):
         body = body_of(request)
-        seat = int(body.get("seat", game["user_seat"])) % 4
-        # A debug table keeps its dealer and vulnerability; / always goes back to North, nobody.
-        keep = {"dealer": game["dealer"], "vul": game["vul"], "debug": True} if game["debug"] else {}
+        seat = int(body.get("seat", game["view_seat"])) % 4
+        # A debug table keeps its dealer, vulnerability and the nets' chairs; / always goes
+        # back to North, nobody.
+        keep = ({"dealer": game["dealer"], "vul": game["vul"], "debug": True, "bots": game["bots"]}
+                if game["debug"] else {})
         fresh = new_board(user_seat=seat, model=body.get("model") or game["model"],
                           play_model=body.get("play_model") or game["play_model"],
                           hints=game["hints"], peek=game["peek"],
@@ -2269,7 +2324,7 @@ def register(app):
     def api_table_call(game):
         if phase(game) != "auction":
             return jsonify(error="the auction is over"), 400
-        if auction_of(game).turn != game["user_seat"]:
+        if auction_of(game).turn not in user_chairs(game):
             return jsonify(error="it is not your turn to call"), 400
         call = int_field(body_of(request), "call")
         if not add_call(game, call):
@@ -2300,10 +2355,27 @@ def register(app):
         advance(game)
         return jsonify(state_dump(game))
 
+    @app.post("/api/table/step")
+    @with_game
+    def api_table_step(game):
+        """/debug: the nets make the one call or card on turn, whoever's chair it is."""
+        if not game["debug"]:
+            return jsonify(error="the nets step for you only on the debug table"), 400
+        if not net_act(game):
+            return jsonify(error="nothing for the nets to do here"), 400
+        advance(game)
+        return jsonify(state_dump(game))
+
     @app.post("/api/table/finish")
     @with_game
     def api_table_finish(game):
-        """Let the nets run the rest of the deal out, for a user who is only watching."""
+        """Let the nets run the rest of the deal out, for a user who is only watching.
+        On /debug they take every chair from here to the end, the user's too."""
+        if game["debug"]:
+            for _ in range(60 + 52):
+                if not net_act(game):
+                    break
+            return jsonify(state_dump(game))
         for _ in range(60):
             if user_on_turn(game) or phase(game) == "over":
                 break
@@ -2342,7 +2414,7 @@ def register(app):
         bot = bid_bot(game)
         if bot is None or not getattr(bot, "explains", False):
             return jsonify(error="this model cannot be rolled out"), 400
-        if phase(game) != "auction" or auction_of(game).turn != game["user_seat"]:
+        if phase(game) != "auction" or auction_of(game).turn not in user_chairs(game):
             return jsonify(error="nothing to roll out here"), 400
         samples = max(32, min(256, int((body_of(request)).get("samples", 128))))
         view, legal = bid_view(game)
