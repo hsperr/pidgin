@@ -731,6 +731,9 @@ function applySpeed(){
 }
 
 function render(d){
+  // The server lost this debug tab's game (a restart or deploy, or evicted) and dealt a plain
+  // board in its place: open the position in the address bar again, hints as just set.
+  if(DEBUG && !d.debug){ boot({hints: d.hints ? "1" : "0"}); return; }
   const fresh = !SRV || SRV.board_no !== d.board_no;
   const back = SRV && (d.auction.length < VIEW.calls || cardsIn(d) < VIEW.cards);
   SRV = d;
@@ -2048,14 +2051,14 @@ function linkBody(p){
           hints: p.get("h"), dealer: p.get("dr") || "", vul: p.get("v") || ""};
 }
 
-function boot(){
+function boot(over){
   const p = new URLSearchParams(location.hash.slice(1));
   if(DEBUG){
     // Always through the debug loader: no hands at all is a random deal. A link that does not
     // check out keeps its text on screen, next to the reason, and a random board comes up.
     return goNow(async () => {
       try {
-        const d = await post("/api/table/debug", debugBody(p));
+        const d = await post("/api/table/debug", debugBody(p, over));
         $("debug-err").textContent = "";
         HOLD = true;             // stop exactly at the position; Continue lets the nets go on
         return d;

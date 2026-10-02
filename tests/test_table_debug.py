@@ -167,3 +167,15 @@ def test_rollout_turns_the_table_for_the_dealer(client):
         r = client.get("/api/table/explain", query_string={"job": r["job"]}).json
     assert r["status"] == "done", r
     assert sorted(p["seat"] for p in r["result"]["picture"]) == [0, 1, 3]     # everyone but South
+
+
+def test_a_lost_debug_game_reopens_from_the_address_bar(client):
+    """After a restart (every deploy) the server no longer knows a /debug tab's game and
+    deals it a plain board. The page must notice (`debug` false) and reopen the position
+    in its address bar, hints as just clicked, not carry on as a / table with hands hidden."""
+    d = client.post("/api/table/hints", json={"hints": True}, headers={"X-Game": "dbg-lost"}).json
+    assert d["hints"] and not d["debug"] and d["debug_code"] is None
+    assert any(s["hidden"] for s in d["seats"])
+    page = client.get("/debug").data.decode()
+    assert 'if(DEBUG && !d.debug){ boot({hints: d.hints ? "1" : "0"}); return; }' in page
+    assert "debugBody(p, over)" in page
