@@ -52,6 +52,18 @@ PUBLIC=${PUBLIC:-$HOME/code/bridge_public}
 copy_ck "$PUBLIC/runs/box_pull/g_s2o_hi/3/ckpt_step60000.pt" hi3_s60k.pt          # +0.35 vs D, light openings
 copy_ck "$PUBLIC/runs/exp_20260930/g_s2o_hi3_lo/ckpt_step28000.pt" lo_s28k.pt     # light-opening penalty
 
+echo "==> belief net for /debug's bidding search (emergent/bidsearch.py): float16, no system head"
+BELIEF=${BELIEF:-$SRC/experiments/belief_multi/runs/r2/last.pt}
+python3 - "$BELIEF" models/belief_r2.pt <<'PY'
+import sys, torch
+ck = torch.load(sys.argv[1], map_location="cpu", weights_only=False)
+torch.save({"net": {k: v.half() for k, v in ck["net"].items() if not k.startswith("sys_head")},
+            "d": ck["args"]["d"], "layers": ck["args"]["layers"],
+            "n_sys": ck["net"]["sys_head.weight"].shape[0] // 2, "step": ck["step"],
+            "source": sys.argv[1]}, sys.argv[2])
+print(f"   {sys.argv[2]}  step {ck['step']}")
+PY
+
 echo "==> /bench analysis (frozen copies of bridge_public/tools)"
 cp "$PUBLIC/tools/weakspots.py" "$PUBLIC/tools/simplicity.py" emergent/analysis/
 

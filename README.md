@@ -39,8 +39,34 @@ Its `CONFIG` is read from the environment once, at start:
 | `PLAY_SEARCH_DEFENCE` | `all` | `off` / `lead` / `all` / `only`; declarer always searches |
 | `PLAY_SEARCH_DEFENCE_FROM` | `2` | defence searches from this trick index (the third trick) |
 
+| `BID_SEARCH_SAMPLES` | `32` | /debug bidding search: belief-sampled deals per call |
+| `BID_SEARCH_K` | `3` | candidate calls (the net's best K); `1` turns the bidding search off |
+| `BID_SEARCH_MARGIN` | `50` | points a call must beat the net's own by |
+| `BID_SEARCH_BUDGET_MS` | `2400` | wall clock cap per call; then the deals solved so far decide |
+| `BID_SEARCH_MIN_SAMPLES` | `8` | fewer solved in time: the net's own call |
+| `BID_SEARCH_PMIN` | `0.02` | smallest policy p of a candidate |
+| `BID_SEARCH_BELIEF` | `belief_r2.pt` | belief net in `models/` |
+
 /table's search toggle overrides `PLAY_SEARCH` for that game; the play desk API shows the
 plain net and never searches.
+
+### Bidding search (`/debug` only)
+
+`emergent/bidsearch.py`, a port of `bridge_new/experiments/belief_multi` (`bid_search.py`,
+the shape-first sampler of `sample_eval.py`; E57 in its NOTES.md). On `/debug`, with the
+page's search toggle on, every net call goes through `engine.search_call`; with it off, and
+on every other page and API, the net's own call. For the seat on turn: the picked bidding
+net's top K calls (p >= PMIN); N deals drawn from the belief net (`models/belief_r2.pt`, the
+r2 MLP in float16, system tags "not told"), shape first; on each deal x call the same net
+bids the auction out at all four seats; DDS scores the contract reached (doubles included).
+The net's call is left only for a mean gain over MARGIN points. Research: +0.37 IMP/board
+for g_s2o_hi3_lo with search vs brl (N 32, K 3, margin 50). One log line per search
+(`journalctl -u bridge | grep "bid search"`): candidates, mean scores, deals solved, ms.
+
+A one-contract DD solve costs 30–500 ms on the one-core droplet, so the budget usually
+decides how many deals count. The deals are seeded by the position, so asking again
+(undo) draws the same ones. The belief net loads on the first search (32 MB).
+`sync_models.sh` rebuilds it from `runs/r2/last.pt`.
 
 ## Update to the newest snapshots, then deploy
 
@@ -243,6 +269,8 @@ exactly the table's. What changes:
   call/card** (`POST /api/table/step`) lets a net make one move, **Nets play to the end**
   (`finish`) hands them every chair. `seat=S` is one chair against three nets, as on /;
   `bots=EW&seat=N` any mix (`bots=-` for none);
+- the search toggle covers the auction too: on, the nets' calls come from the bidding
+  search (see "Bidding search" above); off, the plain nets bid and play;
 - the tab keeps its own `X-Game` (`table-game-debug`), apart from a `/` tab.
 
 The address bar always holds the position in plain words, cut to the frame on screen:

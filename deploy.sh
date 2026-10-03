@@ -15,6 +15,7 @@ for manifest in models/models.json models/play_models.json; do
   python3 -c "import json,os,sys; [open(os.path.join('models', m['file'])).close() for m in json.load(open(sys.argv[1]))]" "$manifest" \
     || { echo "$manifest names a missing file"; exit 1; }
 done
+[ -f models/belief_r2.pt ] || { echo "models/belief_r2.pt missing (/debug's bidding search): ./sync_models.sh"; exit 1; }
 
 echo "==> syncing code + models to $HOST:$APP"
 ssh "$HOST" "mkdir -p $APP"
