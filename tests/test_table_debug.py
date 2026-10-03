@@ -118,6 +118,7 @@ def test_the_nets_see_dealer_and_vul(client, monkeypatch):
                         lambda bot, hand, calls, dealer=0, vul=(False, False):
                         seen.append((dealer, vul)) or real(bot, hand, calls, dealer, vul))
     load(client, "dbg-5", **HANDS, dealer="E", vul="ew", seat="S")
+    post(client, "dbg-5", "/api/table/hints", search=False)   # on: test_bidsearch.py
     seen.clear()                       # the tab's first default board bid on its own
     client.post("/api/table/advance", json={}, headers={"X-Game": "dbg-5"})
     assert seen and all(x == (1, (False, True)) for x in seen)
@@ -309,6 +310,7 @@ def test_the_nets_bid_with_the_picked_model(client, monkeypatch, bm):
     real = engine.choose_call
     monkeypatch.setattr(engine, "choose_call", lambda bot, *a, **k: used.append(bot.id) or real(bot, *a, **k))
     load(client, "dbg-use", **HANDS, dealer="E", vul="both", seat="S", model=bm)
+    post(client, "dbg-use", "/api/table/hints", search=False)  # the plain net; search: test_bidsearch.py
     used.clear()
     post(client, "dbg-use", "/api/table/advance")                    # the bot chairs
     load(client, "dbg-use", **HANDS, dealer="W", model=bm)           # all four chairs yours

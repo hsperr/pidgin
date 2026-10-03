@@ -177,12 +177,18 @@ def legal_calls(game):
 
 
 def net_call(game):
-    """The bidding bot's call for the seat on turn, or None without a model."""
+    """The bidding bot's call for the seat on turn, or None without a model.
+
+    On /debug the search toggle covers the auction too: with it on, the call comes from
+    the bidding search (emergent/bidsearch.py). Everywhere else the net's own call."""
     bot = bid_bot(game)
     if bot is None:
         return None
     seat = auction_of(game).turn
-    return engine.choose_call(bot, game["bitmaps"][seat], game["calls"], game["dealer"], game["vul"])[0]
+    args = (bot, game["bitmaps"][seat], game["calls"], game["dealer"], game["vul"])
+    if game["debug"] and engine.search_on(game.get("search")):
+        return engine.search_call(*args)
+    return engine.choose_call(*args)[0]
 
 
 def bid_view(game):

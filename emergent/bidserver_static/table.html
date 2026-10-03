@@ -630,7 +630,11 @@ let NOTICE_UNTIL = 0;          // a message about a bad link outlives the next r
    address bar holds the position in readable words (see "the shared link" below). */
 const DEBUG = /^\/debug\/?$/.test(location.pathname);
 document.documentElement.classList.toggle("debug", DEBUG);
-if(DEBUG){ document.title = "Debug a board"; document.querySelector("header h1").textContent = "Debug a board"; }
+if(DEBUG){ document.title = "Debug a board"; document.querySelector("header h1").textContent = "Debug a board";
+  // /debug only: the toggle covers the auction too (emergent/bidsearch.py)
+  document.getElementById("searchseg").title += " In debug mode it bids with search too: before a call the bot "
+    + "draws 32 deals that fit the auction, bids each out after its top three calls, scores them double dummy, "
+    + "and leaves its own call only for a clear gain."; }
 
 const GAME_KEY = DEBUG ? "table-game-debug" : "table-game";   // its own game, apart from the table's
 let GAME_ID = null;

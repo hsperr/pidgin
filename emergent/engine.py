@@ -46,6 +46,18 @@ class Config:
     # and on this box they are nearly all of the price.
     defence: str = "all"              # PLAY_SEARCH_DEFENCE: off / lead / all / only
     defence_from: int = 2             # PLAY_SEARCH_DEFENCE_FROM
+    # Bidding search (emergent/bidsearch.py), /debug only and only with the page's search
+    # toggle on. The research settings: 32 belief-sampled deals, the net's top 3 calls,
+    # leave its call only for a 50-point gain. A DD solve costs 30-500 ms on the droplet,
+    # so the budget, not the sample count, usually decides how many deals are scored;
+    # under MIN_SAMPLES solved in time the net's own call stands.
+    bid_samples: int = 32             # BID_SEARCH_SAMPLES
+    bid_k: int = 3                    # BID_SEARCH_K (1 = never search)
+    bid_margin: float = 50.0          # BID_SEARCH_MARGIN, points
+    bid_budget_ms: float = 2400.0     # BID_SEARCH_BUDGET_MS, wall clock per call
+    bid_pmin: float = 0.02            # BID_SEARCH_PMIN, smallest policy p of a candidate
+    bid_min_samples: int = 8          # BID_SEARCH_MIN_SAMPLES
+    belief: str = "belief_r2.pt"      # BID_SEARCH_BELIEF, in models/
 
     @classmethod
     def from_env(cls, env=os.environ):
@@ -56,7 +68,14 @@ class Config:
                    samples=int(env.get("PLAY_SEARCH_SAMPLES", d.samples)),
                    budget_ms=float(env.get("PLAY_SEARCH_BUDGET_MS", d.budget_ms)),
                    defence=env.get("PLAY_SEARCH_DEFENCE", d.defence),
-                   defence_from=int(env.get("PLAY_SEARCH_DEFENCE_FROM", d.defence_from)))
+                   defence_from=int(env.get("PLAY_SEARCH_DEFENCE_FROM", d.defence_from)),
+                   bid_samples=int(env.get("BID_SEARCH_SAMPLES", d.bid_samples)),
+                   bid_k=int(env.get("BID_SEARCH_K", d.bid_k)),
+                   bid_margin=float(env.get("BID_SEARCH_MARGIN", d.bid_margin)),
+                   bid_budget_ms=float(env.get("BID_SEARCH_BUDGET_MS", d.bid_budget_ms)),
+                   bid_pmin=float(env.get("BID_SEARCH_PMIN", d.bid_pmin)),
+                   bid_min_samples=int(env.get("BID_SEARCH_MIN_SAMPLES", d.bid_min_samples)),
+                   belief=env.get("BID_SEARCH_BELIEF", d.belief))
 
 
 CONFIG = Config.from_env()
@@ -141,6 +160,58 @@ def choose_call(bot, hand, calls, dealer=0, vul=(False, False)):
     score = d["policy"] or d["q"]
     order = sorted((c for c in range(N_CALLS) if legal[c]), key=lambda c: -score[c])
     return d["pick"], [(c, float(score[c])) for c in order[:4]]
+
+
+# ------------------------------------------------------------------ bidding search
+
+MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
+_BID_SEARCH = {}              # "searcher": the one BidSearch, built on first use
+_BID_SEARCH_LOCK = threading.Lock()
+
+
+def bid_searcher():
+    """The bidding searcher, its belief net loaded on first use (32 MB that only /debug
+    with search on needs). None, logged once, when the belief net is missing."""
+    with _BID_SEARCH_LOCK:
+        if "searcher" not in _BID_SEARCH:
+            from emergent import bidsearch
+            path = os.path.join(MODELS_DIR, CONFIG.belief)
+            try:
+                net, ck = bidsearch.BeliefMLP.load(path)
+                _BID_SEARCH["searcher"] = bidsearch.BidSearch(
+                    net, CONFIG.bid_samples, CONFIG.bid_k, CONFIG.bid_margin, CONFIG.bid_budget_ms,
+                    CONFIG.bid_pmin, CONFIG.bid_min_samples, dd_lock=SEARCH_LOCK)
+                bidsearch.log(f"belief net {CONFIG.belief} (step {ck.get('step')}) loaded; {CONFIG}")
+            except Exception as exc:                 # noqa: BLE001 -- the page still bids
+                bidsearch.log(f"no belief net ({exc!r}): the nets bid without search")
+                _BID_SEARCH["searcher"] = None
+        return _BID_SEARCH["searcher"]
+
+
+def search_call(bot, hand, calls, dealer=0, vul=(False, False)):
+    """The bidding search's call for the seat on turn (/debug with search on).
+
+    The bot's own greedy call whenever the search cannot help: one candidate, no belief
+    net, over budget, or any error. Every search writes one line to the log."""
+    from emergent import bidsearch
+    st = AuctionState.from_calls(list(calls), dealer=dealer)
+    if st.ended:
+        raise ValueError("the auction is already over")
+    legal = legal_calls(bot, st)
+    d = bot.decide(torch.as_tensor(np.asarray(hand), dtype=torch.float32)[None], list(calls), dealer, vul, legal)
+    if CONFIG.bid_k <= 1 or not hasattr(bot, "batch_log_probs"):
+        return d["pick"]
+    searcher = bid_searcher()
+    if searcher is None:
+        return d["pick"]
+    try:
+        call, info = searcher.choose(bot, hand, list(calls), dealer, vul, d["policy"], legal)
+    except Exception as exc:                         # noqa: BLE001 -- fall back, never fail a bid
+        bidsearch.log(f"error ({exc!r}); the net's call {d['pick']} stands")
+        return d["pick"]
+    if info is not None:
+        bidsearch.log(f"[{getattr(bot, 'id', '?')}] " + bidsearch.describe(calls, dealer, info))
+    return call
 
 
 # ------------------------------------------------------------------ card play

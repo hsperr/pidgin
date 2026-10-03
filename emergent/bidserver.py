@@ -129,6 +129,15 @@ class FourSeatBot:
                 "pick": int(probs.argmax()), "out": out, "feats": feats}
 
     @torch.no_grad()
+    def batch_log_probs(self, hands, history, dealer, vul_ns, vul_ew, seat, legal):
+        """(B, 38) log policy for B positions at once (-inf when illegal): `decide`'s
+        numbers, for the bidding search's rollouts. `history` (B, T), -1 padded."""
+        feats = engine.fourseat_features(self, history, dealer, vul_ns.float(), vul_ew.float(), seat)
+        n = self.net.n_actions
+        lp = self.log_probs(self.net(hands, feats), legal[:, :n])
+        return torch.cat((lp, torch.full((len(lp), N_CALLS - n), -torch.inf)), 1)
+
+    @torch.no_grad()
     def view(self, game, legal):
         dealer, vul = game.get("dealer", 0), game.get("vul", (False, False))
         seat = (dealer + len(game["calls"])) % 4
@@ -208,6 +217,15 @@ class BrlBot:
         mask = torch.tensor(legal[:N_CALLS])
         probs = torch.softmax(logits.masked_fill(~mask, -torch.inf), -1)
         return {"policy": probs.tolist(), "q": logits.tolist(), "pick": int(probs.argmax()), "x": x}
+
+    @torch.no_grad()
+    def batch_log_probs(self, hands, history, dealer, vul_ns, vul_ew, seat, legal):
+        """(B, 38) log policy for B positions at once (-inf when illegal); see FourSeatBot."""
+        from emergent.brl_player import encode, _PGX_TO_OURS
+        x = encode(hands, history, dealer, vul_ns.bool(), vul_ew.bool(), seat)
+        logits = torch.empty(len(x), N_CALLS)
+        logits[:, _PGX_TO_OURS] = self.net(x)
+        return torch.log_softmax(logits.masked_fill(~legal[:, :N_CALLS], -torch.inf), -1)
 
     @torch.no_grad()
     def view(self, game, legal):
