@@ -250,3 +250,113 @@ def test_step_and_finish_on_the_main_table(client):
     d = client.post("/api/table/new_board", json={}, headers={"X-Game": "dbg-main"}).json
     assert d["user_chairs"] == [2] and d["view_seat"] == d["user_seat"] == 2
     assert post(client, "dbg-main", "/api/table/step").status_code == 400   # /debug only
+
+
+# ---- the model menus: bm / pm in the readable link
+
+NEW_BID_MODELS = ("hi3_s60k", "lo_s28k")
+
+
+def test_new_bidding_models_are_listed_after_the_default(client):
+    ids = list(engine.BID_MODELS)
+    assert ids[0] == "D_cw_s75k" == engine.default_bid_model()          # / and the APIs
+    assert ids[-2:] == list(NEW_BID_MODELS)
+    d = load(client, "dbg-menu", **HANDS).json
+    assert [m["id"] for m in d["models"]] == ids
+    assert [m["id"] for m in d["play_models"]] == list(engine.PLAY_MODELS)
+
+
+def test_model_link_round_trips(client):
+    d = load(client, "dbg-bm", **HANDS, seat="S", model="lo_s28k", play_model="E48_leagueE").json
+    assert (d["model"], d["play_model"]) == ("lo_s28k", "E48_leagueE")
+    k = d["debug_code"]
+    assert (k["bm"], k["pm"]) == ("lo_s28k", "E48_leagueE") and "m" not in k
+    # What the page writes back opens the same models in a fresh tab.
+    d = load(client, "dbg-bm2", **{x: k[x] for x in "nesw"}, seat=k["seat"],
+             model=k["bm"], play_model=k["pm"]).json
+    assert (d["model"], d["play_model"]) == ("lo_s28k", "E48_leagueE")
+    # The defaults are left out of the link, and a link without them means the defaults,
+    # whatever the tab had before.
+    d = load(client, "dbg-bm2", **HANDS, seat="S").json
+    assert (d["model"], d["play_model"]) == (engine.default_bid_model(), engine.default_play_model())
+    assert (d["debug_code"]["bm"], d["debug_code"]["pm"]) == ("", "")
+    # The menus (POST /api/table/models) change the link too; new board keeps the pick.
+    d = post(client, "dbg-bm2", "/api/table/models", model="hi3_s60k", play_model="E48_leagueE").json
+    assert (d["debug_code"]["bm"], d["debug_code"]["pm"]) == ("hi3_s60k", "E48_leagueE")
+    d = post(client, "dbg-bm2", "/api/table/new_board").json
+    assert (d["model"], d["debug_code"]["bm"]) == ("hi3_s60k", "hi3_s60k")
+    page = client.get("/debug").data.decode()
+    assert 'model: p.get("bm") || p.get("m") || ""' in page             # old links' m still works
+    assert 'if(c.bm) q.push("bm="' in page
+
+
+@pytest.mark.parametrize("body,words", [
+    (dict(model="no-such-model"), "bidding model 'no-such-model' is not on this server"),
+    (dict(play_model="no-such-model"), "card-play model 'no-such-model' is not on this server"),
+])
+def test_unknown_model_ids_are_refused(client, body, words):
+    before = load(client, "dbg-unk", **HANDS, model="lo_s28k").json
+    r = load(client, "dbg-unk", **HANDS, **body)
+    assert r.status_code == 400 and words in r.json["error"]
+    # The tab's game is untouched, and the menus ignore an unknown id.
+    d = post(client, "dbg-unk", "/api/table/models", model="nope", play_model="nope").json
+    assert (d["model"], d["play_model"]) == (before["model"], before["play_model"])
+
+
+@pytest.mark.parametrize("bm", NEW_BID_MODELS)
+def test_the_nets_bid_with_the_picked_model(client, monkeypatch, bm):
+    used = []
+    real = engine.choose_call
+    monkeypatch.setattr(engine, "choose_call", lambda bot, *a, **k: used.append(bot.id) or real(bot, *a, **k))
+    load(client, "dbg-use", **HANDS, dealer="E", vul="both", seat="S", model=bm)
+    used.clear()
+    post(client, "dbg-use", "/api/table/advance")                    # the bot chairs
+    load(client, "dbg-use", **HANDS, dealer="W", model=bm)           # all four chairs yours
+    post(client, "dbg-use", "/api/table/step")                       # Net: this call
+    d = post(client, "dbg-use", "/api/table/finish").json            # Nets play to the end
+    assert d["phase"] == "over" and used and set(used) == {bm}
+    # The calls are the picked net's own greedy calls, from the real dealer and vulnerability.
+    game = bidserver.tabledesk.GAMES["dbg-use"]
+    bot = engine.BID_MODELS[bm]
+    for i, call in enumerate(game["calls"]):
+        seat = (game["dealer"] + i) % 4
+        assert engine.choose_call(bot, game["bitmaps"][seat], game["calls"][:i],
+                                  game["dealer"], game["vul"])[0] == call
+
+
+def test_the_nets_play_with_the_picked_card_model(client, monkeypatch):
+    used = []
+    real = engine.choose_card
+    monkeypatch.setattr(engine, "choose_card", lambda bot, *a, **k: used.append(bot.id) or real(bot, *a, **k))
+    post(client, "dbg-card", "/api/table/hints", search=False)
+    load(client, "dbg-card", **HANDS, dealer="S", auction="1NT-P-P-P", play_model="E48_leagueE")
+    post(client, "dbg-card", "/api/table/step")
+    post(client, "dbg-card", "/api/table/models", play_model="E48_wideleagueH")   # mid-hand switch
+    d = post(client, "dbg-card", "/api/table/finish").json
+    assert d["phase"] == "over"
+    assert used[0] == "E48_leagueE" and set(used[1:]) == {"E48_wideleagueH"}
+
+
+@pytest.mark.parametrize("bm", NEW_BID_MODELS)
+def test_a_model_without_a_corpus_still_hints(client, bm):
+    assert bm not in bidserver.CORPUS                 # no "what this call meant" table
+    h = {"X-Game": "dbg-nocorp"}
+    d = load(client, "dbg-nocorp", **HANDS, auction="1S-P", seat="S", hints="1", model=bm).json
+    assert d["model"] == bm and d["hint"]["kind"] == "auction"
+    assert d["hint"]["has_corpus"] is False and d["hint"]["corpus"] == []
+    assert client.get("/api/table/state", headers=h).status_code == 200
+    d = post(client, "dbg-nocorp", "/api/table/finish").json
+    assert d["phase"] == "over"
+    # The old bid desk API with the same model.
+    g = {"X-Game": "dbg-nocorp-desk"}
+    assert client.post("/api/model", json={"model": bm}, headers=g).status_code == 200
+    assert client.get("/api/state", headers=g).status_code == 200
+
+
+def test_the_main_table_is_unaffected(client):
+    d = client.post("/api/table/new_board", json={}, headers={"X-Game": "dbg-plain"}).json
+    assert not d["debug"] and d["debug_code"] is None
+    assert d["model"] == "D_cw_s75k" and d["play_model"] == engine.default_play_model()
+    assert d["code"]["m"] == "D_cw_s75k" and d["code"]["pm"] == d["play_model"]   # / link: m, pm
+    page = client.get("/").data.decode()
+    assert 'if(c.m) q.set("m", c.m);' in page

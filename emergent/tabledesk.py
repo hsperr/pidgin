@@ -1703,7 +1703,7 @@ def replay_moves(game, auction, cards):
 # at any point:
 #
 #   /debug#n=AQJ32.Q8.T32.K83&e=T54.KT63.875.AJ9&s=K987.AJ.AKQJ.QT4&w=6.97542.964.7652
-#          &dealer=E&vul=ns&auction=1S-P-2C-P&play=HK-HA-H2-H3&seat=S&m=<bid model>&pm=<play model>
+#          &dealer=E&vul=ns&auction=1S-P-2C-P&play=HK-HA-H2-H3&seat=S&bm=<bid model>&pm=<play model>
 #
 # - `n` `e` `s` `w`  hands as spades.hearts.diamonds.clubs, ranks AKQJT98765432
 #                    (10 reads as T), `-` or nothing for a void. A hand left out is
@@ -1716,7 +1716,11 @@ def replay_moves(game, auction, cards):
 #                    the nets only move when asked (a step, or play to the end); South
 #                    sits at the bottom. `seat=S`: you hold South and the nets the other
 #                    three, as on /. `bots=EW` (chairs the nets play; `-` for none) with
-#                    `seat` as the bottom chair: any mix.   `m`, `pm`  the models, as on /.
+#                    `seat` as the bottom chair: any mix.
+# - `bm`, `pm`       the bidding and card-play model ids (models/models.json,
+#                    models/play_models.json). Left out: the server's defaults, so a
+#                    link means the same models in any tab; the page leaves them out
+#                    when they are the defaults. An old link's `m` reads as `bm`.
 # - `hints`          1 or 0, the hints toggle (left out: as the tab had it).
 #
 # Everything is checked like a link on /, and the board stops at the position the
@@ -1827,7 +1831,8 @@ def debug_board(body, prev):
     calls = parse_tokens(link_text(body, "auction", 600), "call", CALL_WORDS.get)
     cards = parse_tokens(link_text(body, "play", 300), "card", card_word)
     game = new_board(user_seat=SEAT_LETTERS.index(seat),
-                     model=model or prev["model"], play_model=play_model or prev["play_model"],
+                     model=model or engine.default_bid_model(),
+                     play_model=play_model or engine.default_play_model(),
                      owners=owners, board_no=prev["board_no"] + 1,
                      hints=prev["hints"] if hints == "" else hints == "1", peek=prev["peek"],
                      dealer=SEAT_LETTERS.index(dealer), vul=DEBUG_VULS[vul], debug=True, bots=bots)
@@ -1845,7 +1850,8 @@ def hand_text(owners, seat):
 
 def debug_code(game):
     """The readable link's pieces. `auction` and `play` are lists, one entry per call and
-    per card, so the page can cut them back to the frame it is drawing."""
+    per card, so the page can cut them back to the frame it is drawing. `bm` and `pm` are
+    "" for the default models, which the link leaves out."""
     pg = game["pg"]
     return {
         **{key: hand_text(game["owners"], seat) for seat, key in enumerate("nesw")},
@@ -1854,7 +1860,9 @@ def debug_code(game):
         "play": [card_name(c) for c in pg["played"]] if pg is not None else [],
         "seat": SEAT_LETTERS[game["view_seat"]],
         "bots": "".join(SEAT_LETTERS[b] for b in sorted(game["bots"] or ())),
-        "m": game["model"], "pm": game["play_model"], "hints": int(bool(game["hints"])),
+        "bm": "" if game["model"] == engine.default_bid_model() else game["model"],
+        "pm": "" if game["play_model"] == engine.default_play_model() else game["play_model"],
+        "hints": int(bool(game["hints"])),
     }
 
 

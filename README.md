@@ -53,7 +53,8 @@ The unit still passes `ck.pt` to `create_app`; that argument is ignored now.
 ## Models
 
 `models/models.json` lists what the dropdown shows; the first entry is the
-default. Kept: D (default), E46 and brl. Two families are supported:
+default. Kept: D (default), E46, brl, and two light-opening experiments from
+`~/code/bridge_public` for `/debug` (`hi3_s60k`, `lo_s28k`; no corpus). Two families are supported:
 
 - bridgezero four-seat checkpoints (D, E46), copied without the critic. E46 comes
   from `sync_models.sh` (edit its `copy` lines to add runs); D was trained in
@@ -231,7 +232,11 @@ exactly the table's. What changes:
   written to `players.db`, and `me` is not sent;
 - the hints toggle works as on `/`, and the hints still read only what your chair may
   see (`known_seats`), not the four hands on screen;
-- a bar under the header picks dealer, vulnerability, your chair and both models;
+- a bar under the header picks dealer, vulnerability, your chair and both models
+  (**Bidding**: every entry of `models/models.json`; **Cards**: `play_models.json`).
+  The nets in the bot chairs, the step and the play to the end use the picked
+  models; the teaching rules stay D's (a note says so), and a model without a
+  `corpus_<id>.json` just has no "what this call meant" table;
 - who plays what: with no `seat` you call and play for all four chairs (declarer picks
   dummy's card) and the nets wait; `user_seat` follows the chair acting, so the hints
   and "you" are that chair's, while `view_seat` stays at the bottom. **Net: this
@@ -243,7 +248,7 @@ exactly the table's. What changes:
 The address bar always holds the position in plain words, cut to the frame on screen:
 
     /debug#n=<hand>&e=<hand>&s=<hand>&w=<hand>&dealer=<N|E|S|W>&vul=<none|ns|ew|both>
-           &auction=<calls>&play=<cards>&seat=<N|E|S|W>&m=<bid model>&pm=<play model>&hints=<0|1>
+           &auction=<calls>&play=<cards>&seat=<N|E|S|W>&bm=<bid model>&pm=<play model>&hints=<0|1>
     /debug#n=AQJ32.Q8.T32.K83&e=T54.KT63.875.AJ9&s=K987.AJ.AKQJ.QT4&w=6.97542.964.7652&dealer=E&vul=ns&auction=1S-P-2C-P&seat=S
 
 - hands: `spades.hearts.diamonds.clubs`, ranks `AKQJT98765432` (`10` reads as `T`),
@@ -253,6 +258,10 @@ The address bar always holds the position in plain words, cut to the frame on sc
 - `auction`: calls from the dealer joined by `-`: `P`, `X`, `XX`, `1C` … `7NT` (`1N` works).
 - `play`: cards in play order joined by `-`, suit then rank: `H7-HQ-HK-HA`.
 - `hints`: 1 or 0; left out, the tab keeps what it had.
+- `bm`, `pm`: bidding and card-play model ids, e.g. `bm=lo_s28k&pm=E48_leagueE`. Left
+  out, the defaults (first entries of the manifests), so a link means the same models
+  in any tab; the page leaves them out for the defaults. An old link's `m` reads as `bm`.
+  An id the server does not have is a 400 like any bad field.
 - Case does not matter on the way in; the page writes it back in this form.
 
 Hints for another dealer or vulnerability: the self-play meanings and the rule of thumb

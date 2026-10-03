@@ -500,6 +500,8 @@ details.recap .aq .redc{color:var(--red)}
     is the position; edit it to set one up:
     <code>/debug#n=AQJ32.Q8.T32.K83&amp;e=…&amp;s=…&amp;w=…&amp;dealer=E&amp;vul=ns&amp;auction=1S-P-2C-P&amp;play=HK-HA&amp;hints=1</code>.
     Add <code>seat=S</code> to hold South only, or <code>bots=EW</code> to give the nets some chairs.
+    The two model menus set <code>bm=</code> (bidding) and <code>pm=</code> (cards); the nets in every
+    chair, the step and the play to the end use them; the teaching rules stay D's.
     A hand left out is dealt at random. A new dealer or vulnerability starts the auction again.</p>
   <p id="debug-err" role="alert"></p>
 </div>
@@ -2007,8 +2009,10 @@ function linkHash(){
 }
 /* The debug page's link is the same position in words a person can read and type:
   /debug#n=<hand>&e=<hand>&s=<hand>&w=<hand>&dealer=<N|E|S|W>&vul=<none|ns|ew|both>
-        &auction=<1S-P-2C-P>&play=<HK-HA-H2>&seat=<N|E|S|W>&m=<bid model>&pm=<play model>&hints=<0|1>
+        &auction=<1S-P-2C-P>&play=<HK-HA-H2>&seat=<N|E|S|W>&bm=<bid model>&pm=<play model>&hints=<0|1>
 Hands are spades.hearts.diamonds.clubs with - for a void, always all thirteen cards.
+`bm` and `pm` are left out for the default models (the server sends them as ""); an old
+link's `m` still reads as `bm`.
 The server parses and checks it (`debug_board` in tabledesk.py); `debug_code` sends it
 back with one entry per call and per card, cut here to the frame on screen. */
 function debugHash(){
@@ -2024,7 +2028,7 @@ function debugHash(){
   const others = "NESW".replace(c.seat, "");
   if(c.bots === others) q.push("seat=" + c.seat);
   else if(c.bots || c.seat !== "S") q.push("bots=" + (c.bots || "-"), "seat=" + c.seat);
-  if(c.m) q.push("m=" + encodeURIComponent(c.m));
+  if(c.bm) q.push("bm=" + encodeURIComponent(c.bm));
   if(c.pm) q.push("pm=" + encodeURIComponent(c.pm));
   q.push("hints=" + c.hints);
   return "#" + q.join("&");
@@ -2034,7 +2038,7 @@ function debugBody(p, over){
              dealer: p.get("dealer") || "", vul: p.get("vul") || "", seat: p.get("seat") || "",
              bots: p.get("bots") || "",
              auction: p.get("auction") || "", play: p.get("play") || "",
-             model: p.get("m") || "", play_model: p.get("pm") || "", hints: p.get("hints") || ""};
+             model: p.get("bm") || p.get("m") || "", play_model: p.get("pm") || "", hints: p.get("hints") || ""};
   return Object.assign(b, over || {});
 }
 // Dealer, vul and chair from the bar: the same hands again. A new chair keeps the position;
@@ -2046,7 +2050,7 @@ function debugReload(){
   const keep = dealer === c.dealer && vul === c.vul;
   // "all four" is no seat; "N only" is that seat; an unchanged custom mix keeps its bots.
   const who = pick === "custom" ? {seat: c.seat, bots: c.bots || "-"} : {seat: pick, bots: ""};
-  const body = {n: c.n, e: c.e, s: c.s, w: c.w, dealer, vul, ...who, model: c.m, play_model: c.pm, hints: String(c.hints),
+  const body = {n: c.n, e: c.e, s: c.s, w: c.w, dealer, vul, ...who, model: c.bm, play_model: c.pm, hints: String(c.hints),
                 auction: keep ? c.auction.slice(0, VIEW.calls).join("-") : "",
                 play: keep ? c.play.slice(0, VIEW.cards).join("-") : ""};
   goNow(async () => { const d = await post("/api/table/debug", body); HOLD = true; return d; });
@@ -2129,7 +2133,8 @@ function boot(over){
         $("debug-err").textContent = `Could not open that position — ${e.message}. ` +
           `It was: ${decodeURIComponent(location.hash.slice(1)) || "(empty)"}. Here is a random board instead.`;
         return await post("/api/table/debug", debugBody(new URLSearchParams(),
-          {dealer: p.get("dealer") || "", vul: p.get("vul") || "", seat: p.get("seat") || "", bots: p.get("bots") || ""}))
+          {dealer: p.get("dealer") || "", vul: p.get("vul") || "", seat: p.get("seat") || "", bots: p.get("bots") || "",
+           model: p.get("bm") || p.get("m") || "", play_model: p.get("pm") || ""}))
           .catch(() => post("/api/table/debug", {}));
       }
     });

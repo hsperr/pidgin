@@ -35,8 +35,8 @@ mkdir -p emergent/teaching
 cp "$SRC/experiments/teaching_D/situations.py" "$SRC/experiments/teaching_D/rules.json" emergent/teaching/
 
 echo "==> snapshots"
-copy() {  # copy <run>/<file> <name>: actor weights only, no critic
-  python3 - "$SRC/runs/$1" "models/$2" <<'PY'
+copy_ck() {  # copy_ck <checkpoint> <name>: actor weights only, no critic
+  python3 - "$1" "models/$2" <<'PY'
 import sys, torch
 ck = torch.load(sys.argv[1], map_location="cpu", weights_only=False)
 ck.pop("critic", None)
@@ -44,10 +44,15 @@ torch.save(ck, sys.argv[2])
 print(f"   {sys.argv[2]}  step {ck.get('step')}")
 PY
 }
+copy() { copy_ck "$SRC/runs/$1" "$2"; }   # copy <run>/<file> <name>, from bridge_new
 copy E46_brlstyle_league_l1.0_40k/ckpt_step40000.pt E46_s40k.pt   # +0.89 IMP/board vs E28 s50k
 
-echo "==> /bench analysis (frozen copies of bridge_public/tools)"
+echo "==> bidding snapshots from bridge_public (the light-opening runs; /debug's menu)"
 PUBLIC=${PUBLIC:-$HOME/code/bridge_public}
+copy_ck "$PUBLIC/runs/box_pull/g_s2o_hi/3/ckpt_step60000.pt" hi3_s60k.pt          # +0.35 vs D, light openings
+copy_ck "$PUBLIC/runs/exp_20260930/g_s2o_hi3_lo/ckpt_step28000.pt" lo_s28k.pt     # light-opening penalty
+
+echo "==> /bench analysis (frozen copies of bridge_public/tools)"
 cp "$PUBLIC/tools/weakspots.py" "$PUBLIC/tools/simplicity.py" emergent/analysis/
 
 echo "==> card play desk"

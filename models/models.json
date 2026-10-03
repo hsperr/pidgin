@@ -14,5 +14,15 @@
   "file": "brl_fsp_weights.npz",
   "family": "brl",
   "label": "brl FSP — external (Kita et al. 2024, +1.24 vs WBridge5)"
+ },
+ {
+  "id": "hi3_s60k",
+  "file": "hi3_s60k.pt",
+  "label": "g_s2o_hi stage 3 (step 60000) — strongest vs D (+0.35 val), but light/destructive openings (seat-1 non-vul 0–7 HCP opens ~64%)"
+ },
+ {
+  "id": "lo_s28k",
+  "file": "lo_s28k.pt",
+  "label": "g_s2o_hi3_lo (step 28000) — light-opening penalty; @18k: +0.36 vs D, −0.17 vs brl, −0.04 vs DD punisher; light openings ~15%"
  }
 ]
