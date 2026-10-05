@@ -31,7 +31,7 @@ from flask import Response, jsonify, request
 
 from bridgezero.bridge.auction import AuctionState
 from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
-from emergent import engine, playdesk
+from emergent import engine, playdesk, teams
 from emergent.deck import RANKS, SUITS, call_token, card_name, trick_best
 
 DESK = None                      # the live bid desk module, set by load()
@@ -401,8 +401,20 @@ def register(app):
     @app.get("/apis/brill/")
     def api_brill_root():
         return jsonify(ok=True, api="Brill Seat Robot API (BEN-compatible)",
+                       models=list(teams.TEAMS), default_model=teams.default_team(),
                        bid_models=list(engine.BID_MODELS), play_models=list(engine.PLAY_MODELS),
                        endpoints=["/apis/brill/bid", "/apis/brill/lead", "/apis/brill/play"])
+
+    def brill_team(a):
+        """The team `model` (or `model_id`) names, or the default team; None: the single models."""
+        mid = a.get("model") or a.get("model_id")
+        if mid in teams.TEAMS:
+            return teams.TEAMS[mid]
+        if mid is None and teams.default_team():
+            return teams.TEAMS[teams.default_team()]
+        if a.get("model_id"):
+            raise ApiError(f"unknown model_id {mid!r}; known: {', '.join(teams.TEAMS)}")
+        return None
 
     def brill_common(a):
         seat = parse_seat(a.get("seat", ""), "seat")
@@ -423,9 +435,19 @@ def register(app):
             if (dealer + len(calls)) % 4 != seat:
                 raise ApiError(f"seat {SEATS[seat]} disagrees with dealer + ctx "
                                f"({SEATS[(dealer + len(calls)) % 4]} is to call)")
-            mid, bot = bid_model(request.args.get("model"))
-            call, top = api_call(bot, hand, calls, dealer, vul)
-            text, alert = meaning(mid, calls, call)
+            team = brill_team(request.args)
+            if team is not None:
+                if check_auction(calls).ended:
+                    raise ApiError("the auction is already over")
+                bitmap = np.zeros(52, dtype=np.float32)
+                bitmap[hand] = 1.0
+                call, top = teams.team_call(team, bitmap, calls, dealer, vul)
+                text, alert = meaning(getattr(team.bid, "id", ""), calls, call)
+                mid = team.id
+            else:
+                mid, bot = bid_model(request.args.get("model"))
+                call, top = api_call(bot, hand, calls, dealer, vul)
+                text, alert = meaning(mid, calls, call)
         except ApiError as exc:
             return error(str(exc))
         return jsonify(bid=bid_token(call, "brill"), alert=alert, explanation=text,
@@ -445,7 +467,11 @@ def register(app):
             if not lead and not played:
                 raise ApiError("/play needs 'played'; the opening lead is /lead")
             dummy = parse_hand(a["dummy"], "dummy") if a.get("dummy") else None
-            mid, bot = play_model(a.get("play_model"))
+            team = brill_team(a)
+            if team is not None:
+                mid, bot = team.id, team.play
+            else:
+                mid, bot = play_model(a.get("play_model"))
             card, top = api_card(bot, seat=seat, hand=hand, dummy=dummy, played=played,
                                  calls=calls, dealer=dealer, vul=vul)
         except ApiError as exc:

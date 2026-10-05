@@ -126,6 +126,30 @@ Dealer and vulnerability are real inputs here (the desks fix North / nobody).
 
     python3 -m pytest -q tests/test_apis.py      # Brill's §9 checklist + robot.php, full boards
 
+### Teams and the Docker image (`model=PidginV1|BRL|PidginV2`)
+
+`models/teams.json` names three bots, each a bidding net + bidding search on/off + a card player,
+picked on `/apis/brill/{bid,lead,play}` with `model=<id>` (or `model_id=<id>`); `GET /apis/brill/`
+lists them under `models`. Loaded only with `BRILL_TEAMS=1`; `BRILL_DEFAULT_MODEL` answers
+requests that name none. Code: `emergent/teams.py`, B2g play net in `emergent/playq.py`.
+
+| id | bidding | card play |
+|---|---|---|
+| PidginV1 | D_cw_s75k, no search | E48 wide league H + PIMC (as on the site) |
+| BRL | brl FSP, no search | B2g Q-net + PIMC, E48 belief layouts |
+| PidginV2 | g_s2o_hi3_lo s40k (`pidginv2_bid_s40000.pt`) + bidding search, no clock | B2g Q-net + PIMC, E48 belief layouts |
+
+Measured (4,000 boards): PidginV2 vs PidginV1 +0.33 ± 0.20 IMP/board. B2g is
+`play_B2g_s540k.pt`, weights only, from `bridge_public/runs/play_q/B2g_box/ckpt_step540000.pt`.
+All answers are deterministic (bidding search scores all 32 deals; card search seeded by the view).
+
+    docker build -t pidgin-brill .                 # amd64 too: docker buildx build --platform linux/amd64 ...
+    docker run --rm -p 8080:8080 pidgin-brill      # http://localhost:8080/apis/brill/
+    python3 -m pytest -q tests/test_teams.py       # one full board per team, model_id, determinism
+
+A full board takes ~4-6 s (PidginV1, BRL) and ~15 s (PidginV2, the bidding search) on an M-series
+Mac; ~1.2 GB RAM.
+
 ## Why this call (the section under the bidding box)
 
 Three parts, all from the deployed net alone:

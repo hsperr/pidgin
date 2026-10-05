@@ -37,7 +37,7 @@ from bridgezero.bridge.scoring import (contract_score, dd_par_score, own_contrac
 from bridgezero.contract.environment import AUCTION_FEATURES
 from bridgezero.fourseat.model import (competitive_log_probs, load_fourseat_checkpoint,
                                        policy_log_probs)
-from emergent import apis, bench, engine, playdesk, tabledesk
+from emergent import apis, bench, engine, playdesk, tabledesk, teams
 from emergent.deck import (CALL_CHARS, HCP_W, N_CALLS, NAMES, RANKS, SEAT_NAMES, SUITS,
                            TRUMP_TO_BID_STRAIN, call_name, call_token, deal_owners,
                            decode_deal, encode_deal, owners_to_bitmaps, owners_to_pbn)
@@ -580,6 +580,8 @@ def create_app(ckpt=None):
     load_models()
     load_corpus()
     playdesk.load_models()
+    if teams.enabled():
+        teams.load_teams()
     tabledesk.load(sys.modules[__name__])
     apis.load(sys.modules[__name__])
     return app
@@ -594,12 +596,16 @@ def main():
     load_models()
     load_corpus()
     playdesk.load_models()
+    if teams.enabled():
+        teams.load_teams()
     tabledesk.load(sys.modules[__name__])
     apis.load(sys.modules[__name__])
     for b in MODELS.values():
         print(f"  {b.id:10s} step {b.step}  {b.info}")
     for b in playdesk.MODELS.values():
         print(f"  {b.id:10s} play    {b.info}")
+    for t in teams.TEAMS.values():
+        print(f"  {t.id:10s} team    {t.label}")
     print(f"open http://{a.host}:{a.port}   (the table; /table works too)")
     app.run(host=a.host, port=a.port, debug=False)
 

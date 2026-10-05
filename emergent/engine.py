@@ -276,6 +276,8 @@ def choose_card(bot, contracts, batch, search=None, seed=None):
     `seat_free_sampler`) and all CONFIG.samples layouts, with no clock to stop early.
     Without it the searcher's dice run on from the last request and the budget applies.
     """
+    if getattr(bot, "family", None) == "playq":            # B2g: its own values, see playq.py
+        return bot.choose_card(contracts, batch, search, seed)
     probs, _, _ = card_policy(bot, contracts, batch)
     legal = batch.legal()[0]
     card = int(probs.argmax())
