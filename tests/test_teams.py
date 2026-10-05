@@ -3,7 +3,6 @@
     python3 -m pytest -q tests/test_teams.py
 """
 
-import os
 import sys
 import time
 from pathlib import Path
@@ -31,9 +30,17 @@ class WithModel:
 
 @pytest.fixture(scope="module")
 def client():
-    os.environ["BRILL_TEAMS"] = "1"
     bidserver.create_app()
     return bidserver.app.test_client()
+
+
+def test_teams_load_on_first_use(client):
+    q = {"seat": "N", "dealer": "N", "vul": "None", "ctx": "", "hand": hand_text(deal(3)[0])}
+    teams.TEAMS.clear()
+    assert client.get("/apis/brill/bid", query_string=q).json["model"] not in IDS   # no default: old path
+    assert not teams.TEAMS
+    assert client.get("/apis/brill/bid", query_string={**q, "model": "BRL"}).json["model"] == "BRL"
+    assert list(teams.TEAMS) == ["BRL"]
 
 
 def test_root_lists_the_teams(client):

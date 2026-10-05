@@ -130,8 +130,8 @@ Dealer and vulnerability are real inputs here (the desks fix North / nobody).
 
 `models/teams.json` names three bots, each a bidding net + bidding search on/off + a card player,
 picked on `/apis/brill/{bid,lead,play}` with `model=<id>` (or `model_id=<id>`); `GET /apis/brill/`
-lists them under `models`. Loaded only with `BRILL_TEAMS=1`; `BRILL_DEFAULT_MODEL` answers
-requests that name none. Code: `emergent/teams.py`, B2g play net in `emergent/playq.py`.
+lists them under `models`. A team loads on the first request that names it; `BRILL_DEFAULT_MODEL`
+(unset on the public site) answers requests that name none. Code: `emergent/teams.py`, B2g play net in `emergent/playq.py`.
 
 | id | bidding | card play |
 |---|---|---|

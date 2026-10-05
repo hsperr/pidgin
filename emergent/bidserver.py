@@ -580,8 +580,7 @@ def create_app(ckpt=None):
     load_models()
     load_corpus()
     playdesk.load_models()
-    if teams.enabled():
-        teams.load_teams()
+    teams.load_manifest()
     tabledesk.load(sys.modules[__name__])
     apis.load(sys.modules[__name__])
     return app
@@ -596,16 +595,15 @@ def main():
     load_models()
     load_corpus()
     playdesk.load_models()
-    if teams.enabled():
-        teams.load_teams()
+    teams.load_manifest()
     tabledesk.load(sys.modules[__name__])
     apis.load(sys.modules[__name__])
     for b in MODELS.values():
         print(f"  {b.id:10s} step {b.step}  {b.info}")
     for b in playdesk.MODELS.values():
         print(f"  {b.id:10s} play    {b.info}")
-    for t in teams.TEAMS.values():
-        print(f"  {t.id:10s} team    {t.label}")
+    for m in teams.MANIFEST.values():
+        print(f"  {m['id']:10s} team    {m.get('label', '')}  (loads on first use)")
     print(f"open http://{a.host}:{a.port}   (the table; /table works too)")
     app.run(host=a.host, port=a.port, debug=False)
 

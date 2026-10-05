@@ -1,8 +1,8 @@
 """Teams: a bidding net, bidding search on or off, and a card player, served under one model id.
 
 `models/teams.json` lists them; the Brill API's `model=<id>` (or `model_id=<id>`) picks one for
-/bid, /lead and /play alike. Loaded at start only when `BRILL_TEAMS=1` (the Docker image sets it),
-so the public site's memory stays as it was.
+/bid, /lead and /play alike. A team loads on the first request that names it, so a team nobody
+asks for costs no memory, and the nets it shares with the desks are loaded once.
 
 Every team answer is deterministic, as the Brill API's other answers are: the bidding search draws
 its deals from a seed of the position and scores all of them (no clock), and the card search is
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections import OrderedDict
+import threading
 from dataclasses import dataclass
 
 import numpy as np
@@ -22,7 +22,9 @@ from bridgezero.bridge.auction import AuctionState
 from emergent import engine
 from emergent.deck import N_CALLS
 
-TEAMS: "OrderedDict[str, Team]" = OrderedDict()
+MANIFEST: dict[str, dict] = {}   # id -> its teams.json entry, read at start
+TEAMS: dict[str, "Team"] = {}     # id -> Team, filled on first use
+_LOCK = threading.Lock()
 
 
 @dataclass
@@ -34,17 +36,36 @@ class Team:
     play: object           # playdesk.PlayBot or playq.QPlayBot
 
 
-def enabled(env=os.environ):
-    return env.get("BRILL_TEAMS", "0") not in ("0", "", "false", "off")
-
-
-def load_teams(models_dir=engine.MODELS_DIR):
-    """Fill TEAMS from teams.json, reusing any net the desks already loaded from the same file."""
-    from emergent import bidserver, playdesk, playq
+def load_manifest(models_dir=engine.MODELS_DIR):
+    """Read teams.json; no net loads here."""
     with open(os.path.join(models_dir, "teams.json")) as fh:
-        manifest = json.load(fh)
+        MANIFEST.clear()
+        MANIFEST.update((m["id"], m) for m in json.load(fh))
+
+
+def get(team_id, models_dir=engine.MODELS_DIR):
+    """The team `team_id`, loading it on first use (reusing any net already loaded from the same
+    file); None if teams.json has no such id."""
+    if team_id not in MANIFEST:
+        return None
+    with _LOCK:
+        if team_id not in TEAMS:
+            TEAMS[team_id] = _load(MANIFEST[team_id], models_dir)
+        return TEAMS[team_id]
+
+
+def _loaded_files():
     bids = {b.file: b for b in engine.BID_MODELS.values() if getattr(b, "file", None)}
     plays = {b.file: b for b in engine.PLAY_MODELS.values() if getattr(b, "file", None)}
+    for t in TEAMS.values():
+        bids.setdefault(t.bid.file, t.bid)
+        plays.setdefault(t.play.file, t.play)
+    return bids, plays
+
+
+def _load(m, models_dir):
+    from emergent import bidserver, playdesk, playq
+    bids, plays = _loaded_files()
 
     def bid_bot(file, family):
         if file not in bids:
@@ -60,23 +81,21 @@ def load_teams(models_dir=engine.MODELS_DIR):
             plays[file].file = file
         return plays[file]
 
-    for m in manifest:
-        if m.get("play_family") == "playq":
-            key = f"{m['play']}+{m['sampler']}"
-            if key not in plays:
-                plays[key] = playq.QPlayBot(os.path.join(models_dir, m["play"]), play_bot(m["sampler"]).net)
-            play = plays[key]
-        else:
-            play = play_bot(m["play"])
-        TEAMS[m["id"]] = Team(m["id"], m.get("label", ""), bid_bot(m["bid"], m.get("bid_family")),
-                              bool(m.get("bid_search")), play)
-    if any(t.bid_search for t in TEAMS.values()):
-        engine.bid_searcher()            # load the belief net now, not on the first call
+    if m.get("play_family") == "playq":
+        key = f"{m['play']}+{m['sampler']}"
+        if key not in plays:
+            plays[key] = playq.QPlayBot(os.path.join(models_dir, m["play"]), play_bot(m["sampler"]).net)
+            plays[key].file = key
+        play = plays[key]
+    else:
+        play = play_bot(m["play"])
+    return Team(m["id"], m.get("label", ""), bid_bot(m["bid"], m.get("bid_family")),
+                bool(m.get("bid_search")), play)
 
 
 def default_team():
     want = os.environ.get("BRILL_DEFAULT_MODEL")
-    return want if want in TEAMS else None
+    return want if want in MANIFEST else None
 
 
 @torch.no_grad()

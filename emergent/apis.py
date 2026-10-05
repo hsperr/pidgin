@@ -401,19 +401,19 @@ def register(app):
     @app.get("/apis/brill/")
     def api_brill_root():
         return jsonify(ok=True, api="Brill Seat Robot API (BEN-compatible)",
-                       models=list(teams.TEAMS), default_model=teams.default_team(),
+                       models=list(teams.MANIFEST), default_model=teams.default_team(),
                        bid_models=list(engine.BID_MODELS), play_models=list(engine.PLAY_MODELS),
                        endpoints=["/apis/brill/bid", "/apis/brill/lead", "/apis/brill/play"])
 
     def brill_team(a):
         """The team `model` (or `model_id`) names, or the default team; None: the single models."""
         mid = a.get("model") or a.get("model_id")
-        if mid in teams.TEAMS:
-            return teams.TEAMS[mid]
+        if mid in teams.MANIFEST:
+            return teams.get(mid)
         if mid is None and teams.default_team():
-            return teams.TEAMS[teams.default_team()]
+            return teams.get(teams.default_team())
         if a.get("model_id"):
-            raise ApiError(f"unknown model_id {mid!r}; known: {', '.join(teams.TEAMS)}")
+            raise ApiError(f"unknown model_id {mid!r}; known: {', '.join(teams.MANIFEST)}")
         return None
 
     def brill_common(a):
