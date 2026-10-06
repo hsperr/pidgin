@@ -14,7 +14,7 @@ No expert auctions or bidding labels are required.
 | `server/` | The site and APIs that serve the models ([docs/serving.md](docs/serving.md)). |
 | `belief/` | Belief net for the bidding search ([docs/belief.md](docs/belief.md)). |
 | `qnet/` | Card-play Q-net trainer and its data pipeline ([docs/card_play.md](docs/card_play.md)). |
-| `docs/` | How each served model was trained: [Pidgin V1](docs/pidgin_v1.md), [Pidgin V2](docs/pidgin_v2.md), [belief](docs/belief.md), [card play](docs/card_play.md). |
+| `docs/` | How each served model was trained: [Pidgin V1](docs/pidgin_v1.md), [Pidgin V2](docs/pidgin_v2.md), [belief](docs/belief.md), [card play](docs/card_play.md). How they score: [results](docs/results.md). |
 | `scripts/` | Commands to use the models: download, bid, generate auctions, serve ([scripts/README.md](scripts/README.md)). |
 | `tools/` | Matches, dashboard, analysis. |
 

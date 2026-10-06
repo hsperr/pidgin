@@ -28,7 +28,8 @@ FAMILY = {"wb5": "wbridge5", "brl_fsp": "brl", "brl_sl": "brl",
           "D75": "pidgin", "e2b": "pidgin", "E46": "pidgin", "E49B": "pidgin", "E28": "pidgin",
           "ep_21gf": "ep_natural", "ep_sayc": "ep_natural", "ep_gib": "ep_natural",
           "ep_wb5": "ep_natural", "ep_ben": "ep_natural",
-          "ep_acol": "ep_acol", "ep_wj": "ep_polish", "ep_prec": "ep_precision"}
+          "ep_acol": "ep_acol", "ep_wj": "ep_polish", "ep_prec": "ep_precision",
+          "hi3_lo": "pidgin", "hi52k": "pidgin"}
 HCP = torch.zeros(52)
 for s in range(4):
     HCP[s * 13:s * 13 + 4] = torch.tensor([4., 3., 2., 1.])

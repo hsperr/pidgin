@@ -49,6 +49,11 @@ IMPs per board, with double-dummy tricks. Other players: `rule:sayc`, `rule:weak
 down). `weakspots.py` breaks the result down: doubled contracts, competitive auctions,
 who declared.
 
+## Reproduce the results page
+
+`scripts/make_results.sh` reruns the measurements in [docs/results.md](../docs/results.md)
+(matches, openings, simplicity, card play) and writes them to `results/`. About 10 minutes.
+
 ## Watch training
 
 `python tools/dashboard.py --runs runs/` opens a local dashboard (http://localhost:8770)

@@ -78,7 +78,7 @@ def load_opener(spec: str):
     """``(probs(hands, seat, vul) -> (n, 36), meta)`` for a checkpoint or ``brl:WEIGHTS.npz``."""
     if spec.startswith("brl:"):
         weights = Path(spec[4:]).resolve()
-        sys.path.insert(0, str(weights.parent))
+        sys.path[:0] = [str(weights.parent), str(ROOT / "server" / "emergent")]
         from brl_player import _OURS_TO_PGX, BrlNet, encode, legal_pgx
 
         brl = BrlNet(weights).eval()
