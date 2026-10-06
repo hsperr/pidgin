@@ -15,7 +15,22 @@ No expert auctions or bidding labels are required.
 | `belief/` | Belief net for the bidding search ([docs/belief.md](docs/belief.md)). |
 | `play/` | Card-play Q-net (B2g) trainer and data generators ([docs/card_play.md](docs/card_play.md)). |
 | `docs/` | How each served model was trained: [Pidgin V1](docs/pidgin_v1.md), [Pidgin V2](docs/pidgin_v2.md), [belief](docs/belief.md), [card play](docs/card_play.md). |
+| `scripts/` | Use the released models: download, bid, generate auctions, serve. |
 | `tools/` | Matches, dashboard, analysis. |
+
+## Use the released models
+
+```bash
+python -m pip install -e . && python -m pip install -r server/requirements.txt
+scripts/get_models.sh                                    # weights from Hugging Face, ~130 MB
+python scripts/bid.py AKQ2.JT9.876.543 --auction "1H P"  # one call, with the top four
+python scripts/generate_auctions.py --n 100000 --out auctions.npz --pbn auctions.txt
+scripts/serve.sh                                         # the site and APIs on localhost:8787
+```
+
+`--model` picks a team (`PidginV1`, `PidginV2`, `BRL`) or a checkpoint file.
+`generate_auctions.py` bids about 4,000 deals a second on a laptop CPU; `--help` lists
+the output format.
 
 ## Quick start
 

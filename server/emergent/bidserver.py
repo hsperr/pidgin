@@ -255,6 +255,8 @@ def load_models(models_dir=MODELS_DIR):
         manifest = json.load(fh)
     for m in manifest:
         path = os.path.join(models_dir, m["file"])
+        if not os.path.exists(path):  # the public download has only the team models
+            continue
         if m.get("family") == "brl":
             bot = BrlBot(path)
         else:
