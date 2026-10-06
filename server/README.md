@@ -1,4 +1,4 @@
-# bridge_server
+# Server
 
 One page at https://bridge.localgeek.jp, one Flask app in one process:
 
@@ -70,7 +70,7 @@ decides how many deals count. The deals are seeded by the position, so asking ag
 
 ## Update to the newest snapshots, then deploy
 
-    ./sync_models.sh      # training code + E46/play snapshots from ~/code/bridge_new
+    ./sync_models.sh      # weights only: E46/play/belief snapshots from ~/code/bridge/lab
     ./deploy.sh
 
 Server config (nginx, systemd) lives in `~/code/infra` (app `bridge`, port 3500).
@@ -80,25 +80,24 @@ The unit still passes `ck.pt` to `create_app`; that argument is ignored now.
 
 `models/models.json` lists what the dropdown shows; the first entry is the
 default. Kept: D (default), E46, brl, and two light-opening experiments from
-`~/code/bridge_public` for `/debug` (`hi3_s60k`, `lo_s28k`; no corpus). Two families are supported:
+this repo for `/debug` (`hi3_s60k`, `lo_s28k`; no corpus). Two families are supported:
 
 - training four-seat checkpoints (D, E46), copied without the critic. E46 comes
   from `sync_models.sh` (edit its `copy` lines to add runs); D was trained in
-  `~/code/bridge_public` and copied by hand.
+  this repo and copied by hand.
 - brl FSP (`brl_fsp_weights.npz`), the external baseline.
 
-## Frozen copies
+## Model code and frozen copies
 
-`training/` is copied by `sync_models.sh`. E28's classes (D5OWN4XC) are only on
-branch `integrate-fast-xxsac`, so it copies from that worktree by default; after the
-merge run `CODE=~/code/bridge_new ./sync_models.sh`.
+The net classes come from `../training` (`server/training` is a link to it).
+`deploy.sh` ships it with the app; Docker builds from the repo root.
 
 `emergent/teaching/` (`situations.py`, `rules.json`; numpy only) is a frozen copy of
-`~/code/bridge_new/experiments/teaching_D/`, D's 15 teaching rules with their SAYC
+`~/code/bridge/lab/experiments/teaching_D/`, D's 15 teaching rules with their SAYC
 notes, used by the /table "rule of thumb" card. `sync_models.sh` refreshes it; by hand:
 
-    cp ~/code/bridge_new/experiments/teaching_D/{situations.py,rules.json} \
-      ~/code/bridge_server/emergent/teaching/ && python3 emergent/teaching/situations.py
+    cp ~/code/bridge/lab/experiments/teaching_D/{situations.py,rules.json} \
+      ~/code/bridge/pidgin/server/emergent/teaching/ && python3 emergent/teaching/situations.py
 
 ## Machine APIs (`/apis/…`) — seat our bots at other sites' tables
 

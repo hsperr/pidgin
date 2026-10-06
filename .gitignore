@@ -32,3 +32,10 @@ dd/
 build/
 dist/
 *.egg-info/
+
+# Generated training data for belief/ and play/ (rebuild with their generators).
+belief/data/*
+!belief/data/systems.json
+play/auc/
+play/pos/
+play/*.log

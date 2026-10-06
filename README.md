@@ -6,6 +6,17 @@ The bidder sees its own hand and public calls. Double-dummy trick tables
 supply training targets and rewards; they are never bidder inputs.
 No expert auctions or bidding labels are required.
 
+## What is here
+
+| Folder | What |
+|---|---|
+| `training/` | The model code: bidding nets, trainers, card play. Shared by training and the server. |
+| `server/` | The site and APIs that serve the models ([docs/serving.md](docs/serving.md)). |
+| `belief/` | Belief net for the bidding search ([docs/belief.md](docs/belief.md)). |
+| `play/` | Card-play Q-net (B2g) trainer and data generators ([docs/card_play.md](docs/card_play.md)). |
+| `docs/` | How each served model was trained: [Pidgin V1](docs/pidgin_v1.md), [Pidgin V2](docs/pidgin_v2.md), [belief](docs/belief.md), [card play](docs/card_play.md). |
+| `tools/` | Matches, dashboard, analysis. |
+
 ## Quick start
 
 Use Python 3.10 or newer. Run commands from this checkout:
