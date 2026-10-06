@@ -180,9 +180,19 @@ still uses this proxy; inspect sacrifice credit and positive share alongside IMP
 
 ## Public contents and license
 
-The release contains the bidder, training recipe, dashboard, analysis tools,
-tests, and the small test fixture. Local training outputs, large datasets,
-solver experiments, and working notes are excluded from Git and source packages.
-Analysis tools and the dashboard HTML are also included in the Python wheel.
+The repo holds the model code, training recipes, server, scripts, tools, tests and a
+small test fixture. Weights are on Hugging Face:
+[hsperr/pidgin](https://huggingface.co/hsperr/pidgin) (`scripts/get_models.sh`).
+Training outputs, large datasets and working notes are not in Git.
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+### Third-party
+
+- **BRL** (the `BRL` team's bidder, `brl_fsp_weights.npz`) is not ours. It is the FSP
+  bidding model from [harukaki/brl](https://github.com/harukaki/brl), by Kita et al.,
+  "A Simple, Solid, and Reproducible Baseline for Bridge Bidding AI", IEEE CoG 2024.
+  Apache-2.0; its licence ships with the weights as `brl_LICENSE`.
+  `server/emergent/brl_player.py` is a PyTorch port of its network.
+- **Training data**: the [`sotetsuk/dds_dataset`](https://huggingface.co/datasets/sotetsuk/dds_dataset)
+  double-dummy deals (Apache-2.0), generated with [PGX](https://github.com/sotetsuk/pgx).

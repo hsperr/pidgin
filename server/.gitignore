@@ -10,3 +10,4 @@ models/*.pt
 models/*.npz
 data/
 dist/
+.deploy.env

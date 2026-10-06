@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Ship the bid desk to bridge.localgeek.jp. The nginx site and the systemd
-# unit live in ~/code/infra.
+# unit are not in this repo.
 #
-#   ./sync_models.sh && ./deploy.sh               # newest snapshots from bridge_new
+#   ./sync_models.sh && ./deploy.sh               # newest snapshots from the lab
 #   ./deploy.sh                                   # every model in models/models.json
 set -euo pipefail
 
-HOST="root@DEPLOY_HOST_IP"
+# The server address stays out of Git: set DEPLOY_HOST, or put DEPLOY_HOST=user@host
+# in server/.deploy.env (git-ignored).
+[ -f "$(dirname "$0")/.deploy.env" ] && . "$(dirname "$0")/.deploy.env"
+HOST="${DEPLOY_HOST:?set DEPLOY_HOST=user@host or write it to server/.deploy.env}"
 APP="/opt/bridge/app"
 VENV="/opt/bridge/venv"
 
