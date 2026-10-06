@@ -10,13 +10,13 @@ doubles. "Only instead of Pass": they take probability only from the softmax36 P
 entry: p(X or XX) = p_pass p_D, p(SAC) = p_pass (1-p_D) p_SAC, p(Pass) = p_pass
 (1-p_D)(1-p_SAC); every bid keeps its softmax mass (the SAC candidate adds p(SAC)).
 
-Redouble (``--redouble``, action 37): legal for the declaring side over a standing X at
+Redouble (action 37): legal for the declaring side over a standing X at
 its pass-out seat; any later bid clears X/XX. Credit: a standing XX gets the declaring
 side's (redoubled - doubled)/100; the standing X gets the defenders' (result at the final
 doubling level - undoubled)/100, so X learns the risk of being redoubled. The bidder's
 own-bid return stays undoubled.
 
-Sacrifice (``--sacrifice``): where the opponents hold the standing contract and Pass
+Sacrifice: where the opponents hold the standing contract and Pass
 would end the auction, candidates are the cheapest bid in each strain above their
 contract and at level 4+. The SAC bids the candidate with the highest ``sac_value``
 (ties -> cheapest). A fired SAC gets (own side's final real table result - own side's
@@ -41,6 +41,7 @@ import torch.nn.functional as F
 from ..bridge.calls import DOUBLE, PASS, REDOUBLE
 from ..contract.data import TorchDeals
 from ..contract.targets import TARGET_SCALE, TorchScorer
+from ..simplicity import LIGHT_HCP
 from .model import (
     COMPETITIVE_STAGE,
     SAC_STRAINS,
@@ -58,6 +59,7 @@ from .rollout import (
     play,
     pool_metrics,
 )
+from ..simplicity import analyse_batch
 from .state import (
     _DOUBLED,
     _REDOUBLED,
@@ -69,6 +71,7 @@ from .state import (
     double_delta,
     features_from_history,
     own_bid_scores,
+    side_table_scores,
     table_ns_score,
 )
 
@@ -94,7 +97,7 @@ def competitive_features(history: torch.Tensor, dealer: torch.Tensor, vul_ns: to
     return torch.cat((feats, extra), 1)
 
 
-# E45b: with ANY_SEAT_DOUBLE, X and XX are legal at every seat for every player and the auction
+# With ANY_SEAT_DOUBLE, X and XX are legal at every seat for every player and the auction
 # continues after them (escapes and redoubles are real). SAC stays at the pass-out seat.
 ANY_SEAT_DOUBLE = False
 
@@ -102,6 +105,42 @@ ANY_SEAT_DOUBLE = False
 def set_any_seat_double(on: bool) -> None:
     global ANY_SEAT_DOUBLE
     ANY_SEAT_DOUBLE = bool(on)
+
+
+# Opening rule (rule of 18): in 1st and 2nd seat a 1-level opening (1C..1NT) needs HCP +
+# the lengths of the two longest suits >= OPENING_RULE. After two passes any opening is
+# legal. 0 = off. A hard legality rule for every net at the table, like a law of the game.
+OPENING_RULE = 0
+ONE_LEVEL = 5                                   # actions 0..4 = 1C 1D 1H 1S 1NT
+
+
+def set_opening_rule(points: int) -> None:
+    global OPENING_RULE
+    OPENING_RULE = int(points)
+
+
+def opening_points(hands: torch.Tensor) -> torch.Tensor:
+    """HCP + lengths of the two longest suits; ``hands`` ``(..., 52)``, suit * 13 + rank (A first)."""
+    cards = hands.float().reshape(*hands.shape[:-1], 4, 13)
+    hcp = (cards[..., :4] * torch.tensor([4.0, 3.0, 2.0, 1.0], device=hands.device)).sum((-1, -2))
+    return hcp + cards.sum(-1).topk(2, -1).values.sum(-1)
+
+
+def opening_blocked(hands: torch.Tensor, last: torch.Tensor, t, rule: int) -> torch.Tensor:
+    """``(B,)`` rows whose 1-level bids are illegal: nobody has bid yet, fewer than two
+    passes so far (1st/2nd seat), and the hand has fewer than ``rule`` opening points."""
+    if not rule:
+        return torch.zeros_like(last, dtype=torch.bool)
+    return (last < 0) & (torch.as_tensor(t, device=last.device) < 2) & (opening_points(hands) < rule)
+
+
+def apply_opening_rule(legal: torch.Tensor, hands, last, t, rule: int) -> torch.Tensor:
+    """``legal`` with the 1-level bids removed where ``opening_blocked``."""
+    if not rule:
+        return legal
+    block = opening_blocked(hands, last, t, rule)
+    cols = torch.arange(legal.shape[1], device=legal.device) < ONE_LEVEL
+    return legal & ~(block[:, None] & cols[None])
 
 
 @dataclass
@@ -163,23 +202,6 @@ class FourSeatRedoubleBatch(FourSeatFinalDoubleBatch):
 
 def competitive_batch_class(redouble: bool):
     return FourSeatRedoubleBatch if redouble else FourSeatFinalDoubleBatch
-
-
-def policy_batch_class(policy):
-    """Auction batch class a policy was trained with: D5OWN4XC -> pass-out-only X (+ XX),
-    151 features; other >36-action nets -> ``FourSeatDoubleBatch``; else ``FourSeatBatch``."""
-    if getattr(policy, "stage", None) == COMPETITIVE_STAGE:
-        return competitive_batch_class(policy.redouble)
-    return FourSeatDoubleBatch if getattr(policy, "n_actions", PASS + 1) > PASS + 1 else FourSeatBatch
-
-
-def batch_features(cls, history: torch.Tensor, dealer: torch.Tensor, vul_ns: torch.Tensor,
-                   vul_ew: torch.Tensor, actor: torch.Tensor) -> torch.Tensor:
-    """Features of ``cls`` states rebuilt from (prefix) histories."""
-    if issubclass(cls, FourSeatFinalDoubleBatch):
-        return competitive_features(history, dealer, vul_ns, vul_ew, actor)
-    return features_from_history(history, dealer, vul_ns, vul_ew, actor,
-                                 doubles=issubclass(cls, FourSeatDoubleBatch))
 
 
 # ---------------------------------------------------------------- exact targets
@@ -369,8 +391,7 @@ def competitive_trajectories(deals: TorchDeals, scorer: TorchScorer, batch, stat
     standing_xx = batch.standing_redouble_position()
     xx_delta = torch.where(batch.redoubled, redouble_delta(batch, deals),
                            torch.zeros(episodes, device=device))
-    ns_table = side_table_score(batch, deals, torch.zeros_like(deal))
-    table = torch.stack((ns_table, -ns_table), 1)
+    table = side_table_scores(batch, deals)
     return CompetitiveTrajectories(
         states, actions, dense, score.reshape(-1)[present], ceiling.reshape(-1)[present], batch,
         score, ceiling, rows, batch.standing_double_position(), final_double_delta(batch, deals),
@@ -379,6 +400,60 @@ def competitive_trajectories(deals: TorchDeals, scorer: TorchScorer, batch, stat
 
 
 # ---------------------------------------------------------------- losses
+
+def code_word_parts(states, actions: torch.Tensor, deals: TorchDeals) -> dict:
+    """Per-decision masks behind ``code_word_mask``, plus cue bids, jumps and 4NT.
+
+    Same rule as ``tools/simplicity.py``: a suit bid without 4+ cards in the suit (3+ to
+    raise a suit partner bid), a double of a contract at level 3 or below, a redouble, or
+    a 2♣ opening with fewer than 5 clubs or 20+ HCP.
+    """
+    seat = states.actor_seat
+    hand = deals.hands[states.deal, seat].reshape(-1, 4, 13)       # suits S H D C, ranks A..2
+    lengths = hand.sum(2)
+    hcp = (hand[:, :, :4] * torch.tensor([4, 3, 2, 1], device=hand.device)).sum((1, 2))
+    history = states.history
+    pos = torch.arange(history.shape[1], device=history.device)[None]
+    made = (pos < states.t[:, None]) & (history >= 0)
+    bid = made & (history < PASS)
+    is_bid = actions < PASS
+    strain = actions.clamp(max=PASS - 1) % 5                       # C D H S NT
+    suit = is_bid & (strain < 4)
+    held = lengths.gather(1, (3 - strain.clamp(max=3))[:, None]).squeeze(1)
+    bidder = (states.dealer[:, None] + pos) % 4
+    same_strain = bid & (history % 5 == strain[:, None])
+    partner_bid = (same_strain & (bidder == ((seat + 2) % 4)[:, None])).any(1)
+    own_side_bid = (same_strain & (bidder % 2 == (seat % 2)[:, None])).any(1)
+    last_bid = torch.where(bid, history, torch.full_like(history, -1)).max(1).values
+    level = torch.where(last_bid >= 0, last_bid // 5 + 1, torch.zeros_like(last_bid))
+    min_level = torch.where(strain > last_bid % 5, level.clamp(min=1), level + 1)
+    min_level = torch.where(last_bid >= 0, min_level, torch.ones_like(level))
+    return {
+        "suit_bid": suit,
+        "unnatural": suit & ~((held >= 4) | (partner_bid & (held >= 3))),
+        "low_double": (actions == DOUBLE) & (level <= 3),
+        "redouble": actions == REDOUBLE,
+        "strong_2c": (actions == 5) & ~bid.any(1) & ((lengths[:, 3] < 5) | (hcp >= 20)),
+        "cue": suit & same_strain.any(1) & ~own_side_bid,
+        "bid": is_bid,
+        "jump": is_bid & (actions // 5 + 1 > min_level),
+        "four_nt": actions == 19,
+        # an opening (nobody has bid yet) on LIGHT_HCP or fewer, except a natural preempt
+        # (2-level or higher in a 6+ card suit): the destructive openings code words miss
+        "light_open": is_bid & ~bid.any(1) & (hcp <= LIGHT_HCP)
+                      & ~(suit & (actions >= 5) & (held >= 6)),
+    }
+
+
+def code_word_mask(states, actions: torch.Tensor, deals: TorchDeals) -> torch.Tensor:
+    """``(decisions,)`` True where the call is a code word partner cannot read at face value."""
+    return code_words_of(code_word_parts(states, actions, deals))
+
+
+def code_words_of(part: dict) -> torch.Tensor:
+    """The code-word mask from ``code_word_parts`` output."""
+    return part["unnatural"] | part["low_double"] | part["redouble"] | part["strong_2c"]
+
 
 def _gate_losses(extra: dict, name: str, value, target, gap, can, use, tau: float,
                  policy_cf: bool) -> None:
@@ -400,14 +475,21 @@ def competitive_trajectory_losses(actor, critic, deals: TorchDeals, traj: Compet
                                   double_tau: float = 0.5, xx_tau: float = 0.1,
                                   sac_tau: float = 0.5, policy_cf: bool = True,
                                   gate_pg: bool = False, all_spots: bool = False,
-                                  table_weight: float = 0.0) -> dict:
+                                  table_weight: float = 0.0,
+                                  code_word_penalty: float = 0.0,
+                                  light_open_penalty: float = 0.0) -> dict:
     """PG (trunk: own-bid advantage; gates: credited advantage) + X/XX/SAC value and gate losses.
 
-    ``table_weight`` (E42, lambda in [0, 1]) mixes the real table result into the team return:
+    ``table_weight`` (lambda in [0, 1]) mixes the real table result into the team return:
     ``((1 - lambda) * own-bid + lambda * table - ceiling) / 100``, where table counts the
     opponents' contracts and doubled/redoubled results for this side. The X/XX/SAC credits
     are scaled by ``1 - lambda`` because the table term already contains their outcomes.
     The critic and ``contract_q`` regress the mixed return.
+
+    ``code_word_penalty`` (/100 points) is subtracted from the policy advantage of every
+    call ``code_word_mask`` flags, charged to that call alone (not to partner's calls,
+    the critic, or ``contract_q``). It trades a little score for a more natural system.
+    ``light_open_penalty`` works the same way on ``code_word_parts``' "light_open" calls.
     """
     if not 0.0 <= table_weight <= 1.0:
         raise ValueError("table_weight must be in [0, 1]")
@@ -421,13 +503,7 @@ def competitive_trajectory_losses(actor, critic, deals: TorchDeals, traj: Compet
     seat = states.actor_seat
     hand = deals.hands[states.deal, seat]
     out = actor(hand, feats)
-    belief_summary_loss = None
-    if "belief_pred" in out:
-        from .belief import hcp_length_targets, relative_owners
-        owners = deals.hands[states.deal].argmax(1)
-        target = hcp_length_targets(relative_owners(owners, seat))
-        belief_summary_loss = F.mse_loss(out["belief_pred"], target)
-    legal = states.legal()
+    legal = apply_opening_rule(states.legal(), hand, states.last, states.t, OPENING_RULE)
     detach = not gate_pg
     log_policy = competitive_log_probs(out, legal, T, detach_gates=detach)
     policy = log_policy.exp()
@@ -455,6 +531,12 @@ def competitive_trajectory_losses(actor, critic, deals: TorchDeals, traj: Compet
     action_return = returns + credit_x + credit_xx + credit_sac
     base_advantage = returns - value.detach()
     advantage = action_return - value.detach()
+    parts = code_word_parts(states, traj.actions, deals)
+    code_words = code_words_of(parts)
+    light_open = parts["light_open"]
+    cost = code_word_penalty * code_words + light_open_penalty * light_open
+    base_advantage = base_advantage - cost
+    advantage = advantage - cost
     groups = len(traj.score)
     policy_by_group = torch.zeros(groups, device=hand.device).scatter_add_(
         0, traj.episode, trunk_logp * base_advantage + gate_logp * advantage)
@@ -517,11 +599,12 @@ def competitive_trajectory_losses(actor, critic, deals: TorchDeals, traj: Compet
         "trick_nll": F.cross_entropy(out["trick_logits"].reshape(-1, 14), rel.reshape(-1)),
         "double_credit_mean": credit_x[doubles].mean() if bool(doubles.any()) else zero,
         **extra,
-        **({"belief_summary_loss": belief_summary_loss} if belief_summary_loss is not None else {}),
         "return_mean": group_returns.mean(),
         **({"table_return_mean": ((traj.table_score - traj.ceiling) / TARGET_SCALE).mean()}
            if traj.table_score is not None else {}),
         "advantage_mean": advantage.mean(),
+        "code_word_share": code_words.float().mean(),
+        "light_open_share": light_open.float().mean(),
         "advantage_std": advantage.std(),
     }
 
@@ -631,6 +714,8 @@ def competitive_validation(actor, deals: TorchDeals, scorer: TorchScorer, frozen
                                    "mse": float((cat["xx_q"] - cat["xx_delta"]).pow(2).mean()),
                                    "profitable_share": float((cat["xx_delta"] > 0).float().mean())}
     extra["level5_share"] = float((level >= 5).float().mean())
+    # bridgezero/simplicity.py numbers (the one implementation), greedy auctions
+    extra["simplicity"] = {k: v for k, v in analyse_batch(batch, deals).items() if k != "auctions"}
 
     if frozen is not None:
         out = pool_metrics(batch, deals, scorer, frozen["side"])

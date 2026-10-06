@@ -2,40 +2,27 @@
 
 Every board is played at two tables on the same deal, dealer, and vulnerability:
 table 1 seats player A North-South and player B East-West; table 2 swaps them.
-All four seats bid. The Table supports Double and Redouble (legality and doubled/
-redoubled scoring), but a player only doubles if it emits X/XX: phase1, zero,
-D5OWN4 ``four`` players never do; D5OWN4X ``four`` players and the robot can.
-The contract is the last bid; declarer is the first player of the winning side to
-name its strain; the score uses that side's vulnerability and the final X/XX state.
-A's IMPs on a board = imps(NS score at table 1 - NS score at table 2).
+All four seats bid. A's IMPs on a board = imps(NS score at table 1 - NS score at
+table 2). The contract is the last bid; declarer is the first player of the
+winning side to name its strain.
 
 Players (``--a`` / ``--b``):
 
-- ``pass`` -- always Passes; against it a model plays a silent-opponent auction,
-  which must reproduce that model's saved silent eval scores (adapter check).
-- ``four:PATH`` -- a four-seat D5OWN4 or D5OWN4X checkpoint (bridgezero.fourseat);
-  greedy policy that also sees LHO/RHO bids, fed from the table's full call history.
-  A D5OWN4X* net also sees the standing-doubled bits and may Double (never Redouble);
-  a D5OWN4XC net also sees Pass-would-end-auction and standing-redoubled bits and may
-  X/XX (and sacrifice) only where its Pass would end the auction.
-  ``four:PATH:q>M`` (double-value nets): Double iff legal and double_value > M (/100),
-  ignoring the X logit; quote the spec in a shell.
-- ``zero:PATH[:RULE]`` -- a bridgezero auction checkpoint (D1/D2/D4 kind),
-  RULE ``policy`` (default) or ``q``. Its feature vector only has slots for its
-  own partnership's calls, so it does not see opponent bids; legality always
-  comes from the real auction. Its ``expected`` rule assumes Pass keeps the
-  partnership's own contract, which is false with active opponents, so it is
-  refused.
+- ``four:PATH`` -- a four-seat checkpoint; greedy policy over its own hand and the
+  full public auction. It may Double/Redouble at the seats it was trained to
+  (every seat for ``--any-seat-double`` models, else only where Pass would end
+  the auction).
+- ``pass`` -- always Passes; against it a model bids a silent-opponent auction.
+- ``punish:PATH`` -- the four-seat net, but it doubles exactly the contracts that go
+  down double-dummy (and never otherwise), at any seat.
+- ``rule:STYLE`` -- a batched rule bidder (sayc, weakclub, happy); never doubles.
 
-Boards: the last ``--deals`` deals x 4 dealers x 4 vulnerabilities (none, NS,
-EW, both); ``--boards N`` plays a seeded random subset of them. Checks: a
-player against itself must score exactly 0 IMPs (skipped for the robot), and a
-sample of auctions is replayed through bridgezero's ``AuctionState`` scoring.
+Boards: ``--deals`` deals (default the last 10,000) x 4 dealers x 4
+vulnerabilities. Checks: each player against itself must score exactly 0 IMPs,
+and a sample of auctions is replayed through ``AuctionState`` scoring.
 
-    OMP_NUM_THREADS=8 python -u tools/match.py \
-      --a four:runs/adversarial/ckpt_step60000.pt \
-      --b four:runs/cooperative_only/ckpt_step20000.pt \
-      --data data/deals.npz --out results/adversarial_vs_cooperative
+    python tools/match.py --a four:A.pt --b four:B.pt \
+      --data data/dds_results_100M.npy --out results/a_vs_b
 """
 
 from __future__ import annotations
@@ -57,16 +44,16 @@ from bridgezero.bridge.auction import AuctionState  # noqa: E402
 from bridgezero.bridge.calls import PASS  # noqa: E402
 from bridgezero.bridge.scoring import contract_score, terminal_ns_score  # noqa: E402
 from bridgezero.contract.data import load_range  # noqa: E402
-from bridgezero.contract.evaluate import imps_array, paired_bootstrap  # noqa: E402
-from bridgezero.contract.model import load_checkpoint  # noqa: E402
-from bridgezero.contract.prefixes import MAX_DECISIONS, CoopBatch, observe  # noqa: E402
+from bridgezero.bridge.scoring import IMP_LOWER_BOUNDS  # noqa: E402
 from bridgezero.contract.targets import CONTRACT_TABLE_STRAIN, SCORE_LOOKUP  # noqa: E402
 from bridgezero.fourseat.model import load_fourseat_checkpoint, policy_log_probs  # noqa: E402
-from bridgezero.fourseat.competitive import MAX_REDOUBLE_CALLS, competitive_features  # noqa: E402
+from bridgezero.fourseat.competitive import (  # noqa: E402
+    MAX_REDOUBLE_CALLS, apply_opening_rule, competitive_features)
+from bridgezero.fourseat.rulebots import RuleBot  # noqa: E402
 from bridgezero.fourseat.state import features_from_history  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-DATA = "data/deals.npz"
+DATA = "data/dds_results_100M.npy"
 L = 35
 # With X and XX (robot anywhere, D5OWN4XC nets at the pass-out seat) a legal auction can run
 # 3 opening passes + 35 bids + 34 x "P P X P P XX P P" + a final "P P X P P XX P P P" = 319.
@@ -80,6 +67,26 @@ VUL_NAMES = ("none", "NS", "EW", "both")
 
 
 import table_state as P1  # noqa: E402
+
+
+def imps_array(points: np.ndarray) -> np.ndarray:
+    """Point differences to IMPs."""
+    return np.sign(points) * np.searchsorted(np.asarray(IMP_LOWER_BOUNDS), np.abs(points),
+                                             side="right")
+
+
+def paired_bootstrap(diff: np.ndarray, deal: np.ndarray, n_boot: int = 2000,
+                     seed: int = 0) -> dict:
+    """Mean paired difference with a deal-clustered 95% bootstrap interval."""
+    n_deals = int(deal.max()) + 1
+    per_deal = np.bincount(deal, weights=diff, minlength=n_deals) / np.bincount(
+        deal, minlength=n_deals)
+    rng = np.random.default_rng(seed)
+    means = np.empty(n_boot)
+    for b in range(n_boot):
+        means[b] = per_deal[rng.integers(0, n_deals, n_deals)].mean()
+    return {"mean": float(per_deal.mean()), "ci95": [float(np.percentile(means, 2.5)),
+                                                     float(np.percentile(means, 97.5))]}
 
 
 def sha256(path: str) -> str:
@@ -98,7 +105,7 @@ class Table:
         self.controller = controller                     # (n, 2) player index per side
         self.st = P1.St.empty(deal, L)
         self.t = 0
-        # Only the robot can double; models never see X/XX in their inputs.
+        # Standing doubling level, reset by each new bid.
         self.doubled = torch.zeros(n, dtype=torch.long)          # 0, 1 = X, 2 = XX
         self.contract_side = torch.full((n,), -1, dtype=torch.long)
         self.bidder = torch.full((n, 2, L), -1, dtype=torch.long)
@@ -156,55 +163,18 @@ class Table:
 
 # ---------------------------------------------------------------- players
 
-class ZeroPlayer:
-    def __init__(self, path: str, rule: str = "policy"):
-        if rule not in ("policy", "q"):
-            raise ValueError("zero players support rule policy or q (expected assumes silent opponents)")
-        self.net, ck = load_checkpoint(path, "cpu")
-        self.net.eval()
-        self.rule = rule
-        self.observation = ck.get("observation", "intact")
-        self.name = f"{Path(path).parent.name}:{rule}"
-        self.meta = {"kind": "zero", "path": path, "sha256": sha256(path), "rule": rule,
-                     "stage": ck.get("stage"), "step": ck.get("step"),
-                     "observation": self.observation}
-
-    @torch.no_grad()
-    def act(self, table: Table, rows: torch.Tensor) -> torch.Tensor:
-        seat = table.seat_abs(rows)
-        side = seat % 2
-        n = len(rows)
-        batch = CoopBatch(
-            deal=table.deal[rows], side=side, dealer=table.dealer[rows],
-            vul=torch.where(side == 0, table.vul_ns[rows], table.vul_ew[rows]).long(),
-            bidder=table.bidder[rows, side], first_pass=table.first_pass[rows, side],
-            last=table.st.last[rows], k=table.k[rows, side],
-            ended=torch.zeros(n, dtype=torch.bool),
-            history=torch.full((n, MAX_DECISIONS), -1, dtype=torch.long))
-        if not torch.equal(batch.actor_seat, seat):
-            raise AssertionError("partnership view disagrees with the table seat")
-        out = self.net(table.deals.hands[table.deal[rows], seat], observe(batch, self.observation))
-        values = out["policy_logits"] if self.rule == "policy" else out["contract_q"]
-        legal = torch.cat([torch.arange(L)[None] > table.st.last[rows, None],
-                           torch.ones(n, 1, dtype=torch.bool)], 1)
-        return values[:, :L + 1].masked_fill(~legal, -torch.inf).argmax(-1)
-
-
 class FourSeatPlayer:
     """Four-seat D5OWN4 net: greedy policy over its own hand and all public calls."""
 
-    def __init__(self, path: str, rule: str = "policy"):
+    def __init__(self, path: str):
         self.net, ck = load_fourseat_checkpoint(path, "cpu")
         self.net.eval()
-        # rule "policy" or "q>M": Double iff legal and double_value > M (/100), else best other call
-        self.margin = None if rule == "policy" else float(rule.removeprefix("q>"))
-        if self.margin is not None and not hasattr(self.net, "double_value_head"):
-            raise ValueError("q>M rules need a checkpoint with a double_value head")
-        self.name = f"{Path(path).parent.name}:four" + ("" if rule == "policy" else f":{rule}")
-        self.any_seat = bool(ck.get("any_seat_double", False))   # E45b: X/XX at every seat
+        self.name = f"{Path(path).parent.name}:four"
+        self.any_seat = bool(ck.get("any_seat_double", False))   # X/XX at every seat
+        self.opening_rule = int(ck.get("opening_rule", 0))       # trained under the rule of N
         self.meta = {"kind": "four", "path": path, "sha256": sha256(path), "stage": ck.get("stage"),
-                     "any_seat_double": self.any_seat,
-                     "step": ck.get("step"), "init_sha256": ck.get("init_sha256"), "rule": rule}
+                     "any_seat_double": self.any_seat, "opening_rule": self.opening_rule,
+                     "step": ck.get("step"), "init_sha256": ck.get("init_sha256")}
 
     @torch.no_grad()
     def act(self, table: Table, rows: torch.Tensor) -> torch.Tensor:
@@ -218,7 +188,8 @@ class FourSeatPlayer:
         else:
             feats = features_from_history(table.history[rows, :table.t], table.dealer[rows],
                                           table.vul_ns[rows], table.vul_ew[rows], seat, doubles)
-        out = self.net(table.deals.hands[table.deal[rows], seat], feats)
+        hand = table.deals.hands[table.deal[rows], seat]
+        out = self.net(hand, feats)
         columns = [torch.arange(L)[None] > table.st.last[rows, None],
                    torch.ones(len(rows), 1, dtype=torch.bool)]
         if doubles:
@@ -230,11 +201,35 @@ class FourSeatPlayer:
         legal = torch.cat(columns, 1)
         if competitive and not self.any_seat:             # feature 149: Pass would end the auction
             legal[:, DOUBLE:] &= feats[:, 149:150] > 0
-        logp = policy_log_probs(out, legal)
-        if self.margin is None:
-            return logp.argmax(-1)
-        take = legal[:, DOUBLE] & (out["double_value"] > self.margin)
-        return torch.where(take, torch.full((len(rows),), DOUBLE), logp[:, :DOUBLE].argmax(-1))
+        legal = apply_opening_rule(legal, hand, table.st.last[rows], table.t, self.opening_rule)
+        return policy_log_probs(out, legal).argmax(-1)
+
+
+class PunisherPlayer(FourSeatPlayer):
+    """A four-seat net whose Double is a DD oracle: it doubles exactly the standing
+    contracts that go down double-dummy, and never doubles otherwise."""
+
+    def __init__(self, path: str):
+        super().__init__(path)
+        self.name = f"{Path(path).parent.name}:punisher"
+        self.meta = {**self.meta, "kind": "punisher"}
+
+    def act(self, table: Table, rows: torch.Tensor) -> torch.Tensor:
+        action = super().act(table, rows)
+        seat = table.seat_abs(rows)
+        last = table.st.last[rows]
+        can = (last >= 0) & (table.doubled[rows] == 0) & (table.contract_side[rows] != seat % 2)
+        action = torch.where(action == DOUBLE, PASS, action)
+        for i in can.nonzero().squeeze(1).tolist():
+            r = int(rows[i])
+            c, side, dealer = int(last[i]), int(table.contract_side[r]), int(table.dealer[r])
+            calls = table.history[r, :table.t].tolist()
+            declarer = next((dealer + j) % 4 for j, a in enumerate(calls)
+                            if 0 <= a < L and a % 5 == c % 5 and (dealer + j) % 2 == side)
+            tricks = int(table.deals.tricks[table.deal[r], declarer, CONTRACT_TABLE_STRAIN[c]])
+            if tricks < c // 5 + 7:
+                action[i] = DOUBLE
+        return action
 
 
 class PassPlayer:
@@ -247,16 +242,30 @@ class PassPlayer:
         return torch.full((len(rows),), PASS, dtype=torch.long)
 
 
+class RulePlayer:
+    """A batched rule bidder (bridgezero/fourseat/rulebots.py); never doubles."""
+
+    def __init__(self, style: str):
+        self.bot = RuleBot(style)
+        self.name = self.bot.name
+        self.meta = {"kind": "rule", "style": style}
+
+    def act(self, table: Table, rows: torch.Tensor) -> torch.Tensor:
+        seat = table.seat_abs(rows)
+        return self.bot.act(table.deals.hands[table.deal[rows], seat], table.history[rows],
+                            torch.full((len(rows),), table.t, dtype=torch.long), table.dealer[rows])
+
+
 def make_player(spec: str):
     kind, _, rest = spec.partition(":")
     if kind == "pass":
         return PassPlayer()
+    if kind == "rule":
+        return RulePlayer(rest)
     if kind == "four":
-        path, _, rule = rest.partition(":")
-        return FourSeatPlayer(path, rule or "policy")
-    if kind == "zero":
-        path, _, rule = rest.partition(":")
-        return ZeroPlayer(path, rule or "policy")
+        return FourSeatPlayer(rest)
+    if kind == "punish":
+        return PunisherPlayer(rest)
     raise ValueError(f"unknown player spec {spec!r}")
 
 
@@ -287,11 +296,8 @@ def boards(n_deals: int):
     return deal, dealer, vul
 
 
-def run_boards(players, deals, deal, dealer, vul, chunk, on_chunk=None):
-    """Both tables for every board. Returns per-board arrays and the two Tables' histories.
-
-    Each chunk of boards is played to the end before the next starts. ``on_chunk(res, hist1,
-    hist2)`` gets the finished boards so far, so a stopped robot run keeps its results."""
+def run_boards(players, deals, deal, dealer, vul, chunk):
+    """Both tables for every board. Returns per-board arrays and the two Tables' histories."""
     out = {k: [] for k in ("ns1", "ns2", "c1", "c2", "d1", "d2", "calls1", "calls2")}
     hist1, hist2 = [], []
     for i in range(0, len(deal), chunk):
@@ -310,9 +316,6 @@ def run_boards(players, deals, deal, dealer, vul, chunk, on_chunk=None):
             out[key + "2"].append(arr[n:])
         hist1.append(tab.history[:n].numpy())
         hist2.append(tab.history[n:].numpy())
-        if on_chunk is not None and i + chunk < len(deal):
-            on_chunk({k: np.concatenate(v) for k, v in out.items()},
-                     np.concatenate(hist1), np.concatenate(hist2))
     res = {k: np.concatenate(v) for k, v in out.items()}
     return res, np.concatenate(hist1), np.concatenate(hist2)
 
@@ -371,9 +374,11 @@ def main() -> None:
     p.add_argument("--b", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--data", default=DATA)
-    p.add_argument("--deals", type=int, default=10000, help="last N deals of the dataset")
+    p.add_argument("--deals", type=int, default=10000, help="number of deals")
+    p.add_argument("--start", type=int, default=None,
+                   help="first deal index (default: the last --deals deals)")
     p.add_argument("--chunk", type=int, default=0,
-                   help="boards played to the end at once (default 16000, 25 with the robot)")
+                   help="boards played to the end at once (default 16000)")
     p.add_argument("--replay-check", type=int, default=300)
     p.add_argument("--threads", type=int, default=8)
     p.add_argument("--seed", type=int, default=0)
@@ -386,8 +391,8 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     a, b = (make_player(s) for s in (args.a, args.b))
-    remote = False
-    deals = load_range(args.data, -args.deals, args.deals)
+    deals = load_range(args.data, -args.deals if args.start is None else args.start,
+                       args.deals)
     deal, dealer, vul = boards(deals.n)
     if args.boards > 0:
         pick = torch.as_tensor(np.sort(np.random.default_rng(args.seed).choice(
@@ -396,17 +401,12 @@ def main() -> None:
 
     # Symmetry check: each player against itself scores exactly zero.
     for player in (a, b):
-        if getattr(player, "remote", False):
-            continue
         n = min(160, len(deal))
         self_res, _, _ = run_boards([player, player], deals, deal[:n], dealer[:n], vul[:n], n)
         if np.any(self_res["ns1"] != self_res["ns2"]):
             raise AssertionError(f"{player.name} against itself is not zero")
-    for player in (a, b):
-        if hasattr(player, "reset_stats"):
-            player.reset_stats()
 
-    chunk = args.chunk or (25 if remote else 16000)
+    chunk = args.chunk or 16000
     planned = len(deal)
 
     def write(res, hist1, hist2):
@@ -428,17 +428,7 @@ def main() -> None:
                             **{k: v for k, v in res.items()})
         return report, imps, checked
 
-    def progress(res, hist1, hist2):
-        report, _, _ = write(res, hist1, hist2)
-        r = report["imps_per_board"]
-        print(f"saved {report['boards']}/{planned} boards: A IMPs/board {r['mean']:+.2f} "
-              f"[{r['ci95'][0]:+.2f}, {r['ci95'][1]:+.2f}]", flush=True)
-
-    res, hist1, hist2 = run_boards([a, b], deals, deal, dealer, vul, chunk,
-                                   on_chunk=progress if remote else None)
-    for player in (a, b):
-        if hasattr(player, "close"):
-            player.close()
+    res, hist1, hist2 = run_boards([a, b], deals, deal, dealer, vul, chunk)
     report, imps, checked = write(res, hist1, hist2)
     vul_np = vul.numpy()
 

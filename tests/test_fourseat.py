@@ -10,15 +10,12 @@ from bridgezero.bridge.deals import load_dataset
 from bridgezero.bridge.scoring import own_contract_score
 from bridgezero.contract.data import TorchDeals
 from bridgezero.contract.environment import AUCTION_FEATURES
-from bridgezero.contract.model import AuctionContractNet, save_checkpoint
+from bridgezero.contract.model import AuctionContractNet, CentralCritic, save_checkpoint
 from bridgezero.contract.prefixes import CoopBatch
 from bridgezero.contract.targets import TorchScorer
-from bridgezero.cooperative.actor_critic import CentralCritic, trajectory_losses
 from bridgezero.fourseat.model import (
-    FourSeatCritic,
     FourSeatNet,
     SilentView,
-    load_fourseat_checkpoint,
     warm_start,
 )
 from bridgezero.fourseat.rollout import collect_trajectories
@@ -28,7 +25,6 @@ from bridgezero.fourseat.state import (
     features_from_history,
     own_bid_scores,
 )
-from bridgezero.fourseat.train import parse_args, run
 
 SMOKE = Path(__file__).resolve().parents[1] / "data" / "smoke_128.npz"
 
@@ -202,7 +198,7 @@ def test_warm_start_is_bit_identical_on_silent_states(tmp_path):
 
 def test_trajectories_group_returns_by_side():
     data = deals()
-    actor, critic = FourSeatNet(16, 8, 1), FourSeatCritic(16, 8, 1)
+    actor = FourSeatNet(16, 8, 1)
     traj = collect_trajectories(actor, data, 32, torch.Generator().manual_seed(6), TorchScorer(),
                                 silent_frac=0.5)
     assert bool(traj.terminal.ended.all())
@@ -212,23 +208,3 @@ def test_trajectories_group_returns_by_side():
     # Silent seats never make recorded decisions.
     assert not bool((traj.states.side == traj.states.silent).any())
     assert bool((traj.terminal.silent >= 0).any())
-    losses = trajectory_losses(actor, critic, data, traj)
-    losses["policy_objective"].backward()
-    assert float(actor.policy_head.weight.grad.norm()) > 0
-
-
-def test_trainer_smoke(tmp_path):
-    base, critic = AuctionContractNet(16, 8, 1), CentralCritic(16, 8, 1)
-    init = tmp_path / "init" / "best.pt"
-    save_checkpoint(init, base, "D4PG", step=0, critic_config=critic.config,
-                    critic=critic.state_dict())
-    out = tmp_path / "four"
-    report = run(parse_args([
-        "--data", str(SMOKE), "--out", str(out), "--init", str(init),
-        "--train-start", "0", "--train-count", "96", "--val-start", "96", "--val-count", "16",
-        "--eval-start", "112", "--eval-count", "16", "--steps", "2", "--episodes", "16",
-        "--eval-every", "1", "--threads", "1"]))
-    assert "fourseat" in report
-    net, meta = load_fourseat_checkpoint(out / "best.pt")
-    assert meta["stage"] == "D5OWN4" and meta["init_path"] == str(init)
-    assert isinstance(net, FourSeatNet)

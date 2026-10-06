@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training Dashboard</title>
+<style>
+:root {
+  --surface-0: #f4f3f0; --surface-1: #fcfcfb; --border: #e2e1dc;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7a7974;
+  --grid: #ebeae6; --series: #2a78d6; --best: #1baf7a;
+  --good: #0ca30c; --bad: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface-0: #111110; --surface-1: #1a1a19; --border: #2e2e2c;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --grid: #2a2a28; --series: #3987e5; --best: #199e70;
+  }
+}
+:root[data-theme="dark"] {
+  --surface-0: #111110; --surface-1: #1a1a19; --border: #2e2e2c;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+  --grid: #2a2a28; --series: #3987e5; --best: #199e70;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface-0); color: var(--text-primary);
+       font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 5; background: var(--surface-0);
+         border-bottom: 1px solid var(--border); padding: 12px 16px;
+         display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+header h1 { font-size: 16px; margin: 0 12px 0 0; }
+#runDesc { flex-basis: 100%; margin: 0; white-space: pre-wrap; }
+select, input, button { font: inherit; color: var(--text-primary); background: var(--surface-1);
+       border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+button { cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+.meta { color: var(--text-secondary); font-size: 13px; }
+main { padding: 16px; max-width: 1600px; margin: 0 auto; }
+h2 { font-size: 15px; margin: 24px 0 8px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+        padding: 10px 12px 8px; position: relative; }
+.card .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.card .name { font-weight: 600; font-size: 13px; }
+.card .key { color: var(--text-muted); font-size: 11px; font-family: ui-monospace, monospace; }
+.card .now { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+.card .unit { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.card svg { display: block; width: 100%; height: 130px; margin: 6px 0 4px; }
+.card .desc { color: var(--text-secondary); font-size: 12px; }
+.dir { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.dir.up, .dir.down { color: var(--text-primary); }
+.dir.mid { color: var(--text-muted); }
+.chg { font-size: 12px; margin-left: 6px; }
+.chg.good { color: var(--good); } .chg.bad { color: var(--bad); }
+.tip { position: absolute; pointer-events: none; background: var(--text-primary); color: var(--surface-1);
+       font-size: 12px; padding: 3px 6px; border-radius: 4px; white-space: nowrap; display: none;
+       font-variant-numeric: tabular-nums; }
+#openings pre { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+       padding: 12px; overflow-x: auto; font: 12px/1.35 ui-monospace, Menlo, monospace; }
+table { border-collapse: collapse; margin: 8px 0; background: var(--surface-1); font-variant-numeric: tabular-nums; }
+th, td { border: 1px solid var(--border); padding: 4px 10px; text-align: right; font-size: 13px; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--text-secondary); font-weight: 600; }
+td.good { color: var(--good); font-weight: 600; } td.bad { color: var(--bad); font-weight: 600; }
+#imps { overflow-x: auto; }
+.zoom { color: var(--text-muted); font-size: 11px; font-style: italic; }
+.ax { fill: var(--text-muted); font-size: 10px; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--series); outline-offset: 3px; }
+select { max-width: 100%; }
+.card .key { overflow-wrap: anywhere; }
+@media (max-width: 600px) { body, select, input, button { font-size: 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Training Dashboard</h1>
+  <a href="/belief" style="color:var(--series)">Belief nets →</a>
+  <select id="run" aria-label="Run"></select>
+  <input id="filter" placeholder="filter charts…" aria-label="Filter charts">
+  <label class="meta"><input type="checkbox" id="zoom" checked> zoom past early jumps</label>
+  <label class="meta"><input type="checkbox" id="flat"> show flat lines</label>
+  <button id="impBtn">Run IMP matches on newest model</button>
+  <button id="openBtn">Run opening + simplicity check on newest model</button>
+  <span class="meta" id="status"></span>
+  <p class="meta" id="runDesc"></p>
+</header>
+<main>
+  <section id="imps"><h2>IMP matches (newest checkpoint vs others)</h2>
+    <div class="meta" id="impMeta"></div>
+    <div class="meta">IMPs per board for this run's model. Above 0 = we win. ↑ higher is better. The range is the 95% confidence interval: if it crosses 0, the result is not sure yet.</div>
+    <table id="impTable"></table>
+    <h3>Weak spots (from the same matches)</h3>
+    <div class="meta">Where IMPs are won or lost in competition. Each cell: newest value, then the value before (grey). Hover a heading for what it means.</div>
+    <table id="weakTable"></table>
+    <details><summary class="meta">All past IMP results</summary><table id="impAll"></table></details>
+  </section>
+  <section id="openings"><h2>Opening bids</h2><div class="meta" id="openMeta"></div><pre id="openText">No opening check yet for this run.</pre></section>
+  <div id="charts"></div>
+</main>
+<script>
+// key -> [label, one-line meaning, direction]: up = higher is better, down = lower is better, mid = no good direction / watch it
+const M = {
+  "validation.score": ["Grounding contract score", "Mean score of greedy silent-opponent validation auctions.", "up"],
+  "validation.regret": ["Grounding regret", "Points lost against the best silent-opponent contract.", "down"],
+  "validation.passout": ["Grounding pass-out rate", "Share of validation auctions passed out.", "mid"],
+  "validation.decisions": ["Grounding decisions", "Partnership calls per validation auction.", "mid"],
+  "select_metric": ["Selection score", "The number that picks best.pt (own score during own-contract stages, IMPs during D).", "up"],
+  "validation.fourseat.imps_vs_opponent": ["IMPs vs reference model", "Match result against the run's fixed reference model, IMPs per board. Above 0 means we win.", "up"],
+  "validation.silent.score": ["Silent score", "Points per deal when the opponents always pass. Pure partnership bidding skill.", "up"],
+  "playout.dd_search_imps_vs_deployed": ["RL net in DD search vs deployed play", "Learner's net inside the DD search (PIMC 20, own belief) vs deployed E48+PIMC, IMPs/board, boards 0-1499. B2g in the same search: +0.08.", "up"],
+  "playout.dd_search_imps_vs_b2g": ["RL net vs B2g, both in DD search", "Same search, same boards: learner's net minus B2g. Above 0 = RL helped.", "up"],
+  "playout.imps_vs_e48": ["Plain RL net vs E48", "Net alone (no search) vs E48 plain, IMPs/board. B2g alone: +0.70.", "up"],
+  "dd_regret.per_deal": ["Tricks lost vs double dummy", "Net alone on 999 test deals: tricks lost per deal vs perfect play (all 4 hands seen). Rising is expected a little if it learns non-DD play.", "down"],
+  "dd_regret.lead": ["DD tricks lost at the lead", "Mean tricks lost by the opening lead vs double dummy.", "down"],
+  "dd_regret.defence": ["DD tricks lost, defence", "Mean tricks lost per defensive card vs double dummy.", "down"],
+  "dd_regret.declarer": ["DD tricks lost, declarer", "Mean tricks lost per declarer card vs double dummy.", "down"],
+  "selfplay.tricks_vs_dd.declarer_vs_search": ["Searcher as declarer vs searcher", "Self-play: declarer tricks minus double dummy, both sides searching.", "mid"],
+  "selfplay.tricks_vs_dd.defence_vs_search": ["Searcher as defence vs searcher", "Self-play: double dummy minus declarer tricks, both sides searching.", "mid"],
+  "selfplay.tricks_vs_dd.declarer_vs_greedy": ["Searcher as declarer vs greedy net", "Declarer tricks minus double dummy when the defence is a plain pool net.", "up"],
+  "selfplay.tricks_vs_dd.defence_vs_greedy": ["Searcher as defence vs greedy net", "Double dummy minus declarer tricks when declarer is a plain pool net.", "up"],
+  "search.net_disagrees": ["Search overrules the net", "Share of searched positions where the net's card is not one of the rollout search's best cards. Falls as the net learns the search.", "down"],
+  "search.gain_when_disagree": ["Search gain when it overrules", "Tricks the search's best card is worth over the net's card, when they differ.", "mid"],
+  "search.tied_best_share": ["Tied best cards", "Share of positions with 2+ cards tied for best; the actor picks one at random (no habits).", "mid"],
+  "fresh.net_card_is_search_best": ["Net matches search on new games", "On games it has not trained on yet: share where the net's card is a search-best card.", "up"],
+  "fresh.q_mse": ["Q error on new games", "Net's value error vs the rollout values on games it has not trained on yet.", "down"],
+  "drift.same_card_as_b2g.lead": ["Same lead as B2g", "Test positions: share where the learner picks B2g's card. Shows how far it moved.", "mid"],
+  "belief.trick1.card_acc": ["Belief head: card owner, trick 1", "Learner's belief head on the test deals, trick 1 (dummy down).", "up"],
+  "belief.trick1.acc_A": ["Belief head: ace owner, trick 1", "Share of hidden aces placed right at trick 1.", "up"],
+  "rl.positions_total": ["Searched positions so far", "Training targets the actors have produced.", "mid"],
+  "selfplay.boards_per_hour": ["Self-play boards per hour", "All actors together (estimate).", "up"],
+  "trick1.defender.shape_exact": ["Exact shape (defender, trick 1)", "Share of hidden hands whose 4 suit lengths are all guessed right.", "up"],
+  "trick1.defender.hcp_mae": ["HCP error (defender, trick 1)", "Mean absolute error of the expected HCP of each hidden hand.", "down"],
+  "trick1.defender.card_acc": ["Card owner (defender, trick 1)", "Share of hidden cards placed with the right player.", "up"],
+  "trick1.defender.acc_A": ["Ace owner (defender, trick 1)", "Share of hidden aces placed with the right player.", "up"],
+  "trick1.defender.acc_K": ["King owner (defender, trick 1)", "Share of hidden kings placed with the right player.", "up"],
+  "trick1.defender.len_exact": ["Suit length (defender, trick 1)", "Share of hidden suit lengths guessed exactly.", "up"],
+  "trick1.declarer.shape_exact": ["Exact shape (declarer, trick 1)", "Share of hidden hands whose 4 suit lengths are all guessed right.", "up"],
+  "trick1.declarer.hcp_mae": ["HCP error (declarer, trick 1)", "Mean absolute error of the expected HCP of each hidden hand.", "down"],
+  "trick1.declarer.card_acc": ["Card owner (declarer, trick 1)", "Share of hidden cards placed with the right player.", "up"],
+  "trick1.declarer.acc_A": ["Ace owner (declarer, trick 1)", "Share of hidden aces placed with the right player.", "up"],
+  "trick1.declarer.acc_K": ["King owner (declarer, trick 1)", "Share of hidden kings placed with the right player.", "up"],
+  "trick1.declarer.len_exact": ["Suit length (declarer, trick 1)", "Share of hidden suit lengths guessed exactly.", "up"],
+  "all.shape_exact": ["Exact shape (all positions)", "Share of hidden hands whose 4 suit lengths are all guessed right.", "up"],
+  "all.hcp_mae": ["HCP error (all positions)", "Mean absolute error of the expected HCP of each hidden hand.", "down"],
+  "all.card_acc": ["Card owner (all positions)", "Share of hidden cards placed with the right player.", "up"],
+  "all.acc_A": ["Ace owner (all positions)", "Share of hidden aces placed with the right player.", "up"],
+  "all.acc_K": ["King owner (all positions)", "Share of hidden kings placed with the right player.", "up"],
+  "all.len_exact": ["Suit length (all positions)", "Share of hidden suit lengths guessed exactly.", "up"],
+  "validation.silent.regret": ["Silent regret", "Points lost vs the best possible contract when opponents pass.", "down"],
+  "validation.silent.passout": ["Silent pass-out rate", "Share of silent deals where our side never bids.", "mid"],
+  "validation.silent.decisions": ["Silent calls per deal", "How many calls our side makes when opponents pass.", "mid"],
+  "validation.fourseat.own_score": ["Own-contract score", "Points per side for its own contract, all four seats bidding.", "up"],
+  "validation.fourseat.own_ns": ["Own score N/S", "Own-contract score for North/South only. Should match E/W.", "up"],
+  "validation.fourseat.own_ew": ["Own score E/W", "Own-contract score for East/West only. Should match N/S.", "up"],
+  "validation.fourseat.own_regret": ["Own regret", "Points lost vs the best contract for that side.", "down"],
+  "validation.fourseat.objective": ["Objective", "Own score plus double, redouble and sacrifice gains.", "up"],
+  "validation.fourseat.table_ns": ["Table score N/S", "Real N/S table result. Self-play, so should stay near 0.", "mid"],
+  "validation.fourseat.table_ns_undoubled": ["Table score N/S (no doubles)", "N/S table result ignoring doubles. Near 0 in self-play.", "mid"],
+  "validation.fourseat.passout": ["Pass-out rate", "Share of deals where all four pass.", "mid"],
+  "validation.fourseat.both_sides_bid": ["Both sides bid", "Share of deals where both sides make a bid. Higher = more competition.", "mid"],
+  "validation.fourseat.calls": ["Calls per deal", "Length of the auction.", "mid"],
+  "validation.fourseat.level5_share": ["Level 5+ share", "Share of final contracts at level 5 or higher. A sudden rise means overbidding.", "mid"],
+  "validation.fourseat.double_rate": ["Double rate", "Share of legal spots where the model doubles.", "mid"],
+  "validation.fourseat.double_accuracy": ["Double accuracy", "Share of doubles that gained points.", "up"],
+  "validation.fourseat.delta_per_double": ["Points per double", "Average points gained per double.", "up"],
+  "validation.fourseat.doubles": ["Doubles (count)", "Number of doubles on the validation deals.", "mid"],
+  "validation.fourseat.p_double_final": ["P(double) at final spot", "Average double probability where pass would end the auction.", "mid"],
+  "validation.fourseat.redouble_rate": ["Redouble rate", "Share of legal spots where the model redoubles.", "mid"],
+  "validation.fourseat.redouble_accuracy": ["Redouble accuracy", "Share of redoubles that gained points.", "up"],
+  "validation.fourseat.delta_per_redouble": ["Points per redouble", "Average points gained per redouble.", "up"],
+  "validation.fourseat.redoubles": ["Redoubles (count)", "Number of redoubles on the validation deals.", "mid"],
+  "validation.fourseat.sac_rate": ["Sacrifice rate", "Share of legal spots where the model sacrifices.", "mid"],
+  "validation.fourseat.sacs": ["Sacrifices (count)", "Number of sacrifices on the validation deals.", "mid"],
+  "validation.fourseat.sac_credit_per_sac": ["Points per sacrifice", "Average gain of a sacrifice vs letting them play.", "up"],
+  "validation.fourseat.sac_positive_share": ["Sacrifice accuracy", "Share of sacrifices that gained points.", "up"],
+  "validation.fourseat.sac_level5_share": ["Sacrifices at level 5+", "Share of sacrifices at level 5 or higher.", "mid"],
+  "validation.fourseat.spots_per_1000.x": ["Double spots / 1000 deals", "How often doubling is legal and offered.", "mid"],
+  "validation.fourseat.spots_per_1000.xx": ["Redouble spots / 1000 deals", "How often redoubling is legal and offered.", "mid"],
+  "validation.fourseat.spots_per_1000.sac": ["Sacrifice spots / 1000 deals", "How often a sacrifice is possible.", "mid"],
+  "validation.fourseat.double_value.mse": ["Double value error", "How wrong the double value head is (squared error).", "down"],
+  "validation.fourseat.double_value.final_mse": ["Double value error (final spots)", "Same, only where pass would end the auction.", "down"],
+  "validation.fourseat.double_value.profitable_share": ["Doubles that would pay", "Share of spots where doubling really gains.", "mid"],
+  "validation.fourseat.double_value.greedy_x_share": ["Model doubles (greedy)", "Share of spots where the model's top choice is double.", "mid"],
+  "validation.fourseat.double_value.greedy_x_accuracy": ["Greedy double accuracy", "Share of those greedy doubles that gain.", "up"],
+  "validation.fourseat.double_value.q_positive_share": ["Value head says double", "Share of spots where the value head predicts a gain.", "mid"],
+  "validation.fourseat.double_value.q_positive_accuracy": ["Value head double accuracy", "When the value head predicts a gain, share that really gain.", "up"],
+  "validation.fourseat.double_value.spots": ["Double value spots", "Number of spots the double value head was tested on.", "mid"],
+  "validation.fourseat.double_value.final_spots": ["Double value final spots", "Same, final spots only.", "mid"],
+  "validation.fourseat.redouble_value.mse": ["Redouble value error", "How wrong the redouble value head is.", "down"],
+  "validation.fourseat.redouble_value.profitable_share": ["Redoubles that would pay", "Share of spots where redoubling really gains.", "mid"],
+  "validation.fourseat.redouble_value.spots": ["Redouble value spots", "Number of spots tested.", "mid"],
+  "validation.fourseat.sac_value.mse": ["Sacrifice value error", "How wrong the sacrifice value head is.", "down"],
+  "validation.fourseat.sac_value.profitable_share": ["Sacrifices that would pay", "Share of spots where a sacrifice really gains.", "mid"],
+  "validation.fourseat.sac_value.spots": ["Sacrifice value spots", "Number of spots tested.", "mid"],
+  "actor_loss": ["Policy network loss", "Total training loss of the bidding network. Noisy; watch for spikes.", "mid"],
+  "actor_grad_norm": ["Policy gradient size", "Size of the update before clipping. Big spikes = unstable.", "mid"],
+  "critic_grad_norm": ["Critic gradient size", "Size of the critic update before clipping.", "mid"],
+  "policy_loss": ["Policy-gradient loss", "The reward-driven part of the loss. Noisy by nature.", "mid"],
+  "policy_objective": ["Policy objective", "Advantage-weighted log-probability. Noisy by nature.", "mid"],
+  "entropy": ["Policy entropy", "How spread out the choices are. Falling = more certain; too low = stuck.", "mid"],
+  "critic_loss": ["Critic loss", "Error of the network that predicts the result.", "down"],
+  "q_loss": ["Contract value loss", "Error predicting each contract's score.", "down"],
+  "trick_nll": ["Trick prediction loss", "How well it predicts the trick count (0–13). Blind guess = 2.64; e^-value = typical chance it gives the right count.", "down"],
+  "advantage_mean": ["Advantage mean", "Should stay near 0.", "mid"],
+  "advantage_std": ["Advantage spread", "How different outcomes are from what was expected.", "mid"],
+  "return_mean": ["Return (training)", "Average training reward, relative to the best contract.", "up"],
+  "table_return_mean": ["Table return (training)", "Average table-score reward in training.", "mid"],
+  "own_score_train": ["Own score (training)", "Own-contract score on the training games (exploring).", "up"],
+  "calls": ["Calls per deal (training)", "Auction length in training games.", "mid"],
+  "decisions": ["Decisions (training)", "Number of calls trained on per step.", "mid"],
+  "groups": ["Groups (training)", "Number of deal groups per step.", "mid"],
+  "silent_episodes": ["Silent episodes", "Training games where one side must pass.", "mid"],
+  "both_sides_bid_free": ["Both sides bid (training)", "Share of non-silent training games where both sides bid.", "mid"],
+  "clean_share": ["Clean-spot share", "Share of spots where all earlier opponent calls were their top choice.", "mid"],
+  "train_clean_share": ["Clean-spot share (train)", "Same, as logged by the trainer.", "mid"],
+  "opponent_weight_norm": ["Opponent weight size", "Size of the opponent network weights.", "mid"],
+  "double_value_loss": ["Double value loss", "Training loss of the double value head.", "down"],
+  "double_value_mse": ["Double value error (train)", "Squared error of the double value head in training.", "down"],
+  "double_ce": ["Double switch copy loss", "How far the double switch is from its value head.", "mid"],
+  "double_p": ["P(double) in training", "Average double probability in training games.", "mid"],
+  "double_profitable_share": ["Profitable double spots (train)", "Share of training spots where doubling gains.", "mid"],
+  "double_credit_mean": ["Double bonus mean", "Average bonus paid to doubles in training.", "mid"],
+  "double_decisions": ["Double decisions", "Double spots per training step.", "mid"],
+  "double_clean_decisions": ["Clean double decisions", "Clean double spots per training step.", "mid"],
+  "train_double_calls": ["Doubles (training)", "Doubles made per training step.", "mid"],
+  "train_standing_doubles": ["Standing doubles", "Doubles that stayed to the end of the auction.", "mid"],
+  "train_standing_doubles_opp0": ["Standing doubles (self-play)", "Same, self-play games only.", "mid"],
+  "train_standing_redoubles": ["Standing redoubles", "Redoubles that stayed to the end.", "mid"],
+  "train_episodes_opp0": ["Self-play games", "Training games against itself (not the league).", "mid"],
+  "redouble_value_loss": ["Redouble value loss", "Training loss of the redouble value head.", "down"],
+  "redouble_value_mse": ["Redouble value error (train)", "Squared error of the redouble value head.", "down"],
+  "redouble_ce": ["Redouble switch copy loss", "How far the redouble switch is from its value head.", "mid"],
+  "redouble_p": ["P(redouble) in training", "Average redouble probability in training.", "mid"],
+  "redouble_profitable_share": ["Profitable redouble spots", "Share of training spots where redoubling gains.", "mid"],
+  "redouble_decisions": ["Redouble decisions", "Redouble spots per training step.", "mid"],
+  "redouble_clean_decisions": ["Clean redouble decisions", "Clean redouble spots per step.", "mid"],
+  "redouble_calls": ["Redoubles (training)", "Redoubles made per training step.", "mid"],
+  "redouble_credit_mean": ["Redouble bonus mean", "Average bonus paid to redoubles.", "mid"],
+  "sac_value_loss": ["Sacrifice value loss", "Training loss of the sacrifice value head.", "down"],
+  "sac_value_mse": ["Sacrifice value error (train)", "Squared error of the sacrifice value head.", "down"],
+  "sac_ce": ["Sacrifice switch copy loss", "How far the sacrifice switch is from its value head.", "mid"],
+  "sac_p": ["P(sacrifice) in training", "Average sacrifice probability in training.", "mid"],
+  "sac_profitable_share": ["Profitable sacrifice spots", "Share of training spots where a sacrifice gains.", "mid"],
+  "sac_decisions": ["Sacrifice decisions", "Sacrifice spots per training step.", "mid"],
+  "sac_clean_decisions": ["Clean sacrifice decisions", "Clean sacrifice spots per step.", "mid"],
+  "sac_fired": ["Sacrifices (training)", "Sacrifices made per training step.", "mid"],
+  "train_sac_fired": ["Sacrifices fired (train)", "Same, as logged by the trainer.", "mid"],
+  "sac_credit_mean": ["Sacrifice bonus mean", "Average bonus paid to sacrifices.", "mid"],
+  "sac_level5_share": ["Sacrifices at 5+ (train)", "Share of training sacrifices at level 5+.", "mid"],
+  "code_word_share": ["Code words (training)", "Share of training calls that are code words (sampled play, so higher than greedy self-play). The code-word penalty pushes this down.", "down"],
+  "league_size": ["League size", "Number of old snapshots in the opponent pool.", "mid"],
+  "league_opponent_step": ["League opponent step", "Which old snapshot was the opponent this step.", "mid"],
+};
+const SIMPLE_META = {
+  "code_words_per_100": ["Code words", "Unique calls flagged as artificial suit bids, low doubles, redoubles, or artificial 2♣ openings. A heuristic for face-value readability.", "down", "per 100 auctions"],
+  "natural_suit_bids": ["Natural suit bids", "Share with 4+ cards in the suit, or 3+ when raising partner.", "up", "share (0–1)"],
+  "low_doubles_per_100": ["Low doubles", "Doubles of contracts at level 3 or below.", "mid", "per 100 auctions"],
+  "cue_bids_per_100": ["Cue bids", "Bids of a suit only the opponents have bid.", "mid", "per 100 auctions"],
+  "redoubles_per_100": ["Redoubles", "Redouble calls.", "mid", "per 100 auctions"],
+  "four_nt_per_100": ["4NT bids", "Calls of 4NT.", "mid", "per 100 auctions"],
+  "jump_share": ["Jump bids", "Share of bids that skip an available level.", "mid", "share (0–1)"],
+  "light_open_share": ["Light openings", "Share of 0–7 HCP hands that open when nobody has bid yet. High = destructive openings, harder for partner to read (code words miss these).", "down", "share (0–1)"],
+  "unbalanced_nt_share": ["Unbalanced NT openings", "Share of 1NT/2NT openings without a balanced shape (4333, 4432, 5332). High = NT is used as an artificial strong opening.", "down", "share (0–1)"],
+  "opening_hcp_spread": ["Opening HCP spread", "HCP range (5th to 95th percentile) of each opening call, averaged over openings. Wide = one call covers very different hands.", "down", "HCP"],
+  "calls_per_auction": ["Calls per auction", "Calls by all four seats, including passes.", "mid", "calls per deal"],
+  "declaring_side_calls": ["Declaring side calls", "Non-pass calls by the side that gets the contract.", "mid", "calls per deal"],
+  "both_sides_bid": ["Both sides bid", "Share of auctions with non-pass calls by both sides.", "mid", "share (0–1)"],
+};
+for (const [k, v] of Object.entries(SIMPLE_META)) { M["simplicity." + k] = v.slice(0, 3); }
+for (let l = 0; l <= 7; l++) M[`validation.fourseat.level_share.${l}`] =
+  [`Contracts at level ${l}`, l ? `Share of final contracts at level ${l}.` : "Share of deals passed out.", "mid"];
+
+// Unit of each number, by key pattern (first match wins). sq = squared error in (points/100)^2.
+const UNITS = [
+  [/dd_regret|tricks_vs_dd|gain_when_disagree|selfplay\.(declarer|dd)_tricks/, "tricks"],
+  [/data_lag_steps/, "learner steps"],
+  [/per_hour/, "per hour"],
+  [/replay_ratio/, "uses per position"],
+  [/eval_minutes/, "minutes"],
+  [/positions_total|boards_total|buffer_positions|^rl\.shards|dd_search_boards/, "count"],
+  [/dd_best_card|same_card_as_b2g|net_disagrees|tied_best_share|net_card_is_search_best|^belief\..*(card_acc|acc_A)/, "share (0–1)"],
+  [/q_mse/, "tricks²"],
+  [/imps/, "IMPs per board"],
+  [/trick_nll|_ce$/, "nats (cross-entropy; lower = surer and right)"],
+  [/^entropy$/, "nats"],
+  [/hcp_mae$/, "HCP per hidden hand"],
+  [/shape_exact$|len_exact$|card_acc$|\.acc_[AKQJ]$/, "share (0–1)"],
+  [/_nll$/, "loss (no unit)"],
+  [/policy_objective|value_loss|^actor_loss$|^policy_loss$/, "loss (no unit)"],
+  [/mse|^critic_loss$|^q_loss$/, "sq"],
+  [/grad_norm/, "gradient length (clipped at 5)"],
+  [/spots_per_1000/, "spots per 1,000 deals"],
+  [/delta_per_double/, "points per double"],
+  [/delta_per_redouble/, "points per redouble"],
+  [/sac_credit_per_sac/, "points per sacrifice"],
+  [/credit_mean/, "points ÷ 100"],
+  [/select_metric|score|own_ns|own_ew|objective|regret|table_ns/, "points per deal"],
+  [/return_mean|advantage/, "points ÷ 100"],
+  [/code_word_share|rate|share|accuracy|passout|both_sides|p_double_final|_p$/, "share (0–1)"],
+  [/^calls$|fourseat\.calls/, "calls per deal"],
+  [/silent\.decisions/, "calls per deal (our side)"],
+  [/decisions|_calls|standing|_fired|^sacs$|^doubles$|^redoubles$|fourseat\.(doubles|redoubles|sacs)$|silent_episodes|episodes|^groups$/, "count"],
+  [/\.spots$|final_spots/, "count (validation spots)"],
+  [/league_size/, "snapshots"],
+  [/league_opponent_step/, "training step"],
+  [/loss|objective/, "loss (no unit)"],
+  [/norm/, "weight length"],
+];
+const unitOf = k => k.startsWith("simplicity.") ? (SIMPLE_META[k.slice(11)] || [, , , "count"])[3]
+  : (UNITS.find(([re]) => re.test(k)) || [, ""])[1];
+
+const GROUPS = [
+  ["Headline", k => ["select_metric", "validation.fourseat.imps_vs_opponent", "validation.silent.score",
+                     "validation.fourseat.own_score", "validation.fourseat.objective", "validation.score"].includes(k)],
+  ["Simplicity (greedy self-play on validation deals)", k => k.startsWith("simplicity.")],
+  ["Play belief: trick 1, dummy down", k => /^trick1\./.test(k)],
+  ["Play belief: all positions", k => /^(all|test)\./.test(k)],
+  ["Play belief: systems hidden", k => /^nosys\./.test(k)],
+  ["Play RL: strength", k => /^playout\./.test(k) || /^(dd_regret|dd_best_card)\./.test(k) || /^b2g\.dd_/.test(k)],
+  ["Play RL: self-play games", k => /^selfplay\./.test(k)],
+  ["Play RL: search vs net", k => /^(search|fresh|drift)\./.test(k)],
+  ["Play RL: belief head", k => /^belief\./.test(k) || /^b2g\.belief\./.test(k)],
+  ["Play RL: data + learner", k => /^rl\./.test(k) || /^train\.(q_mse|belief_card_nll|steps_per_hour|grad_norm)/.test(k)],
+  ["Silent bidding", k => k.startsWith("validation.silent.")],
+  ["Doubles", k => /double(?!s_bid)|\.x$|x_share|greedy_x/.test(k) && !/redouble/.test(k)],
+  ["Redoubles", k => /redouble|\.xx$/.test(k)],
+  ["Sacrifices", k => /sac/.test(k)],
+  ["Four-seat bidding", k => k.startsWith("validation.fourseat.")],
+  ["Training internals", k => true],
+];
+const SKIP = new Set(["step", "seconds", "lr", "train_block_index", "train_block_start", "best_step"]);
+const DIRTEXT = {up: "↑ higher is better", down: "↓ lower is better", mid: "↕ no good direction (watch it)"};
+
+const $ = id => document.getElementById(id);
+let rows = [], run = "";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => Math.abs(v) >= 1000 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1)
+                 : Math.abs(v) >= 0.1 ? v.toFixed(3) : v.toPrecision(3);
+
+async function loadRuns() {
+  const runs = await (await fetch("/api/runs")).json();
+  const keep = $("run").value || localGet("run");
+  $("run").replaceChildren(...runs.map(r => new Option(r.path, r.path)));
+  if (keep && runs.some(r => r.path === keep)) $("run").value = keep;
+  runDescs = Object.fromEntries(runs.map(r => [r.path, r.description || ""]));
+  run = $("run").value;
+  showDesc();
+}
+let runDescs = {};
+function showDesc() { $("runDesc").textContent = runDescs[run] || "No description for this run."; }
+function localGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function localSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
+
+async function refresh() {
+  if (!run) {
+    $("status").textContent = "No training runs yet. Start ./train.sh to create one.";
+    $("impBtn").disabled = $("openBtn").disabled = true;
+    return;
+  }
+  rows = (await (await fetch(`/api/log?run=${encodeURIComponent(run)}`)).json())
+    .filter(r => r["validation.score"] !== undefined || r["validation.silent.score"] !== undefined || r["actor_loss"] !== undefined
+              || Object.keys(r).some(k => /^(simplicity|train|tricks_lost|playout)\./.test(k)));
+  const last = rows[rows.length - 1] || {};
+  $("status").textContent = `step ${last.step ?? "?"} · ${rows.length} log lines · updated ${new Date().toLocaleTimeString()}`;
+  draw();
+  loadOpenings();
+  loadImps();
+}
+
+function bestStep() {
+  return rows[rows.length - 1]?.best_step;
+}
+
+function draw() {
+  const q = $("filter").value.toLowerCase(), showFlat = $("flat").checked;
+  const keys = [...new Set(rows.flatMap(Object.keys))].filter(k => !SKIP.has(k));
+  const placed = new Set(), out = [];
+  const best = bestStep();
+  for (const [title, test] of GROUPS) {
+    const ks = keys.filter(k => !placed.has(k) && test(k)).sort((a, b) => Object.keys(M).indexOf(a) - Object.keys(M).indexOf(b));
+    ks.forEach(k => placed.add(k));
+    const cards = ks.map(k => card(k, best, q, showFlat)).filter(Boolean);
+    if (cards.length) out.push(`<h2>${title}</h2><div class="grid">${cards.join("")}</div>`);
+  }
+  $("charts").innerHTML = out.join("") || `<p class="meta">No numbers match.</p>`;
+  document.querySelectorAll(".card").forEach(attachHover);
+}
+
+function card(key, best, q, showFlat, src = rows) {
+  const [label, desc, dir] = M[key] || [key.split(".").pop().replaceAll("_", " "), "No description yet.", "mid"];
+  if (q && !(label + key + desc).toLowerCase().includes(q)) return null;
+  const pts = src.filter(r => typeof r[key] === "number" && isFinite(r[key])).map(r => [r.step, r[key]]);
+  if (pts.length < 2) return null;
+  let lo = Math.min(...pts.map(p => p[1])), hi = Math.max(...pts.map(p => p[1]));
+  if (!showFlat && hi - lo < 1e-9) return null;
+  // Early jump: if points in the first 10% sit more than one "later range" outside the
+  // later values, zoom to the later values and pin the early points to the edge.
+  let zoomNote = "";
+  if ($("zoom").checked && pts.length >= 6) {
+    const cut = Math.max(1, Math.ceil(pts.length * 0.1));
+    const rest = pts.slice(cut).map(p => p[1]);
+    const rLo = Math.min(...rest), rHi = Math.max(...rest), span = Math.max(rHi - rLo, 1e-9);
+    const off = pts.slice(0, cut).filter(p => p[1] < rLo - span || p[1] > rHi + span);
+    if (off.length) {
+      lo = rLo; hi = rHi;
+      zoomNote = `<div class="zoom">Zoomed: ${off.length} early point${off.length > 1 ? "s" : ""} off the chart (step ${off[0][0]}: ${fmt(off[0][1])}).</div>`;
+    }
+  }
+  if (hi === lo) { lo -= 1; hi += 1; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const s0 = pts[0][0], s1 = pts[pts.length - 1][0];
+  const W = 400, H = 130, L = 40, R = 6, T = 6, B = 16;
+  const x = s => L + (W - L - R) * (s - s0) / Math.max(s1 - s0, 1);
+  const y = v => T + (H - T - B) * (1 - (Math.min(Math.max(v, lo), hi) - lo) / (hi - lo));
+  const path = pts.map((p, i) => `${i ? "L" : "M"}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join("");
+  const ticks = [hi - pad, (hi + lo) / 2, lo + pad];
+  const grid = ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/>
+     <text class="ax" x="${L - 4}" y="${y(v) + 3}" text-anchor="end">${fmt(v)}</text>`).join("");
+  const bestLine = best !== undefined && best >= s0 && best <= s1
+    ? `<line x1="${x(best)}" x2="${x(best)}" y1="${T}" y2="${H - B}" stroke="var(--best)" stroke-dasharray="3 3"/>` : "";
+  const now = pts[pts.length - 1][1], first = pts[0][1];
+  const unit = key === "select_metric" && rows[rows.length - 1]?.["validation.fourseat.imps_vs_opponent"] !== undefined ? "IMPs per board" : unitOf(key);
+  const unitText = unit === "sq" ? "squared error, (points ÷ 100)²" : unit;
+  const plain = unit === "sq" ? ` <span class="unit">≈ ±${Math.round(Math.sqrt(Math.max(now, 0)) * 100)} pts typical error</span>` : "";
+  let chg = "";
+  if (dir !== "mid" && first !== 0) {
+    const good = dir === "up" ? now > first : now < first;
+    chg = `<span class="chg ${good ? "good" : "bad"}">${good ? "better" : "worse"} than start</span>`;
+  }
+  return `<div class="card" data-key="${key}" data-pts='${JSON.stringify(pts)}' data-x0="${s0}" data-x1="${s1}" data-lo="${lo}" data-hi="${hi}">
+    <div class="top"><div><div class="name">${label}</div><div class="key">${key}</div></div>
+      <div class="now">${fmt(now)}${plain}<div class="unit">${unitText}</div></div></div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${label} over training steps">
+      ${grid}${bestLine}
+      <text class="ax" x="${L}" y="${H - 3}">${s0}</text><text class="ax" x="${W - R}" y="${H - 3}" text-anchor="end">${s1}</text>
+      <path d="${path}" fill="none" stroke="var(--series)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+      <line class="cross" y1="${T}" y2="${H - B}" stroke="var(--text-muted)" visibility="hidden" vector-effect="non-scaling-stroke"/>
+    </svg>
+    <div class="desc">${desc}</div>${zoomNote}
+    <div><span class="dir ${dir}">${DIRTEXT[dir]}</span>${chg}</div>
+    <div class="tip"></div></div>`;
+}
+
+function attachHover(el) {
+  const svg = el.querySelector("svg"), tip = el.querySelector(".tip"), cross = el.querySelector(".cross");
+  const pts = JSON.parse(el.dataset.pts), s0 = +el.dataset.x0, s1 = +el.dataset.x1;
+  const W = 400, L = 40, R = 6;
+  svg.addEventListener("mousemove", e => {
+    const box = svg.getBoundingClientRect();
+    const sx = (e.clientX - box.left) / box.width * W;
+    const step = s0 + (sx - L) / (W - L - R) * (s1 - s0);
+    let p = pts[0];
+    for (const q of pts) if (Math.abs(q[0] - step) < Math.abs(p[0] - step)) p = q;
+    const px = L + (W - L - R) * (p[0] - s0) / Math.max(s1 - s0, 1);
+    cross.setAttribute("x1", px); cross.setAttribute("x2", px); cross.setAttribute("visibility", "visible");
+    const u = unitOf(el.dataset.key);
+    tip.textContent = `step ${p[0]}: ${fmt(p[1])} ` + (u === "sq" ? `(≈ ±${Math.round(Math.sqrt(Math.max(p[1], 0)) * 100)} pts)` : u);
+    tip.style.display = "block";
+    const left = svg.offsetLeft + px / W * box.width;
+    tip.style.left = Math.min(Math.max(left - tip.offsetWidth / 2, 0), el.clientWidth - tip.offsetWidth) + "px";
+    tip.style.top = (svg.offsetTop - 4) + "px";
+  });
+  svg.addEventListener("mouseleave", () => { tip.style.display = "none"; cross.setAttribute("visibility", "hidden"); });
+}
+
+let impPoll = null;
+const f1 = v => v.toFixed(1), f2 = v => v.toFixed(2), s3 = v => (v >= 0 ? "+" : "") + v.toFixed(3);
+// [key, heading, tooltip, direction (+1 = higher is better), format]
+const WEAK = [
+  ["contested", "Contested", "IMPs/board on boards where both sides bid or doubled at both tables.", 1, s3],
+  ["uncontested", "Uncontested", "IMPs/board on boards where only one side bid at both tables.", 1, s3],
+  ["dd_A", "We doubled & down /1k", "Tables (per 1000) where our side declares, gets doubled and goes down.", -1, f1],
+  ["dd_B", "They doubled & down /1k", "Tables (per 1000) where the opponent declares, gets doubled and goes down.", 1, f1],
+  ["punish_A", "Our punish rate", "Share of the opponents' failing contracts that we doubled.", 1, f2],
+  ["punish_B", "Their punish rate", "Share of our failing contracts that the opponents doubled.", -1, f2],
+  ["x_low_A", "Our X at lvl 1-2 /1k", "Our doubles of 1- and 2-level contracts, per 1000 tables.", 1, f1],
+  ["outbid_light_A", "Light outbid IMPs", "Our last outbid with 17 or fewer combined HCP: IMPs vs letting them play undoubled.", 1, f2],
+  ["B1", "B1 /board", "We declare at both tables and get doubled and down at one or more: IMPs per board of the match.", 1, s3],
+  ["C", "C /board", "They declare at both tables: IMPs per board of the match.", 1, s3],
+];
+const sign = v => (v >= 0 ? "+" : "") + v.toFixed(2);
+function impCell(r) {
+  if (r.error) return `<td class="bad" title="${r.error.replaceAll('"', "'")}">error</td><td></td>`;
+  const sure = r.ci95[0] > 0 ? "good" : r.ci95[1] < 0 ? "bad" : "";
+  return `<td class="${sure}">${sign(r.imps)}</td><td>${sign(r.ci95[0])} … ${sign(r.ci95[1])}</td>`;
+}
+async function loadImps() {
+  const {job, rows} = await (await fetch(`/api/imps?run=${encodeURIComponent(run)}`)).json();
+  const busy = job.state === "running";
+  $("impBtn").disabled = busy;
+  $("impBtn").textContent = busy ? `IMP matches running (${job.done}/${job.total || "?"})…` : "Run IMP matches on newest model";
+  $("impMeta").textContent = busy ? `Now playing ${job.ckpt} vs ${job.current ?? "…"}. Takes a few minutes in total; the table fills as each match ends.` : "";
+  const latest = {}, prev = {};
+  for (const r of rows) { if (latest[r.opponent]) prev[r.opponent] = latest[r.opponent]; latest[r.opponent] = r; }
+  const head = `<tr><th>Opponent</th><th>Our step</th><th>IMPs / board</th><th>95% range</th><th>Boards</th><th>Before</th><th>When</th></tr>`;
+  $("impTable").innerHTML = Object.keys(latest).length ? head + Object.values(latest).map(r => {
+    const b = prev[r.opponent];
+    const before = b && !b.error && !r.error ? `${sign(b.imps)} @ ${b.step}` : "–";
+    return `<tr><td>${r.opponent}</td><td>${r.step}</td>${impCell(r)}<td>${r.boards}</td><td>${before}</td><td>${r.when}</td></tr>`;
+  }).join("") : `<tr><td>No IMP matches yet for this run.</td></tr>`;
+  $("impAll").innerHTML = rows.length ? head.replace("<th>Before</th>", "") + rows.slice().reverse().map(r =>
+    `<tr><td>${r.opponent}</td><td>${r.step}</td>${impCell(r)}<td>${r.boards}</td><td>${r.when}</td></tr>`).join("") : "";
+  const withWeak = Object.values(latest).filter(r => r.weak);
+  $("weakTable").innerHTML = withWeak.length ? `<tr><th>Opponent</th>${WEAK.map(([, label, tip, dir]) =>
+    `<th title="${tip}">${label} ${dir > 0 ? "↑" : "↓"}</th>`).join("")}</tr>` + withWeak.map(r => {
+    const b = prev[r.opponent]?.weak;
+    return `<tr><td>${r.opponent}</td>${WEAK.map(([key, , , dir, fmt]) => {
+      const v = r.weak[key], old = b?.[key];
+      if (v == null) return "<td>–</td>";
+      const cls = old == null || Math.abs(v - old) < 1e-9 ? "" : (v - old) * dir > 0 ? "good" : "bad";
+      return `<td class="${cls}">${fmt(v)}${old == null ? "" : ` <span class="meta">${fmt(old)}</span>`}</td>`;
+    }).join("")}</tr>`;
+  }).join("") : `<tr><td>No weak-spot numbers yet. Run IMP matches.</td></tr>`;
+  if (busy && !impPoll) impPoll = setInterval(loadImps, 10000);
+  if (!busy && impPoll) { clearInterval(impPoll); impPoll = null; }
+}
+$("impBtn").onclick = async () => {
+  const response = await fetch(`/api/imps?run=${encodeURIComponent(run)}`, {method: "POST"});
+  if (!response.ok) {
+    $("impMeta").textContent = (await response.json()).error;
+    return;
+  }
+  loadImps();
+};
+
+let polling = null;
+async function loadOpenings() {
+  const r = await (await fetch(`/api/openings?run=${encodeURIComponent(run)}`)).json();
+  $("openText").textContent = r.error || r.text || "No opening check yet for this run.";
+  const busy = r.state === "running";
+  $("openBtn").disabled = busy;
+  $("openBtn").textContent = busy ? `Running on ${r.running_ckpt}… (about 1–3 min)` : "Run opening + simplicity check on newest model";
+  $("openMeta").textContent = `Newest checkpoint: ${r.newest_ckpt ?? "none"}` + (r.state === "failed" ? " · last run FAILED, see text below" : "");
+  if (busy && !polling) polling = setInterval(loadOpenings, 5000);
+  if (!busy && polling) { clearInterval(polling); polling = null; }
+}
+$("openBtn").onclick = async () => {
+  const response = await fetch(`/api/openings?run=${encodeURIComponent(run)}`, {method: "POST"});
+  if (!response.ok) {
+    $("openMeta").textContent = (await response.json()).error;
+    return;
+  }
+  loadOpenings();
+};
+$("run").onchange = () => { run = $("run").value; localSet("run", run); showDesc(); refresh(); };
+$("filter").oninput = draw;
+$("flat").onchange = draw;
+$("zoom").onchange = draw;
+
+async function reloadDashboard() {
+  try { await loadRuns(); await refresh(); }
+  catch (error) { $("status").textContent = "Could not refresh. Check that the dashboard server is running."; }
+}
+reloadDashboard();
+setInterval(reloadDashboard, 60000);
+</script>
+</body>
+</html>

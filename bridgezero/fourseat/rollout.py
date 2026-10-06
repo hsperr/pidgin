@@ -58,6 +58,13 @@ def batch_class(doubles: bool):
 
 
 @torch.no_grad()
+def _legal(state: FourSeatBatch, hand: torch.Tensor) -> torch.Tensor:
+    """``state.legal()`` with the opening rule (``competitive.OPENING_RULE``) applied."""
+    from . import competitive
+    return competitive.apply_opening_rule(state.legal(), hand, state.last, state.t,
+                                          competitive.OPENING_RULE)
+
+
 def play(actor, deals: TorchDeals, batch: FourSeatBatch, choose, chunk: int = 32768,
          on_decision=None, temperature: float = 1.0,
          double_margin: float | None = None, frozen: dict | None = None) -> FourSeatBatch:
@@ -91,14 +98,15 @@ def play(actor, deals: TorchDeals, batch: FourSeatBatch, choose, chunk: int = 32
                 for i in range(0, len(ids), chunk):
                     idx = ids[i:i + chunk]
                     state = batch.subset(idx)
-                    out = net(deals.hands[state.deal, state.actor_seat],
-                              state.features()[:, :width])
+                    hand = deals.hands[state.deal, state.actor_seat]
+                    out = net(hand, state.features()[:, :width])
+                    full = _legal(state, hand)
                     from .model import COMPETITIVE_STAGE, competitive_log_probs
                     if (getattr(net, "stage", None) == COMPETITIVE_STAGE
                             and getattr(actor, "stage", None) == COMPETITIVE_STAGE):
-                        action[idx] = competitive_log_probs(out, state.legal()).argmax(-1)
+                        action[idx] = competitive_log_probs(out, full).argmax(-1)
                         continue
-                    legal = state.legal()[:, :PASS + 1]
+                    legal = full[:, :PASS + 1]
                     action[idx] = out["policy_logits"][:, :PASS + 1].masked_fill(
                         ~legal, -torch.inf).argmax(-1)
         ids = decide.nonzero().squeeze(1)
@@ -107,7 +115,7 @@ def play(actor, deals: TorchDeals, batch: FourSeatBatch, choose, chunk: int = 32
             state = batch.subset(idx)
             hand = deals.hands[state.deal, state.actor_seat]
             outputs = actor(hand, state.features())
-            masked = policy_log_probs(outputs, state.legal(), temperature)
+            masked = policy_log_probs(outputs, _legal(state, hand), temperature)
             chosen = choose(masked)
             if double_margin is not None:
                 rest = masked[:, :DOUBLE].argmax(-1)

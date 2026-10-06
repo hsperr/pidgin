@@ -100,41 +100,6 @@ def imps(score_difference: int | float) -> int:
     return sign * bisect_right(IMP_LOWER_BOUNDS, abs(score_difference))
 
 
-def dd_par_score(tricks: np.ndarray, vul_ns: bool, vul_ew: bool) -> int:
-    """Double-dummy ladder minimax, returned as an NS score.
-
-    This uses the best declarer for each side/strain and permits the defenders to
-    double. Redouble never improves the minimax result because a rational defender
-    does not double a contract whose redouble would benefit declarer.
-    """
-    n_contracts = len(CONTRACTS)
-    stand_ns = np.empty(n_contracts, dtype=np.int32)
-    stand_ew = np.empty(n_contracts, dtype=np.int32)
-    trick_perm = STRAIN_PERM
-    for action, (_, level, bid_strain) in enumerate(CONTRACTS):
-        ts = trick_perm[bid_strain]
-        best_ns = []
-        best_ew = []
-        for doubled in (0, 1):
-            best_ns.append(max(contract_score(level, bid_strain, int(tricks[s, ts]),
-                                              doubled, vul_ns) for s in (0, 2)))
-            best_ew.append(max(contract_score(level, bid_strain, int(tricks[s, ts]),
-                                              doubled, vul_ew) for s in (1, 3)))
-        stand_ns[action] = min(best_ns)
-        stand_ew[action] = -min(best_ew)
-
-    a = np.empty(n_contracts, dtype=np.int32)
-    b = np.empty(n_contracts, dtype=np.int32)
-    min_b = 10**9
-    max_a = -10**9
-    for k in range(n_contracts - 1, -1, -1):
-        a[k] = min(int(stand_ns[k]), min_b)
-        b[k] = max(int(stand_ew[k]), max_a)
-        min_b = min(min_b, int(b[k]))
-        max_a = max(max_a, int(a[k]))
-    return max(min(0, min_b), max_a)
-
-
 def dd_cooperative_score(tricks: np.ndarray, side: int, vulnerable: bool) -> int:
     """Best undoubled score a partnership can reach with opponents passing.
 

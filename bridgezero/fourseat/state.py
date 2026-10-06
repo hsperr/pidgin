@@ -277,8 +277,10 @@ def double_delta(batch: FourSeatBatch, deals: TorchDeals) -> torch.Tensor:
     return torch.where(batch.last >= 0, delta, torch.zeros_like(delta))
 
 
-def table_ns_score(batch: FourSeatBatch, deals: TorchDeals) -> torch.Tensor:
-    """Real NS table score, doubled (redoubled) when the final contract is doubled (redoubled)."""
+def table_ns_score(batch: FourSeatBatch, deals: TorchDeals, perfect: bool = False) -> torch.Tensor:
+    """Real NS table score, doubled (redoubled) when the final contract is doubled (redoubled).
+
+    ``perfect`` (or ``TABLE_DOWN_DOUBLED == "both"``): a failing contract is scored doubled."""
     declarer, undoubled, doubled = contract_results(batch, deals)
     is_doubled = getattr(batch, "doubled", None)
     raw = undoubled if is_doubled is None else torch.where(is_doubled, doubled, undoubled)
@@ -289,8 +291,52 @@ def table_ns_score(batch: FourSeatBatch, deals: TorchDeals) -> torch.Tensor:
         vul = batch.vul[rows, declarer.clamp(min=0) % 2].long()
         tricks = deals.tricks[batch.deal, declarer.clamp(min=0), _TABLE_STRAIN.to(c.device)[c]].long()
         raw = torch.where(is_redoubled, _REDOUBLED.to(c.device)[vul, c, tricks], raw)
+    if perfect or TABLE_DOWN_DOUBLED == "both":
+        # Perfect doublers at the table: a failing contract is always charged doubled.
+        c = batch.last.clamp(min=0)
+        tricks = deals.tricks[batch.deal, declarer.clamp(min=0), _TABLE_STRAIN.to(c.device)[c]].long()
+        raw = torch.where(tricks < c // 5 + 7, torch.minimum(raw, doubled), raw)
     ns = torch.where(declarer % 2 == 0, raw, -raw)
     return torch.where(batch.last >= 0, ns, torch.zeros_like(ns))
+
+
+# Share of the doubled penalty charged when a side's own contract goes down (0 = undoubled,
+# 1 = always doubled). The own-contract reward otherwise prices a failing contract as if
+# nobody ever doubles, which makes thin bids cheap.
+OWN_DOWN_DOUBLED = 0.0
+
+
+def set_own_down_doubled(share: float) -> None:
+    global OWN_DOWN_DOUBLED
+    if not 0.0 <= share <= 1.0:
+        raise ValueError("share must be in [0, 1]")
+    OWN_DOWN_DOUBLED = float(share)
+
+
+# Table score with perfect doublers (redoubled stays redoubled). "both": every failing final
+# contract is scored doubled, for both sides; the model's own X then earns nothing and it
+# stops doubling. "own": a side's own failing contract is always charged doubled, but it
+# only collects the doubled set from the opponents when it really doubled. "" = off.
+TABLE_DOWN_DOUBLED = ""
+
+
+def set_table_down_doubled(mode: str) -> None:
+    global TABLE_DOWN_DOUBLED
+    if mode not in ("", "both", "own"):
+        raise ValueError("mode must be '', 'both' or 'own'")
+    TABLE_DOWN_DOUBLED = mode
+
+
+def side_table_scores(batch: FourSeatBatch, deals: TorchDeals) -> torch.Tensor:
+    """``(B,2)`` table score from NS's and EW's point of view, priced per TABLE_DOWN_DOUBLED."""
+    ns = table_ns_score(batch, deals)
+    if TABLE_DOWN_DOUBLED != "own":
+        return torch.stack((ns, -ns), 1)
+    perfect = table_ns_score(batch, deals, perfect=True)
+    declarer_ns = contract_declarer(batch) % 2 == 0
+    # the declaring side pays the perfect-doubler price; the defenders get the real result
+    return torch.stack((torch.where(declarer_ns, perfect, ns),
+                        -torch.where(declarer_ns, ns, perfect)), 1)
 
 
 @torch.no_grad()
@@ -309,7 +355,7 @@ def own_bid_scores(batch: FourSeatBatch, deals: TorchDeals, scorer: TorchScorer,
     ladder = torch.arange(35, device=device)
     all_seats = batch.bid_seats()
     seats = all_seats if exclude is None else all_seats.masked_fill(exclude, -1)
-    scores, ceilings = [], []
+    scores, plain, ceilings = [], [], []
     for side in (0, 1):
         owned = (seats >= 0) & (seats % 2 == side)
         has = owned.any(1)
@@ -322,12 +368,21 @@ def own_bid_scores(batch: FourSeatBatch, deals: TorchDeals, scorer: TorchScorer,
         exact = scorer.exact(deals.rel_tricks(batch.deal, torch.full_like(batch.deal, side)),
                              batch.vul[:, side])
         score = exact[rows, rel.clamp(min=0), top.clamp(min=0)]
+        plain.append(torch.where(has, score, torch.zeros_like(score)))
+        if OWN_DOWN_DOUBLED:
+            # A failing own contract costs a share of the doubled set (see set_own_down_doubled).
+            c = top.clamp(min=0)
+            taken = deals.rel_tricks(batch.deal, torch.full_like(batch.deal, side))[
+                rows, rel.clamp(min=0), _TABLE_STRAIN.to(device)[c]].long()
+            doubled = _DOUBLED.to(device)[batch.vul[:, side].long(), c, taken]
+            score = torch.where(taken < c // 5 + 7,
+                                score + OWN_DOWN_DOUBLED * (doubled - score), score)
         scores.append(torch.where(has, score, torch.zeros_like(score)))
         ceilings.append(scorer.ceiling(exact))
     score = torch.stack(scores, 1)
     ceiling = torch.stack(ceilings, 1)
     last = batch.last.clamp(min=0)
     ns_owns = all_seats[rows, last] % 2 == 0
-    table_ns = torch.where(ns_owns, score[:, 0], -score[:, 1])
+    table_ns = torch.where(ns_owns, plain[0], -plain[1])
     table_ns = torch.where(batch.last >= 0, table_ns, torch.zeros_like(table_ns))
     return score, ceiling, table_ns

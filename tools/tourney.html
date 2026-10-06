@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bidding Tournament</title>
+<style>
+:root {
+  --surface-0: #f4f3f0; --surface-1: #fcfcfb; --border: #e2e1dc;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7a7974;
+  --grid: #ebeae6; --series: #2a78d6; --series2: #d9822b; --ref: #1baf7a;
+  --good: #0ca30c; --bad: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface-0: #111110; --surface-1: #1a1a19; --border: #2e2e2c;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --grid: #2a2a28; --series: #3987e5; --series2: #e8973f; --ref: #199e70;
+  }
+}
+:root[data-theme="dark"] {
+  --surface-0: #111110; --surface-1: #1a1a19; --border: #2e2e2c;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+  --grid: #2a2a28; --series: #3987e5; --series2: #e8973f; --ref: #199e70;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface-0); color: var(--text-primary);
+       font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 5; background: var(--surface-0);
+         border-bottom: 1px solid var(--border); padding: 12px 16px;
+         display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+header h1 { font-size: 16px; margin: 0 12px 0 0; }
+a { color: var(--series); }
+.meta { color: var(--text-secondary); font-size: 13px; }
+main { padding: 16px; max-width: 1600px; margin: 0 auto; }
+h2 { font-size: 15px; margin: 24px 0 8px; }
+.wrap { overflow-x: auto; }
+table { border-collapse: collapse; margin: 8px 0; background: var(--surface-1); font-variant-numeric: tabular-nums; }
+th, td { border: 1px solid var(--border); padding: 4px 10px; text-align: right; font-size: 13px; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--text-secondary); font-weight: 600; }
+td.good, span.good { color: var(--good); } td.bad, span.bad { color: var(--bad); }
+td.self { background: var(--grid); }
+.x .v { font-weight: 600; }
+.x .ci, .x .n { display: block; font-size: 11px; color: var(--text-muted); }
+.sig { font-weight: 700; }
+.tag { font-size: 11px; color: var(--surface-1); background: var(--series2); border-radius: 4px; padding: 0 5px; margin-left: 6px; }
+@media (max-width: 600px) { body { font-size: 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Bidding tournament</h1>
+  <a href="/">← Training dashboard</a>
+  <a href="/belief">Belief nets</a>
+  <span class="meta" id="status">loading…</span>
+</header>
+<main>
+  <p class="meta">Round robin, duplicate: each board at two tables with the pair swapped, real double-dummy score incl.
+     doubles, IMPs per board. "+S" = net + belief search (top-3 calls, 32 shape-first deals, rollouts with the
+     opponent's real policy, deviate if gain &gt; 50 points). Cell = row's IMPs/board vs column, 95% CI (deal-clustered
+     bootstrap), boards played / target. Bold = CI excludes 0.</p>
+  <h2>Ranking</h2>
+  <div class="wrap"><table id="rank"></table></div>
+  <h2>Cross-table</h2>
+  <div class="wrap"><table id="cross"></table></div>
+  <h2>Pairs</h2>
+  <div class="wrap"><table id="pairs"></table></div>
+  <p class="meta" id="timing"></p>
+  <p class="meta" id="config"></p>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const f2 = x => (x >= 0 ? "+" : "") + x.toFixed(2);
+const cls = (m, lo, hi) => lo > 0 ? "good" : hi < 0 ? "bad" : "";
+
+function render(s) {
+  const names = s.entrants.map(e => e.name);
+  const cell = {};
+  for (const p of s.pairs) {
+    cell[p.a + "|" + p.b] = p.boards ? {m: p.mean, lo: p.lo, hi: p.hi, n: p.boards, t: p.target} : {n: 0, t: p.target};
+    cell[p.b + "|" + p.a] = p.boards ? {m: -p.mean, lo: -p.hi, hi: -p.lo, n: p.boards, t: p.target} : {n: 0, t: p.target};
+  }
+  const ent = Object.fromEntries(s.entrants.map(e => [e.name, e]));
+  const label = n => esc(n) + (ent[n] && ent[n].search ? '<span class="tag">search</span>' : "");
+
+  $("rank").innerHTML = "<tr><th>#</th><th>Entrant</th><th>Avg IMPs/board</th><th>Matches</th><th>Boards</th><th>Belief tag</th></tr>" +
+    s.ranking.map(r => `<tr><td>${r.rank}</td><td>${label(r.name)}</td>
+      <td class="${r.avg > 0 ? "good" : r.avg < 0 ? "bad" : ""}">${r.avg == null ? "–" : f2(r.avg)}</td>
+      <td>${r.matches}</td><td>${r.boards}</td><td>${esc(ent[r.name].tag)}</td></tr>`).join("");
+
+  const order = s.ranking.map(r => r.name);
+  let h = "<tr><th>Row vs column</th>" + order.map(n => `<th>${esc(n)}</th>`).join("") + "</tr>";
+  for (const a of order) {
+    h += `<tr><td>${label(a)}</td>`;
+    for (const b of order) {
+      if (a === b) { h += '<td class="self"></td>'; continue; }
+      const c = cell[a + "|" + b];
+      if (!c || !c.n) { h += `<td class="x"><span class="n">0/${c ? c.t : "?"}</span></td>`; continue; }
+      const k = cls(c.m, c.lo, c.hi);
+      h += `<td class="x ${k}"><span class="v ${k ? "sig" : ""}">${f2(c.m)}</span>
+            <span class="ci">[${f2(c.lo)}, ${f2(c.hi)}]</span><span class="n">${c.n}/${c.t}</span></td>`;
+    }
+    h += "</tr>";
+  }
+  $("cross").innerHTML = h;
+
+  $("pairs").innerHTML = "<tr><th>A</th><th>B</th><th>Type</th><th>A IMPs/board</th><th>95% CI</th><th>Boards</th><th>Searches</th><th>Deviations</th></tr>" +
+    s.pairs.map(p => `<tr><td>${esc(p.a)}</td><td style="text-align:left">${esc(p.b)}</td><td>${esc(p.type)}</td>
+      <td class="${p.boards ? cls(p.mean, p.lo, p.hi) : ""}">${p.boards ? f2(p.mean) : "–"}</td>
+      <td>${p.boards ? `[${f2(p.lo)}, ${f2(p.hi)}]` : "–"}</td><td>${p.boards}/${p.target}</td>
+      <td>${p.searches ?? 0}</td><td>${p.deviations ?? 0}${p.searches ? ` (${(100 * p.deviations / p.searches).toFixed(0)}%)` : ""}</td></tr>`).join("");
+
+  $("timing").textContent = "Seconds per board: " + Object.entries(s.timing)
+    .map(([k, v]) => `${k} ${v.s_per_board.toFixed(2)} (${v.boards} boards)`).join(" · ");
+  const c = s.config || {};
+  $("config").textContent = `hi3_lo snapshot = step ${c.hi3_lo_step} · belief net step ${c.belief_step} · ` +
+    `K=${c.args?.k} N=${c.args?.n} margin=${c.args?.margin} pmin=${c.args?.pmin} seed=${c.args?.seed}`;
+  $("status").textContent = `round ${s.round}/${s.rounds} · updated ${s.updated}`;
+}
+
+async function load() {
+  try {
+    const r = await fetch("/api/tourney", {cache: "no-store"});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const s = await r.json();
+    if (!s.pairs) throw new Error(s.error || "no standings yet");
+    render(s);
+  } catch (e) {
+    $("status").textContent = "no data: " + e.message;
+  }
+}
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

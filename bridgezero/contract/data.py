@@ -84,3 +84,22 @@ def load_range(path: str | Path, start: int, count: int,
 def dataset_size(path: str | Path) -> int:
     owners, _ = load_dataset(path)
     return len(owners)
+
+
+def block_starts(pool_start: int, pool_end: int, size: int, seed: int) -> list[int]:
+    """Non-overlapping ``size``-deal blocks of [pool_start, pool_end) in a seeded order.
+
+    A partial final block is dropped. Episodes sample within blocks with replacement.
+    """
+    starts = np.arange(pool_start, pool_end - size + 1, size)
+    return [int(s) for s in np.random.default_rng(seed).permutation(starts)]
+
+
+def validate_training_pool(total: int, start: int, end: int, size: int, every: int) -> None:
+    """Reject invalid pools before loading blocks or allocating a model."""
+    if not 0 <= start < end <= total:
+        raise ValueError(f"training pool [{start}, {end}) is outside 0..{total}")
+    if size <= 0 or size > end - start:
+        raise ValueError("training block size must be positive and fit inside the pool")
+    if every <= 0:
+        raise ValueError("training block interval must be positive")

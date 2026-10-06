@@ -1,128 +1,162 @@
-# BridgeZero — contract bridge bidding from self-play
+# Pidgin — bridge bidding from self-play
 
-A bridge bidding net trained from random weights. No expert auctions, no hand-authored
-conventions, no bidding labels. The double-dummy table scores the auction and never enters
-a gradient.
+Train a bridge bidder from random weights through the D recipe: grounding,
+own-contract self-play, a simplicity fine-tune, and table-score self-play.
+The bidder sees its own hand and public calls. Double-dummy trick tables
+supply training targets and rewards; they are never bidder inputs.
+No expert auctions or bidding labels are required.
 
-Training is one chain, three stages, run back to back:
+## Quick start
 
-1. **Grounding** — regress the double-dummy score of every legal endpoint, so the net
-   learns what each contract is worth and nothing about competing.
-2. **Cooperative** — policy gradient with silent opponents. The partnership learns to bid
-   its own cards.
-3. **Adversarial** — four-seat self-play where the return is the real duplicate table
-   result, so a call is worth what it wins at the table, not what it makes.
-
-Stage 3 is a single flag. `--cooperative` stops after stage 2's objective and keeps the
-opponents silent; leaving it off is what the released model was trained with.
-
-## Install
+Use Python 3.10 or newer. Run commands from this checkout:
 
 ```bash
-pip install -e ".[dev]"          # numpy, torch, pytest
-pip install -e ".[dds]"          # + endplay, only to generate deals yourself
-python -m pytest -q              # 115 tests, ~30 s, no dataset needed
+python -m pip install -e ".[dev]"
+python -m pytest -q
+./train.sh --smoke runs/smoke
+python tools/dashboard.py --runs runs/smoke --data data/smoke_128.npz --deals 16
 ```
 
-## Getting deals
+Open <http://localhost:8770>. The smoke run uses the included 128-deal fixture,
+a tiny network, and two updates per stage. It checks the pipeline, not strength.
+Training currently runs on CPU; `THREADS` controls PyTorch's thread count.
 
-Both stages read a memory-mapped array of dealt hands and their double-dummy trick counts.
+## Training data
 
-**Use the published one.** The numbers below were measured on
-[`sotetsuk/dds_dataset`](https://huggingface.co/datasets/sotetsuk/dds_dataset) (Apache-2.0),
-file `dds_results_100M.npy` — 100M deals, 3.2 GB, shape `(2, 100000000, 4)` int32.
+Download `dds_results_100M.npy` (3.2 GB) from
+[`sotetsuk/dds_dataset`](https://huggingface.co/datasets/sotetsuk/dds_dataset).
+The dataset is Apache-2.0 and was generated with
+[PGX](https://github.com/sotetsuk/pgx). See its dataset card for the paper citation.
 
 ```bash
-huggingface-cli download sotetsuk/dds_dataset dds_results_100M.npy \
-  --repo-type dataset --local-dir data/
+python -m pip install huggingface_hub
+hf download sotetsuk/dds_dataset dds_results_100M.npy --repo-type dataset --local-dir data
+./train.sh
 ```
 
-**Or make your own**, which needs no download and no account:
+Alternative paths and settings:
 
 ```bash
-python -m bridgezero.bridge.deals --out data/deals.npz --deals 1000000 --seed 1
+DATA=/path/to/dds_results_100M.npy THREADS=8 SEED=1 ./train.sh runs/my_run
+CODE_WORD_PENALTY=0 ./train.sh runs/no_simplicity_cost
 ```
 
-That solves each deal with `endplay` and writes the same `owners`/`tricks` arrays. It is
-fine up to about a million deals; it is not how you would rebuild 100M.
+## Random → D
 
-`data/smoke_128.npz` (128 deals) ships with the repo and is what the tests run on.
+| Output directory | Training | Checkpoint selection |
+|---|---|---|
+| `1_ground` | Regress DD tricks and contract values on silent-opponent prefixes; learn a policy from predicted values | Silent-opponent contract score |
+| `2_own` | Four-seat self-play, rewarded for each partnership's own contract | Own-contract score |
+| `3_simple` | Continue own-contract training for up to 30,000 steps with a 0.2 code-word cost | Own-contract score |
+| `4_D` | Real table rewards, 0.2 code-word cost, and a league of past snapshots | Paired IMPs against `3_simple/last.pt` |
 
-## Training the released model
+Stage 2 starts from `1_ground/best.pt`; stages 3 and 4 start from the preceding
+stage's `last.pt`. The final selected model is **`runs/bridgezero/4_D/best.pt`**.
+D enables doubles and redoubles at any legal seat. Its starting policy is
+measured and kept as a fallback when updates fail to improve or trip a guard.
+Changing the legal doubling policy at this transition can change play even
+before the first update, so its starting IMP score need not be zero.
 
-Stage 1 — grounding, then cooperative, from random weights (~25 min for grounding):
+This is a public adaptation of the historical D experiment. It preserves the
+own-contract simplicity fine-tune and D's reward settings, but selects against
+its public parent. The historical experiment used a separate private reference
+for selection. This recipe does not promise the same chosen weights or strength.
+No pretrained weights or sibling repositories are needed.
 
-```bash
-python -u -m bridgezero.cooperative.train \
-  --data data/dds_results_100M.npy --out runs/stage1 \
-  --train-start 2028000 --train-count 1000000 \
-  --val-start 3028000 --val-count 5000 --eval-start -10000 --eval-count 10000 \
-  --ground-steps 6000 --pg-steps 6000 --batch 1024 --episodes 512 \
-  --ground-lr 0.001 --pg-lr 0.0003 --critic-lr 0.001 \
-  --width 768 --suit-width 64 --depth 3 --eval-every 500 --seed 1 --device cpu
-```
+Default dataset ranges are zero-based, with exclusive ends:
 
-Stage 2 — adversarial self-play from stage 1's `best.pt`:
-
-```bash
-python -u -m bridgezero.fourseat.train \
-  --data data/dds_results_100M.npy --out runs/stage2 --init runs/stage1/best.pt \
-  --steps 60000 --episodes 512 --pg-lr 1e-4 --lr-schedule constant \
-  --table-weight 1.0 --silent-frac 0.25 \
-  --redouble --sacrifice --double-value --double-gate --fast-rollout \
-  --train-block-every 2000 --train-block-size 1000000 \
-  --train-pool-start 3033000 --train-pool-end 99990000 \
-  --val-start 3028000 --val-count 5000 --eval-start -10000 --eval-count 10000 \
-  --snapshot-every 1000 --eval-every 500 \
-  --max-level5-rise 0.15 --max-own-drop 60 --max-double-rate 0.6 \
-  --seed 1 --device cpu
-```
-
-Add `--cooperative` to that second command to train the same architecture without the
-adversarial objective. It forces `--silent-frac 1.0` and `--table-weight 0`, and refuses
-`--pool`/`--league-frac`.
-
-## Measuring
-
-Strength is paired duplicate IMPs per board against a frozen opponent, on the same boards,
-with a confidence interval. Nothing else here has ever been trustworthy — in-training
-scores mislead, and the maximum over many snapshots is inflated by the noise it was picked
-from.
-
-```bash
-python -u tools/match.py --a four:runs/stage2/ckpt_step60000.pt --b four:OTHER.pt \
-  --data data/dds_results_100M.npy --deals 10000 --out results/a_vs_b
-```
-
-Boards are the last `--deals` deals x 4 dealers x 4 vulnerabilities. Each board is played
-at two tables with the sides swapped. Two checks run every time: a player against itself
-must score exactly zero, and a sample of auctions is replayed through the scoring code.
-
-## What the stages are worth
-
-160,000 paired boards each, same frozen opponent, 95% confidence intervals:
-
-| run | IMPs/board |
+| Purpose | Deals |
 |---|---|
-| grounding → adversarial, skipping the cooperative stage | +0.199 [+0.138, +0.262] |
-| grounding → cooperative → adversarial (released) | about +0.60 |
+| Validation and checkpoint selection | `[3,028,000, 3,033,000)` |
+| Training pool | `[3,033,000, 99,990,000)` |
+| Final reports and default matches | `[99,990,000, 100,000,000)` |
 
-The cooperative stage earns its place: without it the same adversarial training reaches
-about a third of the strength.
+Training shuffles full one-million-deal blocks. A partial final block is dropped;
+episodes sample within each block **with replacement**, so a sweep does not
+visit every deal. Grounding validates every 1,000 steps and stops after 5,000
+without improvement. Own-contract training completes its block sweep unless
+a guard trips. D validates every 3,000 steps and stops after 12,000 without
+improvement. Every stage logs metrics and saves its run settings.
 
-Against the previous best net from a different training line, head to head on 160,000
-paired boards, the released model wins by **+0.063 IMP/board [+0.009, +0.116]**. Real, and
-small. Adding a league of past snapshots on top of it did not help (−0.056 [−0.101,
-−0.013] against it).
+Completed stages are skipped when rerunning the script with the same output
+folder. Use a new folder when changing settings. Interrupted four-seat stages
+can resume with `python -m bridgezero.fourseat.train --resume`, the same
+`--out`, and the original options recorded in that stage's `run.json`.
+Grounding has no resume support; use a fresh output folder if it is interrupted.
 
-Weights are published separately; they are not in this repository.
+## Dashboard and analysis
 
-## What is not here
+```bash
+python tools/dashboard.py --runs runs/bridgezero
+python tools/openings.py runs/bridgezero/4_D/best.pt
+python tools/match.py --a four:runs/bridgezero/4_D/best.pt \
+  --b four:runs/bridgezero/3_simple/last.pt --out results/d_vs_parent
+python tools/simplicity.py runs/bridgezero/4_D/best.pt --boards 4000
+python tools/weakspots.py results/d_vs_parent
+```
 
-Card play, the web server, and every match player that needs a third-party engine
-(the brl net, the EPBot rule bot, the BridgeBase robot). `tools/match.py` plays
-`four:`, `zero:` and `pass:` only.
+Pass `--data` to each analysis command for a different dataset. On the smoke
+fixture, also pass `--deals 16` to `openings.py` and `match.py`.
+The dashboard's `--data` and `--deals` apply to both openings and match jobs.
 
-## Licence
+The dashboard charts grounding, training, validation, and simplicity metrics.
+Its best-step marker follows the trainer's accepted checkpoint. It can run
+opening analysis and IMP matches against earlier checkpoints and the bundled
+`sayc`, `weakclub`, and `happy` rule bidders. These are lightweight diagnostic
+bots, not complete implementations of established bridge systems. The default
+recipe trains against itself and its own league. Use dashboard `--reference PATH`
+to add a public checkpoint and a DD-oracle punisher variant to diagnostic matches.
+The punisher doubles failing contracts using hidden DD results; it measures
+exposure to punishment, not the strength of a realistic opponent.
 
-Apache-2.0. See `LICENSE`.
+`match.py` plays duplicate boards at two tables with the players swapped.
+By default, it uses the last 10,000 deals with all 4 dealers and 4 vulnerability
+patterns. `--boards` selects a seeded subset; `--start` and `--deals` choose
+a different slice. It checks self-match symmetry, replays sampled auctions
+through the reference scorer, and reports a deal-clustered bootstrap interval.
+The match output includes auctions for simplicity and weak-spot analysis.
+
+Keep evaluation deals out of checkpoint selection. Repeated dashboard inspection
+of one slice makes it diagnostic; use fresh deals and several training seeds
+for a strength claim. In-training rewards are not a strength estimate.
+
+## Simplicity
+
+A **code word** is a call flagged by any of these rules:
+
+- A suit bid with fewer than 4 cards, or fewer than 3 when raising partner.
+- A double of a contract at level 3 or below.
+- A redouble.
+- A 2♣ opening with fewer than 5 clubs or at least 20 HCP.
+
+Each flagged call counts once, even when multiple rules apply. The trainer logs
+`code_words_per_100` on greedy validation self-play and `code_word_share` on
+sampled training calls. The 0.2 cost is in score units of 100 points and is
+charged to that call's policy advantage; it does not alter the reported IMPs.
+Set `CODE_WORD_PENALTY` to change it in stages 3 and 4.
+
+`tools/simplicity.py` measures self-play or saved match auctions and also
+reports natural suit bids, cue bids, jumps, 4NT, and auction length:
+
+```bash
+python tools/simplicity.py --boards-npz results/d_vs_parent/boards.npz
+```
+
+For a match between different players, the Python `analyse(..., who="A")`
+API counts A's calls across both tables; the default counts all calls at table 1.
+This heuristic measures face-value readability, not human learnability.
+Compare both IMPs and simplicity when assessing a model.
+
+The sacrifice value head ranks candidate contracts using a DD counterfactual
+where the opponents double and everyone passes. Actual opponents can respond
+differently. D's policy reward uses the final auction, but candidate ranking
+still uses this proxy; inspect sacrifice credit and positive share alongside IMPs.
+
+## Public contents and license
+
+The release contains the bidder, training recipe, dashboard, analysis tools,
+tests, and the small test fixture. Local training outputs, large datasets,
+solver experiments, and working notes are excluded from Git and source packages.
+Analysis tools and the dashboard HTML are also included in the Python wheel.
+
+Apache-2.0. See [LICENSE](LICENSE).

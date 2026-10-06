@@ -11,12 +11,10 @@ from bridgezero.fourseat.model import (
     FourSeatCritic,
     FourSeatDoubleGateNet,
     FourSeatNet,
-    load_fourseat_checkpoint,
     save_fourseat_checkpoint,
     warm_start_from_fourseat,
 )
 from bridgezero.fourseat.rollout import collect_trajectories, fourseat_validation
-from bridgezero.fourseat.train import parse_args, run
 
 SMOKE = Path(__file__).resolve().parents[1] / "data" / "smoke_128.npz"
 
@@ -70,49 +68,3 @@ def test_pool_episodes_train_only_the_learner_side(tmp_path):
                 assert (int(terminal.dealer[row]) + pos) % 2 != int(traj.frozen_side[row])
     m = fourseat_validation(actor, deals(), TorchScorer(), doubles=True, frozen_net=blind)
     assert 0.0 <= m["double_rate"] <= 1.0 and "learner_table_score" in m
-
-
-def test_pool_trainer_smoke(tmp_path):
-    path, _ = fourseat_checkpoint(tmp_path, width=16)
-    blind_path = tmp_path / "blind.pt"
-    from bridgezero.contract.model import save_checkpoint
-    from bridgezero.cooperative.actor_critic import CentralCritic
-    save_checkpoint(blind_path, AuctionContractNet(16, 8, 1), "D4PG", step=0,
-                    critic_config=CentralCritic(16, 8, 1).config,
-                    critic=CentralCritic(16, 8, 1).state_dict())
-    out = tmp_path / "e20"
-    report = run(parse_args([
-        "--data", str(SMOKE), "--out", str(out), "--init", str(path), "--init-fourseat",
-        "--double-tau", "0.1", "--pool", f"E18=four:{path}:0.25",
-        "--pool", f"E15d=zero:{blind_path}:0.25",
-        "--train-start", "0", "--train-count", "96", "--val-start", "96", "--val-count", "16",
-        "--eval-start", "112", "--eval-count", "16", "--steps", "2", "--episodes", "16",
-        "--eval-every", "1", "--threads", "1", "--max-double-rate", "1.1"]))
-    assert set(report["fourseat_pool"]) == {"E18", "E15d"}
-    net, meta = load_fourseat_checkpoint(out / "best.pt")
-    assert meta["stage"] == "D5OWN4XD"
-
-
-def test_long_run_blocks_snapshots_and_resume(tmp_path):
-    path, _ = fourseat_checkpoint(tmp_path, width=16)
-    out = tmp_path / "e21"
-    common = [
-        "--data", str(SMOKE), "--out", str(out), "--init", str(path), "--init-fourseat",
-        "--double-tau", "0.1", "--pool", f"E18=four:{path}:0.1",
-        "--lr-schedule", "constant", "--train-block-every", "2", "--train-block-size", "40",
-        "--train-pool-start", "0", "--train-pool-end", "96",
-        "--val-start", "96", "--val-count", "16", "--eval-start", "112", "--eval-count", "16",
-        "--episodes", "8", "--eval-every", "2", "--state-every", "2", "--snapshot-every", "2",
-        "--threads", "1", "--max-double-rate", "1.1"]
-    run(parse_args(common + ["--steps", "2"]))
-    first = torch.load(out / "last_state.pt", weights_only=False)
-    assert first["step"] == 2 and (out / "ckpt_step2.pt").exists()
-    run(parse_args(common + ["--steps", "4", "--resume"]))
-    second = torch.load(out / "last_state.pt", weights_only=False)
-    assert second["step"] == 4 and (out / "ckpt_step4.pt").exists()
-    import json
-    steps = [json.loads(line)["step"] for line in (out / "train_log.jsonl").read_text().splitlines()]
-    assert steps[0] == 0 and 4 in steps and steps.count(0) == 1
-    starts = {json.loads(line).get("train_block_start")
-              for line in (out / "train_log.jsonl").read_text().splitlines()} - {None}
-    assert all(0 <= s <= 56 for s in starts)

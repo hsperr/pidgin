@@ -1,0 +1,9 @@
+include LICENSE README.md train.sh
+recursive-include tests *.py
+include data/smoke_128.npz
+recursive-include tools *.html
+prune runs
+prune results
+prune dd
+prune .claude
+exclude project-story-raw.md

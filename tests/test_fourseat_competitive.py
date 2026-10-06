@@ -27,16 +27,13 @@ from bridgezero.fourseat.model import (
     FourSeatCompetitiveNet,
     FourSeatDoubleCritic,
     FourSeatDoubleGateNet,
-    competitive_log_probs,
     competitive_parts,
     competitive_path_log_probs,
-    load_fourseat_checkpoint,
     policy_log_probs,
     save_fourseat_checkpoint,
     warm_start_competitive,
 )
 from bridgezero.fourseat.state import FourSeatDoubleBatch, own_bid_scores, table_ns_score
-from bridgezero.fourseat.train import parse_args, run
 
 SMOKE = Path(__file__).resolve().parents[1] / "data" / "smoke_128.npz"
 TRICK_STRAIN = (3, 2, 1, 0, 4)
@@ -436,29 +433,6 @@ def test_sacrifice_only_net_uses_final_double_batch(tmp_path):
     assert "sac_value_loss" in losses and "redouble_value_loss" not in losses
     val = competitive_validation(actor, data, TorchScorer())
     assert "sac_rate" in val and val["spots_per_1000"]["xx"] == 0
-
-
-def test_competitive_trainer_smoke_with_pool(tmp_path):
-    path, _, _ = _gate_checkpoint(tmp_path, width=16)
-    out = tmp_path / "xc"
-    report = run(parse_args([
-        "--data", str(SMOKE), "--out", str(out), "--init", str(path), "--init-fourseat",
-        "--redouble", "--sacrifice", "--pool", f"E20b=four:{path}:0.3",
-        "--train-start", "0", "--train-count", "96", "--val-start", "96", "--val-count", "16",
-        "--eval-start", "112", "--eval-count", "16", "--steps", "3", "--episodes", "16",
-        "--double-policy-start", "1", "--eval-every", "1", "--threads", "1",
-        "--max-double-rate", "1.1", "--max-sac-rate", "10", "--max-level5-rise", "1"]))
-    assert "sac_rate" in report["fourseat"] and "redouble_rate" in report["fourseat"]
-    assert "E20b" in report["fourseat_pool"]
-    net, meta = load_fourseat_checkpoint(out / "best.pt")
-    assert meta["stage"] == "D5OWN4XC" and isinstance(net, FourSeatCompetitiveNet)
-    assert net.redouble and net.sacrifice
-    actor, critic, _ = warm_start_competitive(out / "last.pt")
-    assert isinstance(critic, FourSeatCompetitiveCritic)
-    legal = torch.ones(1, 38, dtype=torch.bool)
-    legal[:, DOUBLE:] = False
-    logp = competitive_log_probs(actor(torch.zeros(1, 52), torch.zeros(1, 151)), legal)
-    assert torch.allclose(logp.exp().sum(), torch.tensor(1.0))
 
 
 def test_table_weight_mixes_real_table_result_into_returns():

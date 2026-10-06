@@ -30,8 +30,7 @@ from torch import nn
 
 from ..bridge.calls import DOUBLE, PASS, REDOUBLE
 from ..contract.environment import AUCTION_FEATURES
-from ..contract.model import REWARD_UNITS, AuctionContractNet, load_checkpoint
-from ..cooperative.actor_critic import CentralCritic
+from ..contract.model import REWARD_UNITS, AuctionContractNet, CentralCritic, load_checkpoint
 from .state import DOUBLE_FEATURES, OPPONENT_FEATURES
 
 FOURSEAT_FORMAT = "bridgezero-fourseat-0.1"
@@ -277,7 +276,6 @@ def sac_candidates_from_features(features: torch.Tensor) -> torch.Tensor:
     return sac_candidates_from_last(top_opp, (top_opp > top_own) & final)
 
 
-BELIEF_TARGETS = 24    # 3 unseen seats (LHO/partner/RHO) x 4 suits x (hcp, length)
 
 
 class FourSeatCompetitiveNet(FourSeatDoubleGateNet):
@@ -296,17 +294,14 @@ class FourSeatCompetitiveNet(FourSeatDoubleGateNet):
 
     def __init__(self, width: int = 384, suit_width: int = 64, depth: int = 3,
                  policy_logit_bound: float | None = None, redouble: bool = True,
-                 sacrifice: bool = True, belief_summary: bool = False):
+                 sacrifice: bool = True):
         if not (redouble or sacrifice):
             raise ValueError("a competitive net needs redouble and/or sacrifice")
         # plain attribute read by FourSeatNet.__init__; setting it before Module init is fine
         self.n_actions = REDOUBLE + 1 if redouble else DOUBLE + 1
         super().__init__(width, suit_width, depth, policy_logit_bound)
         self.redouble, self.sacrifice = bool(redouble), bool(sacrifice)
-        self.belief_summary = bool(belief_summary)
         self.config.update(redouble=self.redouble, sacrifice=self.sacrifice)
-        if self.belief_summary:
-            self.config["belief_summary"] = True
         self.auction_net = nn.Sequential(CompetitiveInput(width), nn.GELU())
         heads = {"q_head": DOUBLE + 1, "policy_head": DOUBLE + 1}
         if self.redouble:
@@ -318,28 +313,10 @@ class FourSeatCompetitiveNet(FourSeatDoubleGateNet):
             nn.init.zeros_(head.weight)
             nn.init.zeros_(head.bias)
             setattr(self, name, head)
-        if self.belief_summary:
-            # BELIEF_TARGETS = 3 unseen seats (LHO/partner/RHO) x 4 suits x (hcp, length).
-            # Reads the frozen trunk (protected from the RL loss, like every other new head
-            # here); its own guess is fed back in through a zero-init layer, so at init this
-            # is an exact no-op and only starts to matter once belief_to_hidden learns to use it.
-            self.belief_summary_body = nn.Sequential(
-                nn.Linear(width, 128), nn.GELU(), nn.Linear(128, BELIEF_TARGETS))
-            nn.init.zeros_(self.belief_summary_body[-1].weight)
-            nn.init.zeros_(self.belief_summary_body[-1].bias)
-            self.belief_to_hidden = nn.Linear(BELIEF_TARGETS, width)
-            nn.init.zeros_(self.belief_to_hidden.weight)
-            nn.init.zeros_(self.belief_to_hidden.bias)
 
     def forward(self, hand: torch.Tensor, auction: torch.Tensor) -> dict[str, torch.Tensor]:
         hidden = self.encode(hand, auction)
         frozen = hidden.detach()
-        belief_pred = None
-        if self.belief_summary:
-            belief_pred = self.belief_summary_body(frozen).view(len(hand), 3, 4, 2)
-            # Q/policy see the guess; the guess itself never sees their gradient (detach),
-            # so a noisy RL signal can't teach the belief head to lie for reward.
-            hidden = hidden + self.belief_to_hidden(belief_pred.detach().reshape(len(hand), -1))
         gate = self.double_gate_head(frozen)
         q = self.q_head(hidden)[:, :DOUBLE]
         q_x = nn.functional.linear(frozen, self.q_head.weight[DOUBLE:], self.q_head.bias[DOUBLE:])
@@ -349,8 +326,6 @@ class FourSeatCompetitiveNet(FourSeatDoubleGateNet):
         out = {"trick_logits": self.trick_head(hidden).view(len(hand), 2, 5, 14),
                "double_gate": gate.squeeze(-1),
                "double_value": self.double_value_head(frozen).squeeze(-1)}
-        if belief_pred is not None:
-            out["belief_pred"] = belief_pred
         if self.redouble:
             xx_gate = self.redouble_gate_head(frozen)
             q_parts.append(self.redouble_q_head(frozen))
@@ -645,20 +620,18 @@ def warm_start_from_fourseat(init_path: str | Path, device="cpu", double_bias: f
 
 
 COMPETITIVE_NEW = ("redouble_gate_head.", "redouble_value_head.", "redouble_q_head.",
-                   "sac_gate_head.", "sac_value_head.", "auction_net.0.competitive.",
-                   "belief_summary_body.", "belief_to_hidden.")
+                   "sac_gate_head.", "sac_value_head.", "auction_net.0.competitive.")
 
 
 def warm_start_competitive(init_path: str | Path, device="cpu", fourseat: bool = True,
                            redouble: bool = True, sacrifice: bool = True,
                            double_bias: float = -6.0, xx_bias: float = -6.0,
-                           sac_bias: float = -6.0, belief_summary: bool = False):
+                           sac_bias: float = -6.0):
     """D5OWN4XC actor/critic.
 
     ``init_path``: a D5OWN4XC checkpoint with the same options (continued unchanged: every
-    weight including the X/XX/SAC heads; extra keys such as ``belief_head`` are ignored here;
-    detected by ``model_kind`` whatever ``fourseat`` says), a D5OWN4XD one (e.g. E20b; every
-    weight copied), a D5OWN4 one (via ``warm_start_from_fourseat``) or, with
+    weight including the X/XX/SAC heads;
+    detected by ``model_kind`` whatever ``fourseat`` says), a D5OWN4XD one (every weight copied), a D5OWN4 one (via ``warm_start_from_fourseat``) or, with
     ``fourseat=False``, a cooperative one. New parameters start at zero and the XX/SAC gate
     biases at ``xx_bias``/``sac_bias`` < 0, so at step 0 calls away from XX/SAC spots have
     exactly the source log-probabilities.
@@ -668,8 +641,6 @@ def warm_start_competitive(init_path: str | Path, device="cpu", fourseat: bool =
         actor, critic, ck = load_fourseat_checkpoint(init_path, device, with_critic=True)
         if (actor.redouble, actor.sacrifice) != (bool(redouble), bool(sacrifice)):
             raise ValueError("D5OWN4XC checkpoint has different redouble/sacrifice options")
-        if actor.belief_summary != bool(belief_summary):
-            raise ValueError("D5OWN4XC checkpoint has a different belief_summary option")
         return actor, critic, {"init_path": str(init_path), "init_sha256": sha256(init_path),
                                "init_stage": ck.get("stage"), "init_step": ck.get("step")}
     if fourseat:
@@ -679,8 +650,7 @@ def warm_start_competitive(init_path: str | Path, device="cpu", fourseat: bool =
                                                  double_gate=True)
     if xx_bias >= 0 or sac_bias >= 0:
         raise ValueError("xx_bias and sac_bias must be negative so XX/SAC start near zero")
-    actor = FourSeatCompetitiveNet(**source.config, redouble=redouble, sacrifice=sacrifice,
-                                   belief_summary=belief_summary).to(device)
+    actor = FourSeatCompetitiveNet(**source.config, redouble=redouble, sacrifice=sacrifice).to(device)
     actor.load_state_dict(_pad_fourseat_state(source.state_dict(), actor, COMPETITIVE_NEW))
     critic = FourSeatCompetitiveCritic(**source_critic.config).to(device)
     critic.load_state_dict(_pad_fourseat_state(source_critic.state_dict(), critic, COMPETITIVE_NEW))

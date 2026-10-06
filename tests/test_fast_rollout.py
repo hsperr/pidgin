@@ -1,4 +1,4 @@
-"""--fast-rollout equivalence with the default four-seat rollout (CPU).
+"""Fast-rollout equivalence with the default four-seat rollout (CPU).
 
 The fast path samples by inverse CDF from pre-drawn uniforms instead of
 ``torch.multinomial``. Driving the old ``play`` loop with the same uniforms must
@@ -17,7 +17,6 @@ from bridgezero.bridge.deals import load_dataset
 from bridgezero.contract.data import TorchDeals
 from bridgezero.contract.model import AuctionContractNet
 from bridgezero.contract.targets import TorchScorer
-from bridgezero.cooperative.actor_critic import trajectory_losses
 from bridgezero.fourseat.competitive import (
     MAX_REDOUBLE_CALLS,
     CompetitiveTrajectories,
@@ -25,7 +24,6 @@ from bridgezero.fourseat.competitive import (
     competitive_trajectories,
     competitive_trajectory_losses,
 )
-from bridgezero.fourseat.double import double_trajectory_losses
 from bridgezero.fourseat.fast_rollout import (
     COMPETITIVE_ROUNDS,
     ROUNDS,
@@ -36,8 +34,6 @@ from bridgezero.fourseat.fast_rollout import (
 from bridgezero.fourseat.model import (
     FourSeatCompetitiveCritic,
     FourSeatCompetitiveNet,
-    FourSeatCritic,
-    FourSeatDoubleCritic,
     FourSeatDoubleGateNet,
     FourSeatNet,
     competitive_parts,
@@ -50,7 +46,6 @@ from bridgezero.fourseat.rollout import (
     play,
 )
 from bridgezero.fourseat.state import double_delta, own_bid_scores
-from bridgezero.fourseat.train import parse_args, run
 
 SMOKE = Path(__file__).resolve().parents[1] / "data" / "smoke_128.npz"
 
@@ -172,12 +167,10 @@ def test_fast_rollout_matches_teacher_forced_old_path(case):
     data, scorer = deals(), TorchScorer()
     if cfg["doubles"]:
         actor = noisy(FourSeatDoubleGateNet(24, 8, 2, policy_logit_bound=cfg["bound"]), 1)
-        critic = noisy(FourSeatDoubleCritic(24, 8, 2), 2)
         with torch.no_grad():
             actor.double_gate_head.bias.fill_(0.5)      # doubles actually happen
     else:
         actor = noisy(FourSeatNet(24, 8, 2, policy_logit_bound=cfg["bound"]), 1)
-        critic = noisy(FourSeatCritic(24, 8, 2), 2)
     pool = ({1: (noisy(FourSeatNet(24, 8, 2), 3), 0.3), 2: (noisy(AuctionContractNet(24, 8, 2), 4), 0.3)}
             if cfg["pool"] else None)
     episodes = 96
@@ -190,13 +183,6 @@ def test_fast_rollout_matches_teacher_forced_old_path(case):
         assert len(fast) > episodes
     if cfg["doubles"]:
         assert int((fast.actions == DOUBLE).sum()) > 0
-        a = double_trajectory_losses(actor, critic, data, fast, tau=0.1)
-        b = double_trajectory_losses(actor, critic, data, old, tau=0.1)
-    else:
-        a = trajectory_losses(actor, critic, data, fast)
-        b = trajectory_losses(actor, critic, data, old)
-    for key in b:
-        assert torch.equal(a[key], b[key]), key
 
 
 XC_CASES = {
@@ -275,22 +261,3 @@ def test_inverse_cdf_sample_has_the_policy_distribution():
     freq = torch.bincount(sample, minlength=37).float() / len(sample)
     p = log_probs[0].exp()
     assert float((freq - p).abs().max()) < 4 * float((p * (1 - p) / len(sample)).sqrt().max()) + 1e-3
-
-
-def test_fast_rollout_trainer_smoke(tmp_path):
-    from bridgezero.contract.model import save_checkpoint
-    from bridgezero.cooperative.actor_critic import CentralCritic
-    base, critic = AuctionContractNet(16, 8, 1, policy_logit_bound=3.0), CentralCritic(16, 8, 1)
-    init = tmp_path / "init" / "best.pt"
-    save_checkpoint(init, base, "D4PG", step=0, critic_config=critic.config,
-                    critic=critic.state_dict())
-    for extra in ([], ["--double-gate", "--double-tau", "0.1", "--max-double-rate", "1.1"],
-                  ["--redouble", "--sacrifice", "--max-double-rate", "1.1", "--max-sac-rate", "10",
-                   "--max-level5-rise", "1"]):
-        out = tmp_path / ("four" + "".join(extra[:1]))
-        report = run(parse_args([
-            "--data", str(SMOKE), "--out", str(out), "--init", str(init), "--fast-rollout",
-            "--train-start", "0", "--train-count", "96", "--val-start", "96", "--val-count", "16",
-            "--eval-start", "112", "--eval-count", "16", "--steps", "2", "--episodes", "16",
-            "--eval-every", "1", "--threads", "1", *extra]))
-        assert "fourseat" in report

@@ -1,16 +1,12 @@
-"""Random deals, compact storage, PBN conversion, and DDS generation."""
+"""Load dealt hands and their double-dummy trick tables (PGX .npy or .npz)."""
 
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 
 import numpy as np
 from bridgezero.bridge.calls import STRAIN_PERM
 
-SUITS = ("S", "H", "D", "C")
-RANKS = "AKQJT98765432"
-SEATS = ("N", "E", "S", "W")
 PGX_RANK_TO_OURS = np.asarray([0] + [13 - r for r in range(1, 13)], dtype=np.int64)
 PGX_STRAIN_TO_OURS = np.asarray(STRAIN_PERM, dtype=np.int64)
 
@@ -55,72 +51,6 @@ class PackedPGXTricks:
         return raw[..., PGX_STRAIN_TO_OURS]
 
 
-def random_deals(n: int, seed: int) -> np.ndarray:
-    """Return uint8 owner arrays with shape (n, 52)."""
-    rng = np.random.default_rng(seed)
-    owners = np.empty((n, 52), dtype=np.uint8)
-    base = np.repeat(np.arange(4, dtype=np.uint8), 13)
-    for i in range(n):
-        owners[i] = rng.permutation(base)
-    return owners
-
-
-def owner_to_hands(owners: np.ndarray) -> np.ndarray:
-    return (owners[:, None, :] == np.arange(4, dtype=np.uint8)[None, :, None]).astype(np.uint8)
-
-
-def deal_to_pbn(owners: np.ndarray) -> str:
-    hands = []
-    for seat in range(4):
-        pieces = []
-        for suit in range(4):
-            pieces.append("".join(
-                rank for r, rank in enumerate(RANKS)
-                if int(owners[suit * 13 + r]) == seat
-            ))
-        hands.append(".".join(pieces))
-    return "N:" + " ".join(hands)
-
-
-def format_hand(hand: np.ndarray) -> str:
-    return " ".join(
-        f"{SUITS[s]}:{''.join(RANKS[r] for r in range(13) if hand[s * 13 + r]) or '-'}"
-        for s in range(4)
-    )
-
-
-def hand_hcp(hand: np.ndarray) -> int:
-    return int(sum(int(hand[s * 13 + r]) * (4 - r) for s in range(4) for r in range(4)))
-
-
-def compute_dd_tables(owners: np.ndarray) -> np.ndarray:
-    try:
-        from endplay.dds import calc_dd_table
-        from endplay.types import Deal, Denom, Player
-    except ImportError as exc:
-        raise RuntimeError("DDS generation requires the optional 'endplay' package") from exc
-
-    denoms = (Denom.spades, Denom.hearts, Denom.diamonds, Denom.clubs, Denom.nt)
-    out = np.empty((len(owners), 4, 5), dtype=np.uint8)
-    for i, owner in enumerate(owners):
-        table = calc_dd_table(Deal(deal_to_pbn(owner)))
-        for strain, denom in enumerate(denoms):
-            for seat, player in enumerate(Player):
-                out[i, seat, strain] = table[denom, player]
-        if (i + 1) % 25 == 0 or i + 1 == len(owners):
-            print(f"DDS {i + 1}/{len(owners)}", flush=True)
-    return out
-
-
-def save_dataset(path: str | Path, n: int, seed: int) -> None:
-    owners = random_deals(n, seed)
-    tricks = compute_dd_tables(owners)
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(path, owners=owners, tricks=tricks, seed=np.int64(seed))
-    print(f"saved {n} deals to {path}")
-
-
 def load_dataset(path: str | Path):
     path = Path(path)
     if path.suffix == ".npy":
@@ -140,16 +70,3 @@ def load_dataset(path: str | Path):
     if not np.all(counts == 13):
         raise ValueError("every seat must hold exactly 13 cards")
     return owners, tricks
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate random deals with DDS tables")
-    parser.add_argument("--out", required=True)
-    parser.add_argument("--deals", type=int, default=128)
-    parser.add_argument("--seed", type=int, default=0)
-    args = parser.parse_args()
-    save_dataset(args.out, args.deals, args.seed)
-
-
-if __name__ == "__main__":
-    main()

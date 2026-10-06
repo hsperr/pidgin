@@ -1,4 +1,4 @@
-"""Fixed-shape four-seat rollout (``--fast-rollout``), CUDA-graph captured on GPU.
+"""Fixed-shape four-seat rollout, with optional CUDA-graph capture on GPU.
 
 Same game, same policy, same episode setup draws as ``rollout.collect_trajectories``
 (or ``competitive.collect_competitive_trajectories`` for D5OWN4XC nets); only the
@@ -17,7 +17,7 @@ being rebuilt from the full history each call. Decision states for the losses ar
 rebuilt afterwards from the final history: a row decides at round ``r`` with exactly
 ``r`` calls made, and history is append-only.
 
-D5OWN4XC (``--redouble`` / ``--sacrifice``): X/XX only at the pass-out seat, the Redouble
+D5OWN4XC: X/XX only at the pass-out seat, the Redouble
 state, the gate composition (``competitive_log_probs(static=True)``: branch-free), SAC
 candidate selection (inside the net's forward) and the latent path record (whether the
 SAC gate fired, whether the call was the greedy top call) all run inside the round.
@@ -40,8 +40,9 @@ import torch.nn.functional as F
 from ..bridge.calls import DOUBLE, PASS, REDOUBLE
 from ..contract.data import TorchDeals
 from ..contract.environment import AUCTION_FEATURES
-from ..contract.targets import TorchScorer
-from .competitive import MAX_REDOUBLE_CALLS, competitive_batch_class, competitive_trajectories
+from ..contract.targets import CONTRACT_TABLE_STRAIN, TorchScorer
+from .competitive import (MAX_REDOUBLE_CALLS, apply_opening_rule, competitive_batch_class,
+                          competitive_trajectories)
 from .model import COMPETITIVE_STAGE, competitive_log_probs, competitive_parts, policy_log_probs
 from .rollout import FourSeatTrajectories, batch_class, episode_setup
 from .state import MAX_CALLS, double_delta, own_bid_scores
@@ -91,6 +92,7 @@ class FastCollector:
         self.temperature, self.pool = temperature, pool or {}
         from . import competitive as _competitive
         self.any_seat = self.competitive and _competitive.ANY_SEAT_DOUBLE
+        self.opening_rule = _competitive.OPENING_RULE
         self.device = torch.device(device)
         self.cuda_graph = self.device.type == "cuda" if cuda_graph is None else cuda_graph
         self.check_every = check_every
@@ -126,15 +128,12 @@ class FastCollector:
         self.bits = torch.zeros(B, 4 * 35, device=dev)
         self.early = torch.zeros(B, 4, **boolean)
         self.side_bid = torch.zeros(B, 2, **boolean)
-        # E45: frozen brl (pgx-observation) opponents, see experiments/brl/brl_player.py
-        self.pgx = any(getattr(net, "is_brl", False) for net, _ in self.pool.values())
-        if self.pgx:
-            self.pgx_open = torch.zeros(B, 4, **boolean)        # passed before any bid, abs seat
-            self.pgx_x = torch.zeros(B, 4 * 35, device=dev)     # abs seat doubled bid b
-            self.pgx_xx = torch.zeros(B, 4 * 35, device=dev)    # abs seat redoubled bid b
-            our_to_os = [(3 - c // 13) + (12 - c % 13) * 4 for c in range(52)]
-            self.pgx_hand_idx = torch.tensor(our_to_os, device=dev)
-            self.pgx_to_ours = torch.tensor([PASS, DOUBLE, REDOUBLE] + list(range(35)), device=dev)
+        # DD punishers: frozen nets whose X is decided by the deal's DD tricks
+        self.punisher = any(getattr(net, "punisher_level", None) is not None
+                            for net, _ in self.pool.values())
+        if self.punisher:
+            self.tricks = torch.zeros(B, 4, 5, **long)
+            self.table_strain = torch.as_tensor(CONTRACT_TABLE_STRAIN, device=dev)
         self.bad = torch.zeros((), **boolean)
         self.r = torch.zeros(1, **long)
         # per-round records (state before the call)
@@ -186,6 +185,7 @@ class FastCollector:
             feats += [pass_ends[:, None].float(), self.redoubled[:, None].float()]
         feats = torch.cat(feats, 1)
         hand = self.hands.gather(1, seat[:, None, None].expand(B, 1, 52)).squeeze(1)
+        legal = apply_opening_rule(legal, hand, self.last, self.t, self.opening_rule)
 
         decide = alive & ~forced
         action = torch.full_like(seat, PASS)
@@ -194,23 +194,49 @@ class FastCollector:
             frozen_rows = decide & (self.frozen_side == side)
             decide = decide & ~frozen_rows
             for code, (net, _) in self.pool.items():
-                if getattr(net, "is_brl", False):
-                    greedy, brl_legal = self._brl_act(net, hand, seat, side, alive)
+                if getattr(net, "is_rule", False):          # rule bidders (rulebots.py)
                     rows = frozen_rows & (self.code == code)
+                    greedy = net.act(hand, self.history, self.t, self.dealer)
                     action = torch.where(rows, greedy, action)
-                    ok_legal = torch.where(rows[:, None], brl_legal, ok_legal)
                     continue
                 width = AUCTION_FEATURES + getattr(net, "extra_features", 0)
-                out = net(hand, feats[:, :width])
+                if self.cuda_graph:            # fixed shapes: every frozen net sees every row
+                    idx, net_hand, net_feats, net_legal = None, hand, feats, legal
+                else:                          # CPU: only the rows this net plays
+                    idx = (frozen_rows & (self.code == code)).nonzero().squeeze(1)
+                    if len(idx) == 0:
+                        continue
+                    net_hand, net_feats, net_legal = hand[idx], feats[idx], legal[idx]
+                out = net(net_hand, net_feats[:, :width])
                 if getattr(net, "stage", None) == COMPETITIVE_STAGE and self.competitive:
                     # frozen competitive nets play their full policy: X / XX / SAC included
-                    greedy = competitive_log_probs(out, legal, 1.0, static=True).argmax(-1)
+                    greedy = competitive_log_probs(out, net_legal, 1.0, static=True).argmax(-1)
                 else:
                     greedy = out["policy_logits"][:, :PASS + 1].masked_fill(
-                        ~legal[:, :PASS + 1], -torch.inf).argmax(-1)
+                        ~net_legal[:, :PASS + 1], -torch.inf).argmax(-1)
+                if idx is not None:
+                    greedy = torch.full_like(action, PASS).index_copy(0, idx, greedy)
+                level = getattr(net, "punisher_level", None)
+                if level is not None and self.doubles:
+                    # X exactly when the standing contract goes down double-dummy (at
+                    # ``punisher_level`` or higher), missed with ``punisher_miss``.
+                    u = self.u.index_select(0, self.r).squeeze(0)
+                    punish = (legal[:, DOUBLE] & self._standing_fails()
+                              & (self.last // 5 + 1 >= level)
+                              & (u >= getattr(net, "punisher_miss", 0.0)))
+                    greedy = torch.where(punish, DOUBLE,
+                                         torch.where(greedy == DOUBLE, PASS, greedy))
                 action = torch.where(frozen_rows & (self.code == code), greedy, action)
         sample_legal = torch.where(decide[:, None], legal, self.pass_only[None])
-        outputs = self.actor(hand, feats)
+        if self.cuda_graph:                # fixed shapes: the learner sees every row
+            outputs = self.actor(hand, feats)
+        else:                              # CPU: only the rows the learner decides
+            idx = decide.nonzero().squeeze(1)
+            if len(idx) == 0:              # nothing to decide: one dummy row keeps the shapes
+                idx = idx.new_zeros(1)
+            sub = self.actor(hand[idx], feats[idx])
+            outputs = {k: v.new_zeros((B, *v.shape[1:])).index_copy(0, idx, v)
+                       for k, v in sub.items()}
         if self.competitive:
             log_probs = competitive_log_probs(outputs, sample_legal, self.temperature, static=True)
         else:
@@ -251,12 +277,6 @@ class FastCollector:
         self.early.scatter_(1, seat[:, None], self.early.gather(1, seat[:, None])
                             | (isp & ~own_side_bid)[:, None])
         self.side_bid.scatter_(1, side[:, None], (own_side_bid | bid)[:, None])
-        if self.pgx:
-            self.pgx_open.scatter_(1, seat[:, None], self.pgx_open.gather(1, seat[:, None])
-                                   | (isp & (self.last < 0))[:, None])
-            xslot = (seat * 35 + self.last.clamp(min=0))[:, None]
-            self.pgx_x.scatter_(1, xslot, torch.where(isx[:, None], 1.0, self.pgx_x.gather(1, xslot)))
-            self.pgx_xx.scatter_(1, xslot, torch.where(isxx[:, None], 1.0, self.pgx_xx.gather(1, xslot)))
         last = torch.where(bid, action, self.last)
         passes = torch.where(bid | isx | isxx, 0,
                              torch.where(isp, self.pass_count + 1, self.pass_count))
@@ -270,34 +290,26 @@ class FastCollector:
         self.t.add_(alive.long())
         self.r.add_(1)
 
-    def pgx_observation(self, hand: torch.Tensor, seat: torch.Tensor, side: torch.Tensor) -> torch.Tensor:
-        """(B,480) pgx.bridge_bidding observation for the player at ``seat`` (actor-relative)."""
+    def _standing_fails(self) -> torch.Tensor:
+        """``(B,)`` True where the standing contract goes down double-dummy.
+
+        Declarer is the player of the contract side who named the strain first; bids only
+        rise, so that is the seat holding the side's lowest bid in the strain.
+        """
         B = self.B
-        rel = (seat[:, None] + torch.arange(4, device=seat.device)[None]) % 4   # 0 me, 1 LHO, 2 pd, 3 RHO
-        me_vul = self.vul.gather(1, side[:, None]).squeeze(1)
-        them_vul = self.vul.gather(1, (1 - side)[:, None]).squeeze(1)
-        vul = torch.stack((~me_vul, me_vul, ~them_vul, them_vul), 1).float()
-        opening = self.pgx_open.gather(1, rel).float()
-
-        def per_bid(flat):                                    # (B,4*35) abs -> (B,35,4) rel
-            return flat.view(B, 4, 35).gather(1, rel[:, :, None].expand(B, 4, 35)).transpose(1, 2)
-
-        history = torch.cat((per_bid(self.bits), per_bid(self.pgx_x), per_bid(self.pgx_xx)), 2)
-        cards = torch.zeros(B, 52, device=hand.device)
-        cards[:, self.pgx_hand_idx] = hand
-        return torch.cat((vul, opening, history.reshape(B, 420), cards), 1)
-
-    def _brl_act(self, net, hand, seat, side, alive):
-        """Greedy legal call of a brl net (ours ids) and its full pgx legality in our column order."""
-        logits = net(self.pgx_observation(hand, seat, side))
-        owner = torch.where(self.contract_seat >= 0, self.contract_seat % 2, -1)
-        x_ok = (self.last >= 0) & ~self.doubled & (owner != side)
-        xx_ok = self.doubled & ~self.redoubled & (owner == side)
-        bids = self.ladder[None] > self.last[:, None]
-        pgx_legal = torch.cat((torch.ones_like(x_ok)[:, None], x_ok[:, None], xx_ok[:, None], bids), 1)
-        pick = logits.masked_fill(~pgx_legal, -torch.inf).argmax(-1)
-        ours = torch.cat((bids, torch.ones_like(x_ok)[:, None], x_ok[:, None], xx_ok[:, None]), 1)
-        return self.pgx_to_ours[pick], ours[:, :self.n_actions] & alive[:, None]
+        rows = torch.arange(B, device=self.device)
+        c = self.last.clamp(min=0)
+        side = self.contract_seat.clamp(min=0) % 2
+        strain_bids = (self.ladder[None] % 5 == (c % 5)[:, None]).float()      # (B,35)
+        bits = self.bits.view(B, 4, 35)
+        first = []
+        for k in (0, 2):
+            seat = side + k
+            own = bits[rows, seat] * strain_bids
+            first.append(torch.where(own > 0, self.ladder[None], 35).min(1).values)
+        declarer = torch.where(first[0] <= first[1], side, side + 2)
+        tricks = self.tricks[rows, declarer, self.table_strain[c]]
+        return (self.last >= 0) & (tricks < c // 5 + 7)
 
     def _reset(self) -> None:
         for buf, value in ((self.t, 0), (self.last, -1), (self.pass_count, 0),
@@ -307,9 +319,7 @@ class FastCollector:
                            (self.bad, False), (self.r, 0), (self.rec_decide, False),
                            (self.rec_top, False), (self.rec_fired, False)):
             buf.fill_(value)
-        if self.pgx:
-            for buf in (self.pgx_open, self.pgx_x, self.pgx_xx):
-                buf.fill_(0)
+
 
     def _capture(self) -> None:
         self._reset()
@@ -345,6 +355,8 @@ class FastCollector:
         self.code.copy_(opponent)
         self.frozen_side.copy_(frozen_side)
         self.hands.copy_(deals.hands[deal])
+        if self.punisher:
+            self.tricks.copy_(deals.tricks[deal].long())
         self.u.copy_(u)
         if u_fire is not None:
             self.u_fire.copy_(u_fire)

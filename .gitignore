@@ -9,6 +9,9 @@ runs/
 results/
 *.pt
 
+# Private working notes for the project story.
+project-story-raw.md
+
 # Deal datasets. The tiny deterministic test fixture is the one exception.
 data/*
 !data/smoke_128.npz
@@ -21,3 +24,11 @@ id_rsa*
 
 # DDS writes this at the repo root when a solve fails.
 dump.txt
+
+# Local solver experiments and assistant configuration are outside the public package.
+dd/
+.claude/
+.venv/
+build/
+dist/
+*.egg-info/

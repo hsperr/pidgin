@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Belief Nets</title>
+<style>
+:root {
+  --surface-0: #f4f3f0; --surface-1: #fcfcfb; --border: #e2e1dc;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7a7974;
+  --grid: #ebeae6; --series: #2a78d6; --series2: #d9822b; --ref: #1baf7a;
+  --good: #0ca30c; --bad: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface-0: #111110; --surface-1: #1a1a19; --border: #2e2e2c;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --grid: #2a2a28; --series: #3987e5; --series2: #e8973f; --ref: #199e70;
+  }
+}
+:root[data-theme="dark"] {
+  --surface-0: #111110; --surface-1: #1a1a19; --border: #2e2e2c;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+  --grid: #2a2a28; --series: #3987e5; --series2: #e8973f; --ref: #199e70;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface-0); color: var(--text-primary);
+       font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 5; background: var(--surface-0);
+         border-bottom: 1px solid var(--border); padding: 12px 16px;
+         display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+header h1 { font-size: 16px; margin: 0 12px 0 0; }
+a { color: var(--series); }
+select { font: inherit; color: var(--text-primary); background: var(--surface-1);
+         border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; max-width: 100%; }
+.meta { color: var(--text-secondary); font-size: 13px; }
+main { padding: 16px; max-width: 1600px; margin: 0 auto; }
+h2 { font-size: 15px; margin: 24px 0 8px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px 8px; }
+.card .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.card .name { font-weight: 600; font-size: 13px; }
+.card .now { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+.card svg { display: block; width: 100%; height: 130px; margin: 6px 0 4px; }
+.card .desc { color: var(--text-secondary); font-size: 12px; }
+.legend { font-size: 11px; color: var(--text-muted); }
+.legend i { display: inline-block; width: 10px; height: 2px; vertical-align: middle; margin: 0 3px 0 8px; }
+.ax { fill: var(--text-muted); font-size: 10px; }
+.wrap { overflow-x: auto; }
+table { border-collapse: collapse; margin: 8px 0; background: var(--surface-1); font-variant-numeric: tabular-nums; }
+th, td { border: 1px solid var(--border); padding: 4px 10px; text-align: right; font-size: 13px; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--text-secondary); font-weight: 600; }
+td.good { color: var(--good); } td.bad { color: var(--bad); }
+.tag { font-size: 11px; color: var(--surface-1); background: var(--series2); border-radius: 4px; padding: 0 5px; margin-left: 6px; }
+@media (max-width: 600px) { body, select { font-size: 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Belief nets</h1>
+  <a href="/">← Training dashboard</a>
+  <a href="/tourney">Tournament →</a>
+  <select id="run" aria-label="Run"></select>
+  <span class="meta" id="status"></span>
+  <p class="meta" id="desc" style="flex-basis:100%;margin:0"></p>
+</header>
+<main>
+  <p class="meta">CE = cross-entropy per hidden card, in nats. Lower is better. Random guess = ln 3 = 1.0986.
+     Old best from the auction alone: 1.047 (E51).</p>
+  <h2>Training batch (every 200 steps)</h2>
+  <div class="grid" id="train"></div>
+  <h2>Test set (every eval)</h2>
+  <div class="grid" id="test"></div>
+  <h2>Over the auction (newest analysis of this run)</h2>
+  <p class="meta" id="anaMeta">x = calls made so far (all four seats), "end" = full auction. Made by
+     <code>analyze.py</code> on 20k test auctions × 4 viewer seats. Green dashed = an oracle that knows every hidden hand's exact suit lengths.</p>
+  <div class="grid" id="ana"></div>
+  <h2>End of auction: all runs</h2>
+  <p class="meta">What a card-play net would get at the opening lead. Systems hidden / told.</p>
+  <div class="wrap"><table id="endTable"></table></div>
+  <h2>By opponent system (newest eval, full auction)</h2>
+  <p class="meta">"Told" = the net is given both systems. "Hidden" = it must guess them. "Help" = what knowing the system is worth.
+     <span class="tag">unseen</span> = never in training.</p>
+  <div class="wrap"><table id="bysys"></table></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const LN3 = Math.log(3), OLD_BEST = 1.0474;
+const fmt = v => Math.abs(v) >= 10 ? v.toFixed(1) : Math.abs(v) >= 0.1 ? v.toFixed(4) : v.toPrecision(3);
+let runs = [], run = "";
+function localGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function localSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
+
+// series: [[label, color, pts]], ref: optional [value, label]
+function chart(title, desc, series, ref, dir, xlab) {
+  const all = series.flatMap(s => s[2]);
+  if (all.length < 2) return "";
+  let lo = Math.min(...all.map(p => p[1])), hi = Math.max(...all.map(p => p[1]));
+  if (ref && ref[0] > lo - (hi - lo) && ref[0] < hi + (hi - lo)) { lo = Math.min(lo, ref[0]); hi = Math.max(hi, ref[0]); }
+  if (hi === lo) { lo -= 0.01; hi += 0.01; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const s0 = Math.min(...all.map(p => p[0])), s1 = Math.max(...all.map(p => p[0]));
+  const W = 400, H = 130, L = 46, R = 6, T = 6, B = 16;
+  const x = s => L + (W - L - R) * (s - s0) / Math.max(s1 - s0, 1);
+  const y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+  const ticks = [hi - pad, (hi + lo) / 2, lo + pad];
+  const grid = ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/>
+     <text class="ax" x="${L - 4}" y="${y(v) + 3}" text-anchor="end">${fmt(v)}</text>`).join("");
+  const refLine = ref ? `<line x1="${L}" x2="${W - R}" y1="${y(ref[0])}" y2="${y(ref[0])}" stroke="var(--ref)" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>` : "";
+  const paths = series.map(([, c, pts]) => pts.length < 2 ? "" :
+    `<path d="${pts.map((p, i) => `${i ? "L" : "M"}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join("")}"
+       fill="none" stroke="${c}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`).join("");
+  const now = series.map(([lab, c, pts]) => pts.length ? `${series.length > 1 ? lab + " " : ""}${fmt(pts[pts.length - 1][1])}` : "").join(" · ");
+  const legend = (series.length > 1 ? series.map(([lab, c]) => `<i style="background:${c}"></i>${lab}`).join("") : "")
+               + (ref ? `<i style="background:var(--ref)"></i>${ref[1]}` : "");
+  return `<div class="card"><div class="top"><div class="name">${title}</div><div class="now">${now}</div></div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${title} over training steps">
+      ${grid}${refLine}${paths}
+      <text class="ax" x="${L}" y="${H - 3}">${s0}</text><text class="ax" x="${W - R}" y="${H - 3}" text-anchor="end">${xlab ? xlab : s1}</text>
+    </svg><div class="legend">${legend}</div><div class="desc">${desc} <b>${dir}</b></div></div>`;
+}
+
+async function loadRuns() {
+  runs = await (await fetch("/api/belief/runs")).json();
+  const keep = $("run").value || localGet("beliefRun");
+  $("run").replaceChildren(...runs.map(r => new Option(r.name, r.name)));
+  if (keep && runs.some(r => r.name === keep)) $("run").value = keep;
+  run = $("run").value;
+}
+
+async function refresh() {
+  if (!run) { $("status").textContent = "No belief runs found."; return; }
+  const info = runs.find(r => r.name === run) || {};
+  const a = info.args || {};
+  const holdout = (a.holdout || "").split(",").filter(Boolean);
+  $("desc").textContent = `arch ${a.arch ?? "?"} · d ${a.d ?? "?"} × ${a.layers ?? "?"} · batch ${a.batch ?? "?"} · lr ${a.lr ?? "?"} · steps ${a.steps ?? "?"}`
+    + ` · system hidden ${a.sys_drop ?? "?"} · WBridge5 share ${a.wb5_frac ?? "?"}` + (holdout.length ? ` · unseen: ${holdout.join(", ")}` : "");
+  const rows = await (await fetch(`/api/belief/log?run=${encodeURIComponent(run)}`)).json();
+  const tr = rows.filter(r => r.ce_full !== undefined), ev = rows.filter(r => r.eval);
+  const last = tr[tr.length - 1] || {};
+  $("status").textContent = `step ${last.step ?? "?"} · ${last.rows ?? "?"} auctions · ${last.min ?? "?"} min · updated ${new Date().toLocaleTimeString()}`;
+  const P = (src, f) => src.map(r => [r.step, f(r)]).filter(p => typeof p[1] === "number" && isFinite(p[1]));
+  const C1 = "var(--series)", C2 = "var(--series2)";
+  $("train").innerHTML = [
+    chart("Cards at end of auction (ce_full)", "The opening-lead view.", [["", C1, P(tr, r => r.ce_full)]], [OLD_BEST, "old best"], "↓ lower is better"),
+    chart("Cards part way (ce_mid)", "Random point inside the auction. Always above ce_full.", [["", C1, P(tr, r => r.ce_mid)]], null, "↓ lower is better"),
+    chart("Gain over random", "ln 3 − ce_full. All the auction has taught it.", [["", C1, P(tr, r => r.gain)]], [LN3 - OLD_BEST, "old best"], "↑ higher is better"),
+    chart("Cards on the right player (top1)", "End of auction. Random = 33%.", [["", C1, P(tr, r => r.top1)]], null, "↑ higher is better"),
+    chart("Names their system (sys_acc)", "When not told. Includes WBridge5 rows (easy).", [["", C1, P(tr, r => r.sys_acc)]], null, "↑ higher is better"),
+  ].join("");
+  $("test").innerHTML = [
+    chart("Cards: CE", "Full auction, every seat as viewer.",
+          [["told", C1, P(ev, r => r.eval.known.ce)], ["hidden", C2, P(ev, r => r.eval.unknown.ce)]], [OLD_BEST, "old best"], "↓ lower is better"),
+    chart("Cards on the right player (top1)", "Random = 33%.",
+          [["told", C1, P(ev, r => r.eval.known.top1)], ["hidden", C2, P(ev, r => r.eval.unknown.top1)]], null, "↑ higher is better"),
+    chart("Names their system", "When hidden. Unseen systems can never be named.",
+          [["", C1, P(ev, r => r.eval.unknown.sys_acc_their)]], null, "↑ higher is better"),
+    ...holdout.map(s => chart(`Unseen system: ${s}`, "Never in training.",
+          [["told", C1, P(ev, r => r.eval.known.ce_by_their_sys?.[s])], ["hidden", C2, P(ev, r => r.eval.unknown.ce_by_their_sys?.[s])]], null, "↓ lower is better")),
+  ].join("");
+  const e = ev[ev.length - 1], prev = ev[ev.length - 2];
+  if (!e) { $("bysys").innerHTML = `<tr><td>No eval yet.</td></tr>`; return; }
+  const k = e.eval.known.ce_by_their_sys, u = e.eval.unknown.ce_by_their_sys, pk = prev?.eval.known.ce_by_their_sys;
+  const names = Object.keys(k).sort((a, b) => k[a] - k[b]);
+  $("bysys").innerHTML = `<tr><th>their system (step ${e.step})</th><th>told</th><th>hidden</th><th>help</th><th>gain over random</th><th>told, change since step ${prev?.step ?? "–"}</th></tr>` +
+    names.map(s => {
+      const d = pk?.[s] !== undefined ? k[s] - pk[s] : null;
+      return `<tr><td>${s}${holdout.includes(s) ? '<span class="tag">unseen</span>' : ""}</td><td>${k[s].toFixed(4)}</td><td>${u[s].toFixed(4)}</td>
+        <td>${(u[s] - k[s]).toFixed(4)}</td><td>${(LN3 - k[s]).toFixed(4)}</td>
+        <td class="${d === null ? "" : d < 0 ? "good" : "bad"}">${d === null ? "–" : (d >= 0 ? "+" : "") + d.toFixed(4)}</td></tr>`;
+    }).join("");
+}
+
+const KEYS = [
+  ["ce", "Cards: CE", "All hidden cards.", "↓ lower is better", "oracle_shape_ce"],
+  ["ce_honors", "Honours (A K Q J): CE", "Where the points are. Matters most for leads and defence.", "↓ lower is better", null],
+  ["top1", "Cards on the right player", "Random = 33%.", "↑ higher is better", "oracle_shape_top1"],
+  ["len_mae", "Suit length error", "Cards off, per hidden hand and suit.", "↓ lower is better", null],
+  ["hcp_mae", "HCP error", "Points off, per hidden hand.", "↓ lower is better", null],
+  ["fam_acc", "Names their system family", "Systems hidden. Families: pidgin, brl, EPBot natural (SAYC/2-1 variants), Acol, Polish, Precision, WBridge5.", "↑ higher is better", null],
+];
+async function loadAnalysis() {
+  const C1 = "var(--series)", C2 = "var(--series2)";
+  const a = await (await fetch(`/api/belief/analysis?run=${encodeURIComponent(run)}`)).json();
+  const steps = Object.keys(a).map(Number).sort((x, y) => x - y);
+  if (!steps.length) { $("ana").innerHTML = `<p class="meta">No analysis yet. Run: python experiments/belief_multi/analyze.py experiments/belief_multi/runs/${run}</p>`; }
+  else {
+    const A = a[String(steps[steps.length - 1])];
+    const maxK = Math.max(...A.told.filter(r => r.k !== "full").map(r => r.k));
+    const P = (rows, key) => rows.map(r => [r.k === "full" ? maxK + 2 : r.k, r[key]]);
+    $("anaMeta").firstChild.textContent = `Checkpoint step ${steps[steps.length - 1]}. x = calls made so far (all four seats), last point = full auction. Made by `;
+    $("ana").innerHTML = KEYS.map(([key, title, desc, dir, orc]) => {
+      const series = key === "fam_acc"
+        ? [["family", C1, P(A.hidden, "fam_acc")], ["exact system", C2, P(A.hidden, "sys_acc")]]
+        : [["told", C1, P(A.told, key)], ["hidden", C2, P(A.hidden, key)]];
+      const ref = orc ? [A.told[A.told.length - 1][orc], "exact-shape oracle"] : null;
+      return chart(title, desc, series, ref, dir, "end");
+    }).join("");
+  }
+  const rowsOut = [];
+  let oracle = null;
+  for (const r of runs) {
+    const x = await (await fetch(`/api/belief/analysis?run=${encodeURIComponent(r.name)}`)).json();
+    const st = Object.keys(x).map(Number).sort((p, q) => p - q);
+    if (!st.length) continue;
+    const A = x[String(st[st.length - 1])];
+    const h = A.hidden.find(z => z.k === "full"), t = A.told.find(z => z.k === "full");
+    oracle = oracle || t;
+    rowsOut.push(`<tr><td>${r.name} @ ${st[st.length - 1]}</td>` + [["ce", 4], ["ce_honors", 4], ["top1", 3], ["len_mae", 3], ["hcp_mae", 2]]
+      .map(([k, d]) => `<td>${h[k].toFixed(d)} / ${t[k].toFixed(d)}</td>`).join("") + `<td>${(100 * h.fam_acc).toFixed(1)}% / ${(100 * h.sys_acc).toFixed(1)}%</td></tr>`);
+  }
+  $("endTable").innerHTML = `<tr><th>run</th><th>CE</th><th>honours CE</th><th>top1</th><th>length err</th><th>HCP err</th><th>system: family / exact</th></tr>`
+    + rowsOut.join("")
+    + `<tr><td>random</td><td>1.0986</td><td>1.0986</td><td>0.333</td><td>–</td><td>–</td><td>–</td></tr>`
+    + (oracle ? `<tr><td>exact-shape oracle</td><td>${oracle.oracle_shape_ce.toFixed(4)}</td><td>–</td><td>${oracle.oracle_shape_top1.toFixed(3)}</td><td>0</td><td>–</td><td>–</td></tr>` : "");
+}
+
+$("run").addEventListener("change", () => { run = $("run").value; localSet("beliefRun", run); refresh(); loadAnalysis(); });
+(async () => { await loadRuns(); await refresh(); await loadAnalysis();
+  setInterval(async () => { await loadRuns(); await refresh(); await loadAnalysis(); }, 30000); })();
+</script>
+</body>
+</html>
