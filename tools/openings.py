@@ -6,7 +6,6 @@ held-out hand is asked directly. The model plays its greedy call, as in a match.
 
     python tools/openings.py runs/training/4_D/best.pt
     python tools/openings.py CKPT --seat 3 --vul --deals 50000 --examples 5
-    python tools/openings.py brl:../bridge_new/experiments/brl/fsp_weights.npz   # diagnostic only
 
 ``brl:WEIGHTS.npz`` loads the brl port from ``brl_player.py`` next to the weights file
 (an outside bot, for comparison only; never training data).

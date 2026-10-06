@@ -1,4 +1,4 @@
-"""Play out D auctions with E48 greedy (+eps random legal card) and DD-value every legal card
+"""Play out auctions with the policy net (greedy (+eps random legal card) and DD-value every legal card
 at every position. python gen_play.py AUC.npz OUT.pt EPS
 Saves: seq (n,52) int8 cards in play order; vals (n,52,52) int8 tricks for the side on turn, -1 illegal;
 plus the contracts' source path. Positions are rebuilt in the trainer by replaying seq."""

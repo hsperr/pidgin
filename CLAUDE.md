@@ -3,8 +3,8 @@
 One repo to train and serve the bridge bots. Read `README.md` "What is here" for the map.
 
 - `training/`: model code, shared by trainers and `server/` (`server/training` links to it).
-- `server/`: the live site. `belief/`, `play/`: trainers moved from the lab.
-- `docs/`: one file per served model with its training commands and known gaps.
+- `server/`: the live site. `belief/`, `qnet/`: trainers for the belief net and the card-play Q-net.
+- `docs/`: one file per served model with its training commands.
 - `runs/`, `data/`, `server/models/*.pt` are local only (gitignored).
 
 ## Commands
@@ -21,5 +21,4 @@ One repo to train and serve the bridge bots. Read `README.md` "What is here" for
   with every served model before and after; the calls must match unless the change
   means to alter them.
 - New trainers take data paths from flags or `BRIDGE_DATA`, never `/Users/...`.
-- Experiments go in `~/code/bridge/lab`. Move code here when it trains a shipped model,
-  and add its doc in `docs/`.
+- New code here trains or serves a released model; add its doc in `docs/`.

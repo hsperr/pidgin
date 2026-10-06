@@ -1,4 +1,4 @@
-"""E57: multi-system auction generator for the belief net.
+"""multi-system auction generator for the belief net.
 
 Plays every bidder in SYSTEMS against every other (and itself) on fresh deals from
 dds_results_100M.npy and writes small shards. Hands are NOT stored: rebuild them from

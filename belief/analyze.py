@@ -1,4 +1,4 @@
-"""E57: how the belief sharpens over the auction, for one checkpoint.
+"""how the belief sharpens over the auction, for one checkpoint.
 
 For every viewer seat and every number of calls heard (0, 1, 2, ... and the full auction)
 on a fixed test subset, with systems told and hidden:

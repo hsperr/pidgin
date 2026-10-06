@@ -52,7 +52,7 @@ plain net and never searches.
 
 ### Bidding search (`/debug` only)
 
-`emergent/bidsearch.py`, a port of `bridge_new/experiments/belief_multi` (`bid_search.py`,
+`emergent/bidsearch.py`, a port of the research search in `belief/` (`bid_search.py`,
 the shape-first sampler of `sample_eval.py`; E57 in its NOTES.md). On `/debug`, with the
 page's search toggle on, every net call goes through `engine.search_call`; with it off, and
 on every other page and API, the net's own call. For the seat on turn: the picked bidding
@@ -70,21 +70,18 @@ decides how many deals count. The deals are seeded by the position, so asking ag
 
 ## Update to the newest snapshots, then deploy
 
-    ./sync_models.sh      # weights only: E46/play/belief snapshots from ~/code/bridge/lab
+    ./sync_models.sh      # weights only: newest snapshots from $SRC
     ./deploy.sh
 
-Server config (nginx, systemd) lives in `~/code/infra` (app `bridge`, port 3500).
-The unit still passes `ck.pt` to `create_app`; that argument is ignored now.
+The host runs the app behind nginx as a systemd service; that config is not in this repo.
 
 ## Models
 
 `models/models.json` lists what the dropdown shows; the first entry is the
-default. Kept: D (default), E46, brl, and two light-opening experiments from
-this repo for `/debug` (`hi3_s60k`, `lo_s28k`; no corpus). Two families are supported:
+default. Entries whose file is missing are skipped, so the public download (team models
+only) runs too. Two families are supported:
 
-- training four-seat checkpoints (D, E46), copied without the critic. E46 comes
-  from `sync_models.sh` (edit its `copy` lines to add runs); D was trained in
-  this repo and copied by hand.
+- four-seat checkpoints from `training/`, stored without the critic.
 - brl FSP (`brl_fsp_weights.npz`), the external baseline.
 
 ## Model code and frozen copies
@@ -92,12 +89,8 @@ this repo for `/debug` (`hi3_s60k`, `lo_s28k`; no corpus). Two families are supp
 The net classes come from `../training` (`server/training` is a link to it).
 `deploy.sh` ships it with the app; Docker builds from the repo root.
 
-`emergent/teaching/` (`situations.py`, `rules.json`; numpy only) is a frozen copy of
-`~/code/bridge/lab/experiments/teaching_D/`, D's 15 teaching rules with their SAYC
-notes, used by the /table "rule of thumb" card. `sync_models.sh` refreshes it; by hand:
-
-    cp ~/code/bridge/lab/experiments/teaching_D/{situations.py,rules.json} \
-      ~/code/bridge/pidgin/server/emergent/teaching/ && python3 emergent/teaching/situations.py
+`emergent/teaching/` (`situations.py`, `rules.json`; numpy only) holds Pidgin V1's 15
+teaching rules with their SAYC notes, used by the /table "rule of thumb" card.
 
 ## Machine APIs (`/apis/…`) — seat our bots at other sites' tables
 
@@ -139,7 +132,7 @@ lists them under `models`. A team loads on the first request that names it; `BRI
 | PidginV2 | g_s2o_hi3_lo s40k (`pidginv2_bid_s40000.pt`) + bidding search, no clock | B2g Q-net + PIMC, E48 belief layouts |
 
 Measured (4,000 boards): PidginV2 vs PidginV1 +0.33 ± 0.20 IMP/board. B2g is
-`play_B2g_s540k.pt`, weights only, from `bridge_public/runs/play_q/B2g_box/ckpt_step540000.pt`.
+`play_B2g_s540k.pt`, weights only ([docs/card_play.md](../docs/card_play.md)).
 All answers are deterministic (bidding search scores all 32 deals; card search seeded by the view).
 
     docker build -t pidgin-brill .                 # amd64 too: docker buildx build --platform linux/amd64 ...
@@ -157,7 +150,7 @@ Three parts, all from the deployed net alone:
    best possible contract it expects to finish after each (`why()` in `bidserver.py`).
 2. **What this call means** — `models/corpus_<model id>.json`, built offline from 1,000,000
    greedy self-play auctions (dealer North, no vulnerability, the desk's setting) by
-   `bridge_new/experiments/explain/selfplay.py` + `corpus.py`. Positions with fewer than 200
+   greedy self-play auctions (`scripts/generate_auctions.py`), summarised by prefix. Positions with fewer than 200
    hands are dropped; 8 calls deep.
 3. **Play it out** — `emergent/explain.py`: 256 random completions of the unseen 39 cards,
    weighted by how likely the net thinks the calls so far were, then the net finishes the
@@ -176,8 +169,8 @@ Where a board comes from, in order of preference:
 
 1. **A link from the bid desk** — `#d=<deal>&a=<auction>&dr=0&v=none`. Same deal
    codec and same call codec as the bid desk, so the two pages share links.
-2. **The frozen benchmark** — `models/bench_100k.npz`, the slice every E48 number
-   was measured on. `#b=<row>` loads one. Each row brings its own E46 auction,
+2. **The frozen benchmark** — `models/bench_100k.npz`, the slice every card-play number
+   was measured on. `#b=<row>` loads one. Each row brings its own auction,
    contract, vulnerability and stored `dd_tricks`, so the page can say what the
    benchmark thought the board was worth. Only the first `PLAY_BENCH_LIMIT` rows
    are read (4000 by default); loading all 100k takes ~30 s.
@@ -437,7 +430,7 @@ not have. Every claim carries a tag saying where it came from:
   policy over the 52 cards and its belief head, cut down to the missing honours,
   with the true holder stripped out until the deal is over.
 - **self-play** — `models/corpus_<model id>.json`, a million greedy self-play
-  auctions summarised by prefix (`bridge_new/experiments/explain/corpus.py`).
+  auctions summarised by prefix.
   What a call actually held: point band, balanced share, suit lengths. Positions
   with fewer than 200 hands, and anything past eight calls, are not in the file.
   There the advice leads with the net's own policy on the user's cards

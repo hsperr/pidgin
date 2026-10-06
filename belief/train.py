@@ -1,4 +1,4 @@
-"""E57: multi-system auction belief net.
+"""multi-system auction belief net.
 
 Viewer = one seat. Input: own 13 cards, vulnerability, the auction so far (any prefix), and
 a system tag for each side (our side / their side), each hidden with probability

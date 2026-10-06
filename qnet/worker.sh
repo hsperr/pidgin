@@ -1,5 +1,6 @@
-#!/bin/bash
-# claim auction shards without positions (test first, eps 0; train eps 0.2); exit when all done
+#!/usr/bin/env bash
+# Turn auction shards into training positions (gen_play.py): test shard first with no
+# random cards, training shards with 20% random cards. Several workers can run at once.
 cd "$(dirname "$0")"
 while true; do
   did=0
@@ -9,5 +10,5 @@ while true; do
     eps=0.2; [ $s = test ] && eps=0
     python3 gen_play.py $f pos/$s.pt $eps >> pos/worker.log 2>&1; did=1; break
   done
-  if [ $did = 0 ]; then pgrep -f make_auc.sh >/dev/null || exit 0; sleep 20; fi
+  if [ $did = 0 ]; then pgrep -f make_auc.sh >/dev/null || exit 0; /bin/sleep 20; fi
 done

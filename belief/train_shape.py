@@ -1,4 +1,4 @@
-"""E57 option C: dedicated shape net.
+"""Variant: a dedicated shape net.
 
 train.BeliefMLP (card-owner, system, HCP/length summary heads) plus a pattern head: for each
 hidden hand (LHO, partner, RHO) a softmax over all 560 suit-length patterns (S,H,D,C summing to
