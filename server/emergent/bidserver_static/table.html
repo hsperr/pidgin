@@ -1,0 +1,2313 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Play a board</title>
+<!-- Phones get their own design, in table.mobile.css. The desktop never loads a rule from it. -->
+<meta name="theme-color" content="#ffffff" media="(max-width:640px) and (prefers-color-scheme:light)">
+<meta name="theme-color" content="#1b1e23" media="(max-width:640px) and (prefers-color-scheme:dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Bridge">
+<link rel="manifest" href="/table.webmanifest">
+<link rel="icon" href="/table-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/table-icon-180.png">
+<style>
+:root{
+  --bg:#f6f5f1; --card:#ffffff; --line:#d9d5cb; --text:#1d1f23; --dim:#5f636b; --faint:#9a9da4;
+  --felt:#1f5e48; --felt-2:#2a7359; --felt-text:#eef5f1;
+  --face:#ffffff; --face-line:#cfcac0; --back-1:#2d5bd8; --back-2:#1f45ad;
+  --accent:#2d5bd8; --accent-bg:#e7edfc; --red:#c0392b; --pick:#b77f00; --glow:#f0b93f;
+  --pos:#1f8a5b; --neg:#c24a3a; --pos-bg:rgba(31,138,91,.14); --neg-bg:rgba(194,74,58,.14);
+  --n:#2d5bd8; --e:#a8700f; --s:#1f8a5b; --w:#8a52c9;
+  --mono: ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  /* The table is drawn on fixed tracks, so nothing on it moves when a card is played:
+     every hand keeps a slot for all thirteen of its cards, and the centre is exactly
+     as tall as a hand. */
+  --cw:42px;            /* a card in hand: preferred width, it shrinks to fit a long suit */
+  --ch:42px;            /* ... and its height, which is also one suit row */
+  --hand-hd:28px;       /* a hand's name line */
+  --hand-pad:8px;
+  --hand-h:calc(var(--hand-hd) + 6px + 4 * var(--ch) + 3 * 4px + 2 * var(--hand-pad) + 4px);
+  --tw:56px; --th:74px; /* a card on the trick */
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#121417; --card:#1b1e23; --line:#343943; --text:#e8eaed; --dim:#a3a8b1; --faint:#6b707a;
+    --felt:#173f33; --felt-2:#1f5443; --felt-text:#e3efe9;
+    --face:#262a31; --face-line:#40464f; --back-1:#3a5fc4; --back-2:#2a4796;
+    --accent:#7598ff; --accent-bg:#1f2842; --red:#ff7b6b; --pick:#f0b93f; --glow:#f0b93f;
+    --pos:#4cc08a; --neg:#ef7866; --pos-bg:rgba(76,192,138,.16); --neg-bg:rgba(239,120,102,.16);
+    --n:#7598ff; --e:#e9b458; --s:#4cc08a; --w:#b98cf0;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0; background:var(--bg); color:var(--text);
+  font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; padding:18px 24px 72px}
+.wrap{max-width:1320px; margin:0 auto}
+button{font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--text);
+  border-radius:9px; padding:8px 14px; min-height:40px; touch-action:manipulation}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:disabled{opacity:.4; cursor:default}
+button.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+button:focus-visible,a.btn:focus-visible,summary:focus-visible{outline:3px solid var(--accent); outline-offset:2px}
+a.btn{display:inline-flex; align-items:center; min-height:40px; text-decoration:none; border:1px solid var(--line);
+  background:var(--card); color:var(--text); border-radius:9px; padding:8px 14px}
+a.btn:hover{border-color:var(--accent)}
+.seg{display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; vertical-align:middle}
+.seg button{border:0; border-radius:0; padding:6px 12px; font-size:14px; min-height:38px}
+.seg button + button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--accent); color:#fff}
+.num{font-family:var(--mono); font-variant-numeric:tabular-nums}
+.red{color:var(--red)}
+.dim{color:var(--dim)}
+
+/* ---- header: the controls never change size, and the long model line is one line */
+header{margin-bottom:16px}
+header .bar{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+header h1{font-size:22px; margin:0 8px 0 0; white-space:nowrap}
+header .grow{flex:1 1 0; min-width:0}
+header .meta{color:var(--dim); font-size:14px; margin-top:8px; height:21px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+#skip.off{visibility:hidden}
+/* Both labels share one grid cell, so "Copied" never changes the button's width. */
+#share{display:inline-grid; align-items:center; justify-items:center}
+#share > span{grid-area:1/1}
+#share .ok{visibility:hidden; color:var(--pos); font-weight:600}
+#share.done .ok{visibility:visible}
+#share.done .lbl{visibility:hidden}
+/* The phone's menu sheet and extras. On the desktop the tools are ordinary header items. */
+.tools{display:contents}
+#more,#scrim,.sheet-hd,.nb-x,.bblv{display:none}
+.sr{position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden;
+  clip:rect(0 0 0 0); white-space:nowrap; border:0}
+#err{position:fixed; left:50%; top:14px; transform:translateX(-50%); z-index:30; max-width:min(640px,calc(100vw - 32px));
+  background:var(--neg); color:#fff; font-size:15px; padding:10px 16px; border-radius:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.2)}
+#err:empty{display:none}
+
+.card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px 20px}
+.card h2{margin:0 0 4px; font-size:20px; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.card .hint{color:var(--dim); font-size:15px; margin:0 0 12px}
+.row{display:grid; gap:16px; margin-bottom:16px}
+.top{grid-template-columns:minmax(0,1.45fr) minmax(340px,1fr); align-items:start}
+@media (max-width:980px){ .top{grid-template-columns:minmax(0,1fr)} }     /* same breakpoint as #nextbar below */
+.sub{font-size:13px; color:var(--dim); font-weight:600; margin:0 0 6px; text-transform:uppercase; letter-spacing:.04em}
+
+/* ---- the table: fixed tracks, you at the bottom */
+.table{display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+  grid-template-rows:repeat(3,var(--hand-h)); gap:8px;
+  background:var(--mat,radial-gradient(ellipse at center,var(--felt-2),var(--felt)));
+  box-shadow:var(--rail,none); border-radius:14px; padding:12px}
+.hand{position:relative; background:var(--card); border-radius:11px; padding:var(--hand-pad);
+  border:2px solid transparent; min-width:0; height:var(--hand-h);
+  display:grid; grid-template-rows:var(--hand-hd) 1fr; row-gap:6px}
+.hand.turn{border-color:var(--glow); box-shadow:0 0 0 4px rgba(240,185,63,.35)}
+.hand.acting{border-color:var(--glow); box-shadow:0 0 0 4px rgba(240,185,63,.2)}
+.hand.mine{background:linear-gradient(0deg,var(--accent-bg),var(--card))}
+.hand .hd{display:flex; align-items:center; gap:8px; min-width:0; white-space:nowrap}
+.hand .hd b{font-size:17px; flex:none}
+.hand .hd .who{font-size:13px; color:var(--dim); flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis}
+.hand .hd .pts{font-size:13px; color:var(--dim); flex:none}
+.hand .go{position:absolute; top:-11px; right:10px; font-size:12.5px; font-weight:700; line-height:20px;
+  padding:0 9px; border-radius:20px; background:var(--glow); color:#1d1f23; white-space:nowrap; pointer-events:none}
+.suits{display:grid; grid-template-rows:repeat(4,var(--ch)); row-gap:4px; min-width:0}
+.sl{display:flex; align-items:center; gap:6px; min-width:0}
+.sl .sym{flex:none; width:20px; font-size:20px; line-height:1; text-align:center}
+.sl .cards{display:flex; gap:3px; flex:1 1 auto; min-width:0; height:100%}
+.sl .void{color:var(--faint); align-self:center}
+/* A card in hand. It gives up width before it wraps, so a long suit never adds a row. */
+.cd{flex:0 1 var(--cw); min-width:0; height:100%; padding:0; border-radius:7px;
+  border:1px solid var(--face-line); background:var(--face); color:var(--ink,var(--text));
+  font:var(--card-w,600) 22px/1 var(--card-font,var(--mono)); letter-spacing:-.04em; display:flex; align-items:center; justify-content:center;
+  overflow:hidden; min-height:0}
+.cd.red{color:var(--ink-red,var(--red))}
+.cd.ten{font-size:18px; letter-spacing:-.1em}      /* the one two-character rank */
+button.cd.play{box-shadow:0 2px 0 var(--face-line)}
+button.cd.play:hover{border-color:var(--accent); background:var(--accent-bg)}
+button.cd:disabled{opacity:1; cursor:default}
+.hand.turn.inplay button.cd:disabled{opacity:.4}   /* cannot follow suit with these */
+/* Played cards keep their place, faded, so the rest of the hand never slides over. */
+.cd.gone{opacity:.16; border-style:dashed; box-shadow:none}
+/* A hidden hand: real card shapes, overlapped in a fan, as if held. The spacing is set for
+   thirteen cards, so the fan only gets narrower as cards are played. */
+.hand{container-type:inline-size}              /* 100cqw below = the hand's inner width */
+.backs{position:relative; min-width:0;
+  --bh:calc(var(--ch) * 2.3); --bw:calc(var(--bh) * .7);
+  --step:min(calc(var(--bw) * .42), calc((100cqw - var(--bw) - 56px) / 12))}
+.cd.back{position:absolute; left:50%; top:50%; width:var(--bw); height:var(--bh);
+  margin:calc(var(--bh) / -2) 0 0 calc(var(--bw) / -2); border-radius:6px; border:1px solid var(--back-2);
+  --o:calc(var(--i) - (var(--n) - 1) / 2);
+  transform:translateX(calc(var(--o) * var(--step))) rotate(calc(var(--o) * 1.8deg)); transform-origin:50% 140%;
+  box-shadow:inset 0 0 0 3px var(--face), -2px 1px 4px rgba(0,0,0,.28);
+  background:repeating-linear-gradient(45deg,var(--back-1),var(--back-1) 4px,var(--back-2) 4px,var(--back-2) 8px)}
+/* A themed deck draws its own back, margin and all. */
+.deck-img .cd.back{border:0; box-shadow:-2px 1px 4px rgba(0,0,0,.3); background:var(--back-img) center/100% 100%}
+
+/* ---- card themes: the mat, the card faces and the backs. The backs are drawn in
+   the script (DECKS), everything else is here. "modern" is the page as it was. */
+html[data-deck=classic]{--face:#fff; --face-line:#bdb6a8; --ink:#111; --ink-red:#c8102e;
+  --card-font:Georgia,"Times New Roman",serif; --card-w:700;
+  --mat:var(--noise),radial-gradient(ellipse at center,#1d7a4e,#0f4a2f 85%);
+  --rail:inset 0 0 0 6px #6b4a2b, inset 0 0 0 8px #3d2a18}
+html[data-deck=victorian]{--face:#f4ebd3; --face-line:#b9a57a; --ink:#2a1f14; --ink-red:#8e1b1b;
+  --card-font:"Bodoni 72",Didot,"Bodoni MT",Georgia,serif; --card-w:700;
+  --mat:var(--noise),radial-gradient(ellipse at center,#6a2323,#3a1111 85%);
+  --rail:inset 0 0 0 7px #2a0b0b, inset 0 0 0 8px #c9a54a}
+html[data-deck=deco]{--face:#f5efe0; --face-line:#c7ab62; --ink:#111; --ink-red:#b3261e;
+  --card-font:Futura,"Avenir Next","Century Gothic",sans-serif; --card-w:500;
+  --mat:repeating-linear-gradient(45deg,rgba(212,175,55,.07) 0 1px,transparent 1px 18px),
+    repeating-linear-gradient(-45deg,rgba(212,175,55,.07) 0 1px,transparent 1px 18px),
+    radial-gradient(ellipse at center,#18264a,#0b1326 85%);
+  --rail:inset 0 0 0 5px #0b1326, inset 0 0 0 6px #d4af37}
+html[data-deck=riviera]{--face:#fffaf0; --face-line:#d8cdb5; --ink:#1d1f23; --ink-red:#d6342c;
+  --card-font:"Arial Rounded MT Bold","Avenir Next Rounded",Nunito,system-ui,sans-serif; --card-w:700;
+  --mat:radial-gradient(circle,rgba(255,255,255,.07) 1.2px,transparent 1.6px) 0 0/16px 16px,
+    radial-gradient(ellipse at center,#1f7a74,#124a47 85%)}
+/* Riviera is a four-colour deck: diamonds orange, clubs green. */
+html[data-deck=riviera] .sD{color:#e07b12} html[data-deck=riviera] .sC{color:#1f8a4c}
+html[data-deck=champion]{--face:#fff; --face-line:#c9a227; --ink:#111; --ink-red:#c8102e;
+  --card-font:Georgia,serif; --card-w:700;
+  --mat:var(--noise),radial-gradient(ellipse at center,#4a2472,#1d0d30 85%);
+  --rail:inset 0 0 0 6px #1d0d30, inset 0 0 0 8px #d9b44a}
+html[data-deck=champion] .cd.back::after{content:""; position:absolute; inset:0; border-radius:inherit;
+  background:linear-gradient(110deg,transparent 42%,rgba(255,240,190,.4) 50%,transparent 58%) 0 0/300% 100%;
+  animation:sheen 4.5s ease-in-out infinite}
+@keyframes sheen{0%{background-position:100% 0} 60%,100%{background-position:0 0}}
+@media (prefers-reduced-motion:reduce){ html[data-deck=champion] .cd.back::after{animation:none} }
+#gear{font-size:20px; padding:4px 12px; line-height:1}
+#deck{min-height:38px; border:1px solid var(--line); border-radius:9px; background:var(--card); color:var(--text);
+  font:inherit; font-size:14px; padding:0 8px}
+.pos0{grid-column:2; grid-row:3} .pos1{grid-column:1; grid-row:2}
+.pos2{grid-column:2; grid-row:1} .pos3{grid-column:3; grid-row:2}
+.center{grid-column:2; grid-row:2; background:rgba(0,0,0,.2); border-radius:11px; padding:8px;
+  color:var(--felt-text); min-width:0; height:var(--hand-h); overflow:hidden;
+  display:flex; align-items:center; justify-content:center}
+.trick{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-rows:repeat(3,var(--th));
+  gap:2px 4px; align-items:center; justify-items:center; width:100%}
+.trick .slot{width:var(--tw); height:var(--th); border-radius:8px; border:1.5px dashed rgba(255,255,255,.22);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  font:700 24px/1.05 var(--card-font,var(--mono))}
+.trick .slot.has{background:var(--face); border:1px solid var(--face-line); color:var(--ink,var(--text));
+  box-shadow:0 3px 8px rgba(0,0,0,.25)}
+.trick .slot.has.red{color:var(--ink-red,var(--red))}
+.trick .slot.win{outline:3px solid var(--glow); outline-offset:1px}
+.trick .mid{grid-column:2; grid-row:2; text-align:center; font-size:13px; line-height:1.3; opacity:.9;
+  white-space:nowrap; overflow:hidden; max-width:100%}
+.trick .p2{grid-column:2; grid-row:1} .trick .p1{grid-column:1; grid-row:2}
+.trick .p3{grid-column:3; grid-row:2} .trick .p0{grid-column:2; grid-row:3}
+
+/* ---- the nets' moves, played out one at a time on the client.
+   --deal and --sweep are set from the speed control; reduced motion zeroes them.
+   Only transforms and opacity animate, so no animation ever moves the layout. */
+:root{ --deal:260ms; --sweep:300ms }
+@keyframes land-p0{from{transform:translateY(54px) scale(.8); opacity:0}}
+@keyframes land-p1{from{transform:translateX(-60px) scale(.8); opacity:0}}
+@keyframes land-p2{from{transform:translateY(-54px) scale(.8); opacity:0}}
+@keyframes land-p3{from{transform:translateX(60px) scale(.8); opacity:0}}
+.slot.land.p0{animation:land-p0 var(--deal) cubic-bezier(.2,.85,.3,1) both}
+.slot.land.p1{animation:land-p1 var(--deal) cubic-bezier(.2,.85,.3,1) both}
+.slot.land.p2{animation:land-p2 var(--deal) cubic-bezier(.2,.85,.3,1) both}
+.slot.land.p3{animation:land-p3 var(--deal) cubic-bezier(.2,.85,.3,1) both}
+.trick .slot{transition:transform var(--sweep) ease-in, opacity var(--sweep) ease-in}
+.trick.sweep .slot.has{opacity:0}
+.trick.sweep.w0 .slot.has{transform:translateY(46px) scale(.7)}
+.trick.sweep.w1 .slot.has{transform:translateX(-52px) scale(.7)}
+.trick.sweep.w2 .slot.has{transform:translateY(-46px) scale(.7)}
+.trick.sweep.w3 .slot.has{transform:translateX(52px) scale(.7)}
+@keyframes pop{from{transform:scale(.6); opacity:0}}
+.aq td.fresh span{display:inline-block; animation:pop var(--deal) cubic-bezier(.2,.85,.3,1) both}
+.table.clickskip{cursor:pointer}
+@media (prefers-reduced-motion:reduce){
+  :root{ --deal:1ms; --sweep:1ms }
+  .slot.land.p0,.slot.land.p1,.slot.land.p2,.slot.land.p3{animation:none}
+  .trick .slot{transition:none}
+  .aq td.fresh span{animation:none}
+}
+/* The auction scrolls inside the centre instead of growing it. */
+.aqwrap{width:100%; align-self:stretch; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin}
+.aq{width:100%; border-collapse:collapse; table-layout:fixed; font:600 18px/1 var(--mono)}
+.aq th{font:600 13px/1.4 -apple-system,sans-serif; opacity:.8; padding-bottom:4px;
+  position:sticky; top:0; background:rgba(0,0,0,.25)}
+.aq td{text-align:center; height:28px; padding:0}
+.aq td.q{color:var(--glow); font-weight:700}
+.aq td.me{background:rgba(255,255,255,.12)}
+.center .redc{color:#ff9b8e}
+.corner{color:var(--felt-text); font-size:13px; padding:2px 4px; min-width:0; white-space:nowrap; overflow:hidden}
+.corner b{display:block; font-size:22px; line-height:1.25; overflow:hidden; text-overflow:ellipsis}
+.corner .redc{color:#ff9b8e}
+.corner.tl{grid-column:1; grid-row:1} .corner.tr{grid-column:3; grid-row:1; text-align:right}
+.corner.bl{grid-column:1; grid-row:3; align-self:end} .corner.br{grid-column:3; grid-row:3; align-self:end; text-align:right}
+
+/* ---- panel. Title and status line have fixed heights; the controls sit above the
+   prose, so text of any length never pushes a button. */
+#panel-hint{min-height:calc(2 * 1.5em)}
+.stat{background:var(--bg); border-radius:11px; padding:11px 14px; margin-bottom:10px}
+.stat > span{font-size:14px; color:var(--dim); display:block}
+.stat b{font-size:24px}
+.stat.good{background:var(--pos-bg)} .stat.bad{background:var(--neg-bg)}
+.counts{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px}
+.counts .stat{margin:0; text-align:center}
+.actions{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap}
+.actions button{flex:1; min-width:140px}
+
+/* ---- bidding box */
+.bb{display:grid; grid-template-columns:22px repeat(5,minmax(0,1fr)); gap:6px}
+.bb .lv{color:var(--dim); font-size:14px; display:flex; align-items:center}
+.bb button,.bb2 button{padding:0; min-height:44px; border-radius:8px; line-height:1.1; min-width:0}
+.bb button .c,.bb2 button .c{display:block; font-weight:600; font-size:17px; white-space:nowrap}
+.bb button.illegal,.bb2 button.illegal{opacity:.22}
+.bb button.tip,.bb2 button.tip{outline:3px solid var(--glow); outline-offset:-1px}
+.bb2{display:grid; grid-template-columns:22px repeat(3,minmax(0,1fr)); gap:6px; margin-top:6px}
+
+/* ---- the teacher: one obvious button, then a short block of prose */
+#nextbar{margin-top:14px}
+#nextbar button{width:100%; min-height:54px; padding:12px 16px; font-size:18px; font-weight:600; border-radius:11px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+#nextbar .kbd{display:block; text-align:center; color:var(--dim); font-size:13px; margin-top:6px; height:20px}
+#advice.on{min-height:8em}
+.advice{border-left:4px solid var(--accent); background:var(--accent-bg);
+  border-radius:0 11px 11px 0; padding:12px 14px; margin:14px 0 0; font-size:16px; line-height:1.55}
+.advice p{margin:0 0 8px} .advice p:last-child{margin:0}
+.advice .say{font-weight:600}
+.advice .aside{color:var(--dim); font-size:15px}
+.advice.quiet{border-left-color:var(--line); background:var(--bg); color:var(--dim)}
+.advice .tag{margin-right:4px}
+
+/* ---- rule of thumb (experimental): a second, separate source next to the advice.
+   While hints are on during the auction its box keeps a fixed height -- hidden, not
+   removed, when it is not your call -- and every line in the folded view is clamped,
+   so nothing below it moves from one call to the next. Opening it is the only thing
+   that changes its height. */
+#rulecard{display:none}
+#rulecard.on{display:block; margin-top:14px}
+#rulecard.on.idle{visibility:hidden}
+.rule{border:1px dashed var(--line); border-radius:11px; background:var(--card); font-size:15px; line-height:1.5}
+.rule > summary{list-style:none; cursor:pointer; padding:10px 14px; display:block;
+  height:calc(6 * 1.5em + 20px); overflow:hidden}
+.rule > summary::-webkit-details-marker{display:none}
+.rule .rh{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--dim); height:1.5em;
+  white-space:nowrap; overflow:hidden}
+.rule .rh::before{content:"▸"} .rule[open] .rh::before{content:"▾"}
+.rule .rh b{font-weight:600; color:var(--text); overflow:hidden; text-overflow:ellipsis}
+.rule .rt{font-weight:600; height:1.5em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.rule .rl{height:3em; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical}
+.rule .rl .pick{font-family:var(--mono); font-weight:700; padding:0 6px; border-radius:6px;
+  background:var(--accent-bg); outline:2px dashed var(--glow); outline-offset:-2px; margin-left:4px}
+.rule .rm{color:var(--dim); font-size:13.5px; height:1.5em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.rule .rb{padding:0 14px 12px}
+.rule .rb p{margin:6px 0}
+.rule .sayc{color:var(--dim); font-size:13.5px; font-style:italic}
+.rule .none-note{color:var(--dim); height:calc(5 * 1.5em); overflow:hidden}
+
+/* ---- disclosures: the rigour is still here, just folded away */
+details.discl > summary{list-style:none; cursor:pointer; font-size:17px; font-weight:600; min-height:32px;
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--text)}
+details.discl > summary::-webkit-details-marker{display:none}
+details.discl > summary::before{content:"▸"; color:var(--dim); font-weight:400}
+details.discl[open] > summary::before{content:"▾"}
+details.discl > summary em{font-style:normal; font-weight:400; color:var(--dim); font-size:14px}
+details.discl > .body{margin-top:16px}
+
+/* ---- modals: settings, the leaderboard, the end of a challenge */
+dialog.modal{width:min(560px, calc(100vw - 32px)); max-height:calc(100dvh - 48px); overflow:auto;
+  color:var(--text); padding:0; box-shadow:0 24px 60px rgba(0,0,0,.35)}
+dialog.modal.wide{width:min(760px, calc(100vw - 32px))}
+dialog.modal::backdrop{background:rgba(0,0,0,.45)}
+dialog.modal .mhd{position:sticky; top:0; z-index:1; background:var(--card); display:flex; align-items:center;
+  justify-content:space-between; padding:14px 20px; border-bottom:1px solid var(--line)}
+dialog.modal .mhd h2{margin:0; font-size:19px}
+dialog.modal .mhd button{min-height:36px; padding:0 12px}
+dialog.modal .body{padding:16px 20px 20px}
+#rank{font-variant-numeric:tabular-nums; padding:4px 8px; font-size:14px; white-space:nowrap}
+@media (min-width:981px){ header .bar{gap:6px} header .seg button{padding:6px 8px} header h1{margin-right:4px} }
+table.lb{border-collapse:collapse; width:100%; font-size:15px; font-variant-numeric:tabular-nums}
+table.lb th{font-size:13px; color:var(--dim); font-weight:600; text-align:left; padding:4px 8px; border-bottom:1px solid var(--line)}
+table.lb td{padding:7px 8px; border-bottom:1px solid var(--line)}
+table.lb td.n, table.lb th.n{text-align:right}
+table.lb tr.you td{background:var(--accent-bg); font-weight:600}
+.namef{display:flex; gap:8px; flex-wrap:wrap; margin:8px 0}
+.namef input{flex:1 1 180px; min-height:40px; border:1px solid var(--line); border-radius:9px; padding:0 12px;
+  font:inherit; background:var(--card); color:var(--text)}
+.err{color:var(--red); min-height:1.4em; margin:4px 0 0; font-size:14px}
+.bigscore{font-size:34px; font-weight:700; margin:2px 0 4px; font-variant-numeric:tabular-nums}
+.bigscore.good{color:var(--good,#1a7f4b)} .bigscore.bad{color:var(--red)}
+table.match td a{white-space:nowrap}
+.prog{height:10px; border-radius:6px; background:var(--line); overflow:hidden; margin:14px 0 8px}
+.prog > i{display:block; height:100%; width:0; background:var(--accent); border-radius:inherit; transition:width .3s}
+.gensteps{list-style:none; padding:0; margin:10px 0 0; font-size:14.5px}
+.gensteps li{padding:3px 0; color:var(--dim)} .gensteps li.now{color:var(--text); font-weight:600}
+.gensteps li.done::before{content:"✓ "; color:var(--accent)}
+
+/* ---- narrow screens: the button that commits your move stays under your thumb */
+@media (max-width:980px){
+  body{padding-bottom:calc(104px + env(safe-area-inset-bottom))}
+  #nextbar{position:fixed; left:0; right:0; bottom:0; z-index:20; margin:0;
+    background:var(--card); border-top:1px solid var(--line);
+    padding:10px 14px calc(10px + env(safe-area-inset-bottom));
+    box-shadow:0 -8px 24px rgba(0,0,0,.14)}
+  #nextbar .kbd{display:none}
+  /* Which checkpoints are playing is not what you need on a phone, and it costs a
+     whole row above the table. It is one tap away in Settings. */
+  header .meta{display:none}
+  header .meta.chal{display:block}          /* the match score stays, even on a phone */
+}
+
+/* ---- hints */
+.tag{display:inline-block; font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; line-height:1.5;
+  padding:1px 7px; border-radius:20px; border:1px solid var(--line); color:var(--dim); vertical-align:middle}
+.tag.net{border-color:var(--accent); color:var(--accent); background:var(--accent-bg)}
+.tag.sp{border-color:var(--pos); color:var(--pos); background:var(--pos-bg)}
+.tag.cards{border-color:var(--pick); color:var(--pick)}
+.tag.approx{border-color:var(--pick); color:var(--pick); background:transparent}
+.tag.solver{border-color:var(--neg); color:var(--neg); background:var(--neg-bg)}
+.hintgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:16px}
+.block{border:1px solid var(--line); border-radius:12px; padding:14px 16px; min-width:0; font-size:15px}
+.block h3{margin:0 0 4px; font-size:16px; display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.block p.note{color:var(--dim); font-size:14px; margin:4px 0 10px}
+.block ul{margin:4px 0 0; padding-left:20px}
+.block li{margin:4px 0}
+.bars{display:grid; grid-template-columns:auto 1fr auto; gap:6px 10px; align-items:center; font-size:15px}
+.bars .bar{height:9px; border-radius:5px; background:var(--accent); opacity:.6}
+.bars .c{font-family:var(--mono); font-weight:700}
+.bars .pc{font-family:var(--mono); color:var(--dim); text-align:right}
+.notes{margin-top:10px; font-size:15px}
+.callout{margin-top:10px; border-left:4px solid var(--pick); background:var(--bg); border-radius:0 8px 8px 0;
+  padding:9px 12px; font-size:15px}
+.callout.book{border-left-color:var(--dim)}
+.sys{display:grid; grid-template-columns:auto 44px minmax(0,1fr); gap:5px 12px; align-items:center; font-size:14.5px}
+.sys .c{font-family:var(--mono); font-weight:700; text-align:right}
+.sys .sh{font-family:var(--mono); color:var(--dim); text-align:right}
+.sys .d em{font-style:normal; color:var(--dim)}
+.sys .d.fit{background:var(--pos-bg); border-radius:6px; padding:2px 6px}
+.sys .c.illegal{opacity:.4}
+.line{display:grid; grid-template-columns:40px 1fr; gap:8px; align-items:center; margin:4px 0; font-size:14px}
+.line .pc{font-family:var(--mono); text-align:right; color:var(--dim)}
+.chips{display:flex; flex-wrap:wrap; gap:4px; align-items:center}
+.chip{font-family:var(--mono); font-size:13px; padding:2px 6px; border-radius:6px; background:var(--bg)}
+.chip.us{background:var(--accent-bg); color:var(--accent)}
+.chip.end{background:var(--glow); color:#000; font-weight:700}
+.bel{display:grid; grid-template-columns:auto 1fr auto; gap:6px 10px; align-items:center; font-size:15px}
+.bel .who{color:var(--dim)}
+.bel .bar{height:9px; border-radius:5px; opacity:.65}
+.ddgrid{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+.ddc{font-family:var(--mono); font-size:14px; padding:4px 8px; border-radius:7px; border:1px solid var(--line)}
+.ddc.best{background:var(--pos-bg); border-color:var(--pos)}
+.rvwrap{overflow-x:auto}
+/* challenge: the header's meta line becomes the match score, so nothing moves */
+.chip{display:inline-block; min-width:22px; padding:0 6px; margin-left:4px; border-radius:6px;
+  background:var(--bg); border:1px solid var(--line); font-size:12px; line-height:18px; text-align:center;
+  font-variant-numeric:tabular-nums}
+.chip.now{border-color:var(--accent); color:var(--accent)}
+.chip.pos{background:var(--pos-bg); border-color:transparent} .chip.neg{background:var(--neg-bg); border-color:transparent}
+.vs{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); gap:10px}
+.vs .stat{margin:0}
+.vs .auc{font-family:var(--mono); font-size:14px; margin-top:6px; word-spacing:2px}
+table.match{border-collapse:collapse; width:100%; font-size:15px; margin-top:10px; font-variant-numeric:tabular-nums}
+table.match th{font-size:13px; color:var(--dim); font-weight:600; text-align:left; padding:4px 8px; border-bottom:1px solid var(--line)}
+table.match td{padding:6px 8px; border-bottom:1px solid var(--line)}
+table.match td.n{text-align:right}
+table.rv{border-collapse:separate; border-spacing:0 3px; width:100%; font-size:15px}
+table.rv th{font-size:13px; color:var(--dim); font-weight:600; text-align:left; padding:0 10px}
+table.rv td{background:var(--neg-bg); padding:6px 10px; font-family:var(--mono)}
+table.rv td:first-child{border-radius:7px 0 0 7px} table.rv td:last-child{border-radius:0 7px 7px 0}
+/* ---- /debug: the same page, all four hands up, the position spelled out in the address bar */
+.debug #challenge, .debug #rank, .debug #chair-set{display:none}
+#debugbar{display:none; margin:0 0 14px; padding:10px 12px; border:1px dashed var(--pick); border-radius:12px;
+  background:var(--card); font-size:14px}
+.debug #debugbar{display:block}
+#debugbar .dbrow{display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center}
+#debugbar label{display:inline-flex; gap:6px; align-items:center; color:var(--dim)}
+#debugbar select{font:inherit; font-size:14px; min-height:34px; max-width:100%; border:1px solid var(--line);
+  border-radius:8px; background:var(--bg); color:var(--text); padding:2px 6px}
+#debugbar #db-m, #debugbar #db-pm{max-width:min(300px, 70vw)}   /* beats "#debugbar select" */
+#debugbar b.tag{color:var(--pick)}
+#debugbar .dbnote{margin:6px 0 0; color:var(--dim); font-size:13px}
+#debugbar .dbnote code{font-family:var(--mono); font-size:12.5px}
+#debug-err{margin:6px 0 0; color:var(--neg); font-weight:600; overflow-wrap:anywhere}
+/* The auction, kept in the panel during the play */
+details.recap{margin:0 0 10px; border:1px solid var(--line); border-radius:10px; padding:6px 10px}
+details.recap > summary{cursor:pointer; list-style:none; display:flex; flex-wrap:wrap; gap:2px 8px; align-items:baseline;
+  font-size:14px; min-height:28px}
+details.recap > summary::-webkit-details-marker{display:none}
+details.recap > summary::before{content:"▸"; color:var(--dim)}
+details.recap[open] > summary::before{content:"▾"}
+details.recap .dim{color:var(--dim); font-size:13px}
+details.recap .rline{font-family:var(--mono); font-size:13.5px; flex:1 1 100%; overflow-wrap:anywhere}
+details.recap[open] .rline{display:none}
+details.recap .aqwrap{margin-top:6px}
+details.recap .aq{font-size:15px; color:var(--text)}
+details.recap .aq th{position:static; background:none; color:var(--dim)}
+details.recap .aq td{height:24px}
+details.recap .aq td.me{background:var(--accent-bg)}
+details.recap .aq .redc{color:var(--red)}
+#debug-err:empty{display:none}
+</style>
+<link rel="stylesheet" href="/table.mobile.css" media="(max-width:640px)">
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="bar">
+    <h1>Play a board</h1>
+    <div class="tools" id="tools" role="group" aria-label="Menu">
+    <p class="sheet-hd">Menu</p>
+    <span class="seg" id="hintseg" role="group" aria-label="Hints"
+          title="Teaching notes, and the net's suggestion, before every call and every card">
+      <button data-h="1" aria-pressed="false">hints on</button><button data-h="0" aria-pressed="true">hints off</button>
+    </span>
+    <span class="seg" id="searchseg" role="group" aria-label="Search" title="Before it plays, the bot guesses where the hidden cards are, solves twenty of those guesses double dummy, and plays the card that wins most often. It does this as declarer, and in defence from trick two.">
+      <button data-r="1">search on</button><button data-r="0">search off</button>
+    </span>
+    <span class="seg" id="speedseg" role="group" aria-label="Speed" title="How fast the other three play their cards">
+      <button data-s="slow">slow</button><button data-s="normal">normal</button
+      ><button data-s="fast">fast</button><button data-s="off">instant</button>
+    </span>
+    <button id="skip" class="off" title="Jump to the end of what the others just did">Skip ▸</button>
+
+    <span class="grow"></span>
+    <button id="share" type="button"
+            title="Copy a link to exactly this position. It holds all four hands, but whoever opens it only sees what your chair may see."
+            aria-label="Copy a link to this position"><span class="lbl">Copy link</span><span class="ok" aria-hidden="true">Copied ✓</span></button>
+    <span class="sr" id="share-status" role="status" aria-live="polite"></span>
+    <button id="challenge" type="button"
+            title="Play four boards in South. Four bots play the same boards at another table, and you compare in IMPs.">Challenge</button>
+    <button id="new-board" class="primary">New board</button>
+    </div>
+    <button id="rank" type="button" title="Your challenge rating. Opens the leaderboard." aria-label="Leaderboard">🏆 …</button>
+    <button id="gear" type="button" title="Settings: card theme, your chair" aria-label="Settings">⚙</button>
+    <button id="more" type="button" aria-label="Menu" aria-expanded="false" aria-controls="tools">⋯</button>
+  </div>
+  <div class="meta" id="meta">dealing…</div>
+</header>
+<div id="debugbar" aria-label="Debug">
+  <div class="dbrow">
+    <b class="tag">Debug</b>
+    <label>Dealer <select id="db-dealer"><option>N</option><option>E</option><option>S</option><option>W</option></select></label>
+    <label>Vul <select id="db-vul"><option value="none">none</option><option value="ns">N-S</option>
+      <option value="ew">E-W</option><option value="both">both</option></select></label>
+    <label>You play <select id="db-seat"><option value="">all four</option><option value="N">N only</option>
+      <option value="E">E only</option><option value="S">S only</option><option value="W">W only</option>
+      <option value="custom" hidden></option></select></label>
+    <label>Bidding <select id="db-m"></select></label>
+    <label>Cards <select id="db-pm"></select></label>
+  </div>
+  <p class="dbnote">All four hands face up, not rated. You call and play for every chair the nets do not
+    (all four by default); the hints follow the chair on turn and see only what it could see. The address bar
+    is the position; edit it to set one up:
+    <code>/debug#n=AQJ32.Q8.T32.K83&amp;e=…&amp;s=…&amp;w=…&amp;dealer=E&amp;vul=ns&amp;auction=1S-P-2C-P&amp;play=HK-HA&amp;hints=1</code>.
+    Add <code>seat=S</code> to hold South only, or <code>bots=EW</code> to give the nets some chairs.
+    The two model menus set <code>bm=</code> (bidding) and <code>pm=</code> (cards); the nets in every
+    chair, the step and the play to the end use them; the teaching rules stay D's.
+    A hand left out is dealt at random. A new dealer or vulnerability starts the auction again.</p>
+  <p id="debug-err" role="alert"></p>
+</div>
+<div id="scrim"></div>
+<div id="err" role="alert"></div>
+
+<div class="row top">
+  <div class="table" id="table"></div>
+
+  <div class="card">
+    <h2 id="panel-title">The table</h2>
+    <p class="hint" id="panel-hint"></p>
+    <div id="panel-body"></div>
+    <div id="nextbar"></div>
+    <div id="advice" aria-live="polite"></div>
+    <div id="rulecard"></div>
+    <div class="actions" id="panel-actions"></div>
+  </div>
+</div>
+
+<div class="row" id="result-row" style="display:none">
+  <div class="card">
+    <div id="res-chal"></div>
+    <h2 id="res-title">Result</h2>
+    <p class="hint" id="res-hint"></p>
+    <div id="res-stats"></div>
+    <div id="res-review" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<div class="row" id="numbers-row" style="display:none">
+  <details class="card discl" id="numbers">
+    <summary>Show the numbers <em id="numbers-sub"></em></summary>
+    <div class="body" id="numbers-body"></div>
+  </details>
+</div>
+
+<dialog class="card modal" id="settings" aria-labelledby="settings-title">
+    <div class="mhd"><h2 id="settings-title">Settings</h2>
+      <button id="settings-close" type="button" aria-label="Close settings">✕</button></div>
+    <div class="body">
+      <p class="sub">Card theme</p>
+      <select id="deck" aria-label="Card theme">
+        <option value="modern">Modern</option><option value="classic">Club Classic</option>
+        <option value="victorian">Victorian</option><option value="deco">Art Deco</option>
+        <option value="riviera">Riviera (four colours)</option><option value="champion" disabled>Champion (top of the leaderboard)</option>
+      </select>
+      <p class="hint" style="margin:6px 0 16px">The cards and the table, for the whole page. Kept in this browser.</p>
+      <div id="chair-set">
+      <p class="sub">Your chair <em style="text-transform:none;font-weight:400">North deals, nobody vulnerable</em></p>
+      <p class="hint" style="margin:0 0 10px">North always deals and nobody is vulnerable: the
+        self-play table the hints quote was built that way. Changing your chair deals a fresh board.</p>
+      <div class="actions" id="seats" style="margin:0"></div>
+      </div>
+      <div class="actions" style="margin-top:8px">
+        <button id="restart" title="Same thirteen cards, auction from the top">Restart this board</button>
+      </div>
+      <p class="hint" style="margin:12px 0 0" id="setup-note"></p>
+    </div>
+</dialog>
+
+<dialog class="card modal" id="lb" aria-labelledby="lb-title">
+    <div class="mhd"><h2 id="lb-title">Leaderboard</h2>
+      <button type="button" data-close aria-label="Close leaderboard">✕</button></div>
+    <div class="body" id="lb-body"></div>
+</dialog>
+
+<dialog class="card modal" id="gen" aria-labelledby="gen-title">
+    <div class="mhd"><h2 id="gen-title">Dealing a challenge</h2></div>
+    <div class="body">
+      <p style="margin:0" class="hint">Four bots play every board at the other table first, so your
+        score can be compared. This takes a few seconds per board.</p>
+      <div class="prog" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="gen-bar"><i></i></div>
+      <p style="margin:0" id="gen-now" aria-live="polite">Starting…</p>
+      <ul class="gensteps" id="gen-steps"></ul>
+      <p class="err" id="gen-err"></p>
+      <div class="actions" style="margin-top:8px"><button id="gen-cancel" type="button">Cancel</button></div>
+    </div>
+</dialog>
+
+<dialog class="card modal wide" id="match" aria-labelledby="match-title">
+    <div class="mhd"><h2 id="match-title">Challenge over</h2>
+      <button type="button" data-close aria-label="Close">✕</button></div>
+    <div class="body" id="match-body"></div>
+</dialog>
+
+</div>
+
+<script>
+const SYM = {S:"♠", H:"♥", D:"♦", C:"♣", NT:"NT"};
+const SUITS = ["S","H","D","C"];
+const LADDER = ["C","D","H","S","NT"];
+const RANKS = "AKQJT98765432";
+const SEATS = ["North","East","South","West"];
+const SEAT_VAR = ["--n","--e","--s","--w"];
+const $ = id => document.getElementById(id);
+const isRed = s => s==="H" || s==="D";
+const rankTxt = r => r==="T" ? "10" : r;
+const fmtPts = v => (v>0?"+":v<0?"−":"") + Math.abs(Math.round(v));
+const seatColor = s => `var(${SEAT_VAR[s]})`;
+const cardSuit = c => SUITS[Math.floor(c/13)];
+const cardRank = c => RANKS[c%13];
+const strainOf = n => n.endsWith("NT") ? "NT" : n.slice(-1);
+function cardHTML(c){
+  const s = cardSuit(c);
+  return `<span class="${isRed(s)?'red':''}">${SYM[s]}${rankTxt(cardRank(c))}</span>`;
+}
+function pretty(name){
+  if(name==="Pass"||name==="P"||name==="X"||name==="XX") return name==="P" ? "Pass" : name;
+  const s = strainOf(name);
+  return `<span class="${isRed(s)?'red':''}">${name[0]}${SYM[s]}</span>`;
+}
+function contractHTML(c){
+  return `${c.level}<span class="${isRed(c.strain)?'red':''}">${SYM[c.strain]||c.strain}</span>${["","X","XX"][c.doubled]}`;
+}
+const suitWord = l => ({S:"spades", H:"hearts", D:"diamonds", C:"clubs"})[l] || l;
+
+/* A board opened from a link stops exactly where the link does, even when a net is
+   on turn there: nothing auto-advances until the visitor presses Continue, or
+   plays, or starts something new. Any of those requests releases the hold. */
+let HOLD = false;
+const PROCEEDS = /\/api\/table\/(call|card|advance|step|finish|new_board|restart|undo|claim|challenge(\/next|\/load)?)$/;
+let NOTICE_UNTIL = 0;          // a message about a bad link outlives the next request
+
+/* /debug is this same page: every hand face up, no challenges or rating, and the
+   address bar holds the position in readable words (see "the shared link" below). */
+const DEBUG = /^\/debug\/?$/.test(location.pathname);
+document.documentElement.classList.toggle("debug", DEBUG);
+if(DEBUG){ document.title = "Debug a board"; document.querySelector("header h1").textContent = "Debug a board";
+  // /debug only: the toggle covers the auction too (emergent/bidsearch.py)
+  document.getElementById("searchseg").title += " In debug mode it bids with search too: before a call the bot "
+    + "draws 32 deals that fit the auction, bids each out after its top three calls, scores them double dummy, "
+    + "and leaves its own call only for a clear gain."; }
+
+const GAME_KEY = DEBUG ? "table-game-debug" : "table-game";   // its own game, apart from the table's
+let GAME_ID = null;
+try { GAME_ID = sessionStorage.getItem(GAME_KEY); } catch(e) {}
+if(!GAME_ID){
+  GAME_ID = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
+  try { sessionStorage.setItem(GAME_KEY, GAME_ID); } catch(e) {}
+}
+/* Anything that goes wrong has to end up on the page. A silent failure here looks
+   exactly like a dead button, which is how the New board bug hid. The body is read
+   as text first: a proxy error page or a 502 is not JSON, and parsing it blind
+   throws a useless SyntaxError instead of the status that actually explains it. */
+async function post(url, body, opts){
+  // Always send a body. Declaring Content-Type: application/json and then sending
+  // nothing makes Flask's request.json raise, and the 400 comes back as an HTML
+  // error page — which is exactly how "New board" died while the seat buttons,
+  // which happen to send {seat}, kept working.
+  const r = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json","X-Game":GAME_ID},
+                              body: JSON.stringify(body || {}),
+                              signal: opts && opts.signal});
+  const text = await r.text();
+  let j = null;
+  try { j = text ? JSON.parse(text) : null; }
+  catch(e){ throw new Error(`${url} → ${r.status} ${r.statusText}, not JSON: ${text.slice(0,120)}`); }
+  if(!r.ok) throw new Error((j && j.error) || `${url} → ${r.status} ${r.statusText}`);
+  if(Date.now() > NOTICE_UNTIL) $("err").textContent = "";
+  if(PROCEEDS.test(url)) HOLD = false;
+  return j;
+}
+
+function fail(e){
+  if(e && e.name === "AbortError") return;             // we cancelled it on purpose
+  $("err").textContent = (e && e.message) || String(e || "request failed");
+  console.error("[table]", e);
+}
+
+let D = null;                  // the frame currently on screen
+let SRV = null;                // the newest state the server sent
+let TIMER = null;              // the auto-advance tick
+let WHY = {job:null, timer:null, lines:null, at:null};
+let JUMP = false;              // draw the next state at once, no card-by-card replay (a claim)
+
+/* One request at a time, in order: the auto-advance tick and a click can land
+   together. `GEN` is the generation the user is looking at; anything queued from an
+   older one neither fires nor draws, so a click never has to wait out a queue of
+   ticks it has already made irrelevant. */
+let CHAIN = Promise.resolve();
+let GEN = 0;
+let TICK_ABORT = null;
+
+function go(make){
+  const gen = GEN;
+  CHAIN = CHAIN.then(() => gen === GEN ? make() : null)
+               .then(d => { if(d && gen === GEN) render(d); })
+               .catch(e => { if(gen === GEN) fail(e); });
+  return CHAIN;
+}
+
+// The user's own call or card. A second tap while the first is on its way is dropped:
+// queued, it would reach the server after the turn has passed and be refused.
+let MOVING = false;
+function move(make){
+  if(MOVING) return CHAIN;
+  MOVING = true;
+  return go(make).finally(() => { MOVING = false; });
+}
+
+// Starting something new wins outright: drop the pending tick, abandon the queue.
+function goNow(make){
+  GEN++;
+  stopTimers();
+  if(TICK_ABORT){ TICK_ABORT.abort(); TICK_ABORT = null; }
+  CHAIN = Promise.resolve();
+  return go(make);
+}
+
+function stopTimers(){
+  for(const t of [TIMER, STEP, SWEEP]) if(t) clearTimeout(t);
+  TIMER = STEP = SWEEP = null;
+}
+
+/* --------------------------------------------- playing the other three out loud
+
+The server answers with everything the nets did — up to a whole trick, or the
+rest of the deal when the user is dummy. Replaying that as one jump is unreadable,
+so the page holds the payload and walks to it one call or one card at a time.
+No extra round trips: every frame below is derived from the state already in hand.
+*/
+const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+const PACE = {                     // call, card, end-of-trick hold, deal, sweep (ms)
+  slow:   {call: 620, card: 660, hold: 1500, deal: 420, sweep: 460},
+  normal: {call: 340, card: 380, hold:  850, deal: 260, sweep: 300},
+  fast:   {call: 170, card: 190, hold:  430, deal: 150, sweep: 170},
+  off:    {call:   0, card:   0, hold:    0, deal:   1, sweep:   1},
+};
+let SPEED = "normal";
+try { SPEED = localStorage.getItem("table-speed") || (REDUCED ? "fast" : "normal"); } catch(e) {}
+if(!PACE[SPEED]) SPEED = "normal";
+const pace = () => PACE[SPEED];
+
+let VIEW = {calls: 0, cards: 0};   // how much of SRV is drawn
+let STEP = null, SWEEP = null;     // animation timers
+let LAND = null;                   // the seat whose card just landed, for the entry animation
+let FRESH = -1;                    // the auction cell that just appeared
+
+const cardsIn = d => (d.tricks ? d.tricks.length * 4 : 0) + (d.trick ? d.trick.length : 0);
+const atTarget = () => SRV && VIEW.calls === SRV.auction.length && VIEW.cards === cardsIn(SRV);
+
+function flatten(d){               // every card played so far, in play order
+  const out = [];
+  for(const t of (d.tricks || [])) for(const c of t.cards) out.push(c);
+  for(const c of (d.trick || [])) out.push(c);
+  return out;
+}
+
+function applySpeed(){
+  const p = pace();
+  document.documentElement.style.setProperty("--deal", (REDUCED ? 1 : p.deal) + "ms");
+  document.documentElement.style.setProperty("--sweep", (REDUCED ? 1 : p.sweep) + "ms");
+  $("speedseg").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.s === SPEED));
+}
+
+function render(d){
+  // The server lost this debug tab's game (a restart or deploy, or evicted) and dealt a plain
+  // board in its place: open the position in the address bar again, hints as just set.
+  if(DEBUG && !d.debug){ boot({hints: d.hints ? "1" : "0"}); return; }
+  const fresh = !SRV || SRV.board_no !== d.board_no;
+  const back = SRV && (d.auction.length < VIEW.calls || cardsIn(d) < VIEW.cards);
+  SRV = d;
+  showMe(d.me);
+  if(fresh || back || JUMP || SPEED === "off") VIEW = {calls: d.auction.length, cards: cardsIn(d)};
+  JUMP = false;
+  const at = d.board_no + ":" + d.auction.length;
+  if(WHY.at !== at){ WHY = {job:null, timer:null, lines:null, at}; }   // a rollout belongs to one position
+  if(!d.challenge) $("meta").textContent = d.meta;
+  $("meta").classList.toggle("chal", !!d.challenge);
+  $("meta").title = d.meta_long || d.meta;
+  const inChal = !!d.challenge;
+  $("hintseg").querySelectorAll("button").forEach(b => b.disabled = inChal);
+  $("searchseg").querySelectorAll("button").forEach(b => b.disabled = inChal);
+  $("searchseg").querySelectorAll("button").forEach(b => {
+    b.classList.toggle("on", (b.dataset.r === "1") === d.search);
+    b.onclick = () => go(() => post("/api/table/hints", {search: b.dataset.r === "1"}));
+  });
+  $("hintseg").querySelectorAll("button").forEach(b => {
+    b.classList.toggle("on", (b.dataset.h === "1") === d.hints);
+    b.setAttribute("aria-pressed", String((b.dataset.h === "1") === d.hints));
+    b.onclick = () => go(() => post("/api/table/hints", {hints: b.dataset.h === "1"}));
+  });
+  $("restart").disabled = d.auction.length === 0 || inChal;
+  if(d.debug) renderDebugBar(d);
+  LAND = null; FRESH = -1;
+  paint();
+  schedule();
+}
+
+function paint(){
+  const full = atTarget();
+  D = frameOf(SRV, VIEW.calls, VIEW.cards, full);
+  syncLink();
+  if(SRV.challenge){
+    maybeShowMatch(SRV.challenge, full);   // only once the last card is on screen
+    renderChallengeMeta(SRV.challenge, full);
+  }
+  renderTable(D); renderPanel(D); renderAdvice(D); renderRule(D); renderNext(D); renderSettings(D);
+  renderNumbers(D);
+  // Hidden, not removed: the header keeps its width while the others play.
+  $("skip").classList.toggle("off", full);
+  if(full) renderResult(D);
+  else $("result-row").style.display = "none";
+}
+
+/* One synthetic state, wound back to `nCalls` calls and `nCards` cards. Everything
+   the drawing code reads is derived here, so those functions never learn about
+   the animation. */
+function frameOf(d, nCalls, nCards, full){
+  if(full) return d;
+  const f = Object.assign({}, d);
+  f.auction = d.auction.slice(0, nCalls);
+  f.phase = nCalls < d.auction.length ? "auction" : "play";
+  f.auction_over = f.phase !== "auction";
+  f.your_turn = false; f.legal_cards = null; f.hint = null; f.result = null; f.review = null;
+  f.suggest = null;                       // nothing to commit until the page catches up
+  if(f.phase === "auction"){ f.contract = null; f.role = null; }
+
+  const played = flatten(d), done = Math.floor(nCards / 4);
+  const ct = f.contract;
+  f.tricks = (d.tricks || []).slice(0, done);
+  f.trick = played.slice(done * 4, nCards);
+  f.trick_no = done;
+  f.trick_leader = done ? d.tricks[done - 1].winner : (ct ? (ct.declarer + 1) % 4 : d.dealer);
+  f.last_trick = done ? d.tricks[done - 1] : null;
+  let ns = 0, ew = 0;
+  for(const t of f.tricks) t.winner % 2 === 0 ? ns++ : ew++;
+  f.tricks_won = ct ? {ns, ew, mine: d.user_seat % 2 === 0 ? ns : ew,
+                       declaring: ct.declarer % 2 === 0 ? ns : ew,
+                       defending: ct.declarer % 2 === 0 ? ew : ns} : null;
+  f.to_play = f.phase === "auction" ? (d.dealer + nCalls) % 4
+                                    : (f.trick_leader + (nCards % 4)) % 4;
+
+  // Hands: put back everything played after this frame, and keep dummy face down
+  // until the opening lead is on the table.
+  const later = played.slice(nCards);
+  f.seats = d.seats.map(s => {
+    const back = later.filter(c => c.seat === s.seat);
+    const hide = s.hidden ||
+      (!d.debug && ct && s.seat === ct.dummy && s.seat !== d.user_seat && nCards === 0);
+    const o = Object.assign({}, s, {left: 13 - played.slice(0, nCards).filter(c => c.seat === s.seat).length,
+                                    hidden: hide});
+    if(hide || !s.suits){ o.suits = null; o.spent = null; o.hcp = hide ? null : s.hcp; return o; }
+    const keys = ["S","H","D","C"], suits = {}, spent = {};
+    for(const k of keys){
+      const b = back.filter(c => c.suit === k);
+      suits[k] = (s.suits[k] || []).concat(b).sort((x, y) => x.card - y.card);
+      spent[k] = (s.spent[k] || []).filter(c => !b.some(z => z.card === c.card));
+    }
+    o.suits = suits; o.spent = spent;
+    return o;
+  });
+  return f;
+}
+
+function schedule(){
+  stopTimers();
+  if(!atTarget()){
+    const p = pace();
+    let wait = VIEW.calls < SRV.auction.length ? p.call : p.card;
+    if(VIEW.cards && VIEW.cards % 4 === 0 && VIEW.calls === SRV.auction.length){
+      wait = p.hold;                       // a finished trick stays up to be read
+      if(!REDUCED && SPEED !== "off")
+        SWEEP = setTimeout(sweep, Math.max(0, p.hold - p.sweep));
+    }
+    STEP = setTimeout(tick, wait);
+    return;
+  }
+  // Caught up. Let the nets take their next turn, if it is not the user's.
+  if(!SRV.your_turn && SRV.phase !== "over" && !HOLD)
+    TIMER = setTimeout(tickAdvance, SPEED === "off" ? 0 : 140);
+}
+
+function tickAdvance(){
+  TIMER = null;
+  TICK_ABORT = new AbortController();
+  go(() => post("/api/table/advance", null, {signal: TICK_ABORT.signal}));
+}
+
+function tick(){
+  if(VIEW.calls < SRV.auction.length){ FRESH = VIEW.calls; LAND = null; VIEW.calls++; }
+  else if(VIEW.cards < cardsIn(SRV)){
+    const played = flatten(SRV);
+    LAND = played[VIEW.cards].seat; FRESH = -1; VIEW.cards++;
+  } else return schedule();
+  paint();
+  schedule();
+}
+
+function sweep(){                          // the finished trick slides to the side that won it
+  const el = document.querySelector(".trick");
+  if(el && D && D.last_trick) el.classList.add("sweep", "w" + slotOf(D, D.last_trick.winner));
+}
+
+function skip(){                           // straight to whatever the server last said
+  if(!SRV || atTarget()) return;
+  VIEW = {calls: SRV.auction.length, cards: cardsIn(SRV)};
+  LAND = null; FRESH = -1;
+  paint(); schedule();
+}
+
+/* ------------------------------------------------ the table, you at the bottom */
+const slotOf = (d, seat) => (seat - (d.view_seat ?? d.user_seat) + 4) % 4;   // 0 bottom, 1 left, 2 top, 3 right
+// /debug with more than one chair: you act for each of them in turn, and `user_seat` is the one acting.
+const multi = d => !!(d.user_chairs && d.user_chairs.length > 1);
+const chairsText = d => d.user_chairs.length === 4 ? "all four" : d.user_chairs.map(s => SEATS[s][0]).join(" ");
+
+function seatRole(d, seat){
+  if(!d.contract) return null;
+  if(seat === d.contract.declarer) return "declarer";
+  if(seat === d.contract.dummy) return "dummy";
+  return "defender";
+}
+
+function renderTable(d){
+  const t = $("table"); t.innerHTML = "";
+  t.classList.toggle("clickskip", !atTarget());
+  t.dataset.phase = d.phase;
+  for(const s of d.seats){
+    const el = document.createElement("div");
+    const turn = s.seat === d.to_play;
+    const mine = s.seat === d.user_seat;
+    // As at a real table: you bid for your own chair, and in the play you pick the
+    // card for whichever hand is on turn when it is yours to play (as declarer that
+    // includes dummy; as dummy it is never).
+    const yours = d.your_turn && (d.phase === "play" ? turn : mine);
+    el.className = `hand pos${slotOf(d, s.seat)}${turn && yours?" turn":""}${d.phase === "play" ? " inplay" : ""}` +
+                   `${turn && !yours?" acting":""}${mine?" mine":""}`;
+    const role = seatRole(d, s.seat);
+    // The phone sizes a hand by these: dummy keeps its face-up room from the first card.
+    if(s.hidden) el.classList.add("down");
+    if(role === "dummy") el.classList.add("dummy");
+    // Spell out who plays the two declaring hands: declarer plays both.
+    const youPlayIt = role === "dummy" && !mine && d.role === "declarer" && d.phase === "play";
+    const partnerPlaysYou = mine && d.role === "dummy" && d.phase === "play";
+    const who = (mine ? "you"
+      : multi(d) ? (d.user_chairs.includes(s.seat) ? "yours" : "the net")
+      : s.seat === d.partner_seat ? (youPlayIt ? "your partner" : "your partner · net") : "the net") +
+      (role ? " · " + role : "") + (youPlayIt ? " · you play it" : "") +
+      (partnerPlaysYou ? " · partner plays it" : "");
+    const badge = turn ? `<span class="go">${yours ? (d.phase==="auction"?"your bid":"your card")
+                                          : (d.phase==="auction"?"bidding…":"playing…")}</span>` : "";
+    el.innerHTML =
+      `<div class="hd"><b style="color:${seatColor(s.seat)}">${s.name}</b>` +
+      `<span class="who" title="${who}">${who}</span>` +
+      `<span class="pts num">${s.hidden ? s.left + " cards" : s.hcp + " HCP"}</span></div>` +
+      badge + (s.hidden ? backsHTML(s.left) : suitsHTML(d, s, yours));
+    el.querySelectorAll("button[data-card]").forEach(b =>
+      b.onclick = () => move(() => post("/api/table/card", {card: +b.dataset.card})));
+    t.appendChild(el);
+  }
+
+  const c = document.createElement("div"); c.className = "center";
+  c.innerHTML = (d.phase === "auction") ? auctionTable(d) : trickHTML(d);
+  t.appendChild(c);
+  const aq = c.querySelector(".aqwrap");
+  if(aq) aq.scrollTop = aq.scrollHeight;              // the newest round stays in view
+
+  const ct = d.contract;
+  const left = ct ? `<div class="corner tl">Contract<b>${contractHTML(ct)} ${ct.declarer_name[0]}</b></div>`
+                  : `<div class="corner tl">Board<b class="num">#${d.board_no}</b></div>`;
+  const tw = d.tricks_won;
+  const tr = tw && multi(d)
+    ? `<div class="corner tr">Tricks: N-S – E-W<b class="num">${tw.ns} – ${tw.ew}</b></div>`
+    : tw
+    ? `<div class="corner tr">Tricks: you – them` +
+      `<b class="num">${tw.mine} – ${tw.ns + tw.ew - tw.mine}</b></div>`
+    : `<div class="corner tr">Dealer<b>${d.dealer_name[0]}</b></div>`;
+  t.insertAdjacentHTML("beforeend", left + tr +
+    (multi(d) ? `<div class="corner bl">You play<b>${chairsText(d)}</b></div>`
+              : `<div class="corner bl">You sit<b>${d.user_seat_name}</b></div>`) +
+    (ct ? `<div class="corner br">${d.phase === "over" ? "Declarer made" : "Declarer needs"}` +
+          `<b class="num">${d.phase === "over" && d.result ? d.result.tricks : ct.needs}</b></div>`
+        : `<div class="corner br">Your hand<b class="num">${d.your_hand.hcp} HCP</b></div>`));
+}
+
+/* A face-up hand: all thirteen cards keep their place for the whole board, the
+   played ones faded, so playing a card never slides the rest of the hand over. */
+function suitsHTML(d, s, yours){
+  let out = "";
+  for(const k of SUITS){
+    const cards = ((s.suits && s.suits[k]) || []).map(c => ({c, live: true}))
+      .concat(((s.spent && s.spent[k]) || []).map(c => ({c, live: false})))
+      .sort((x, y) => x.c.card - y.c.card);
+    const red = isRed(k) ? " red" : "";
+    const inner = cards.map(({c, live}) => {
+      const label = SYM[k] + rankTxt(c.rank);
+      const cls = red + " s" + k + (c.rank === "T" ? " ten" : "");
+      if(!live) return `<span class="cd gone${cls}" aria-hidden="true">${rankTxt(c.rank)}</span>`;
+      const playable = d.phase === "play" && yours && d.legal_cards && d.legal_cards[c.card];
+      return `<button class="cd${cls}${playable ? " play" : ""}" ${playable ? "" : "disabled"} ` +
+             `data-card="${c.card}" aria-label="${playable ? "play " : ""}${label}">${rankTxt(c.rank)}</button>`;
+    }).join("");
+    out += `<div class="sl"><span class="sym${red} s${k}" aria-hidden="true">${SYM[k]}</span>` +
+           `<span class="cards">${inner || '<span class="void">—</span>'}</span></div>`;
+  }
+  return `<div class="suits">${out}</div>`;
+}
+
+// A hidden hand: the cards still held, fanned out. The box keeps its size.
+function backsHTML(left){
+  let out = "";
+  for(let i = 0; i < left; i++) out += `<span class="cd back" style="--i:${i};--n:${left}"></span>`;
+  return `<div class="backs" aria-label="${left} cards, face down">${out}</div>`;
+}
+
+function auctionTable(d){
+  // Columns W N E S, as in bridge books and on BBO; the dealer's first call sits
+  // under the dealer's column and the cells before it stay empty.
+  const COLS = [3, 0, 1, 2];
+  const lead = (d.dealer + 1) % 4;                    // column of the dealer
+  const n = d.auction.length;
+  const rows = Math.max(1, Math.ceil((lead + n + (d.auction_over ? 0 : 1)) / 4));
+  let body = "";
+  for(let r=0;r<rows;r++){
+    body += "<tr>";
+    for(let k=0;k<4;k++){
+      const i = r*4 + k - lead, seat = COLS[k];
+      const me = seat === d.user_seat ? " me" : "";
+      if(i < 0){ body += `<td class="${me}"></td>`; }
+      else if(i < n){
+        const nm = d.auction[i].name, special = nm==="Pass"||nm==="X"||nm==="XX";
+        const s = strainOf(nm);
+        body += `<td class="${!special&&isRed(s)?'redc':''}${me}${i===FRESH?" fresh":""}">` +
+                `<span>${nm==="Pass"?"–":special?nm:nm[0]+SYM[s]}</span></td>`;
+      } else if(!d.auction_over && i === n){ body += `<td class="q${me}">?</td>`; }
+      else body += `<td class="${me}"></td>`;
+    }
+    body += "</tr>";
+  }
+  const head = COLS.map(seat =>
+    `<th style="color:${seat===d.user_seat?"var(--pick)":"inherit"}">${SEATS[seat][0]}</th>`).join("");
+  return `<div class="aqwrap"><table class="aq"><thead><tr>${head}</tr></thead>` +
+         `<tbody>${body}</tbody></table></div>`;
+}
+
+function trickHTML(d){
+  const show = d.trick.length ? d.trick : (d.last_trick ? d.last_trick.cards : []);
+  const stale = !d.trick.length && d.last_trick;
+  const byseat = {}; show.forEach(x => byseat[x.seat] = x);
+  let inner = "";
+  for(let s=0; s<4; s++){
+    const x = byseat[s], p = slotOf(d, s);
+    const win = stale && d.last_trick.winner === s;
+    // Only the card that just arrived animates in; the ones already down stay put.
+    const land = x && LAND === s && !stale ? " land" : "";
+    inner += `<div class="slot p${p}${x ? " has s" + x.suit : ""}${x && isRed(x.suit) ? " red" : ""}` +
+      `${win ? " win" : ""}${land}">` +
+      (x ? `<span>${rankTxt(x.rank)}</span><span>${SYM[x.suit]}</span>` : "") + `</div>`;
+  }
+  let mid;
+  if(d.phase === "over") mid = "all 13<br>played";
+  else if(stale) mid = `trick ${d.trick_no} to ${SEATS[d.last_trick.winner][0]}<br>` +
+                       `${SEATS[d.trick_leader][0]} leads`;
+  else if(d.trick.length) mid = `trick ${d.trick_no+1}/13<br>${SEATS[d.trick_leader][0]} led`;
+  else mid = `trick ${d.trick_no+1}/13<br>${SEATS[d.trick_leader][0]} to lead`;
+  return `<div class="trick">${inner}<div class="mid">${mid}</div></div>`;
+}
+
+/* ------------------------------------------------ the panel */
+function renderPanel(d){
+  const T = $("panel-title"), H = $("panel-hint"), B = $("panel-body"),
+        A = $("panel-actions");
+  B.innerHTML = ""; A.innerHTML = "";
+
+  if(d.phase === "auction"){
+    T.innerHTML = d.your_turn ? (multi(d) ? `${SEATS[d.to_play]}'s call` : "Your call") : HOLD ? `${SEATS[d.to_play]} calls next`
+                                                   : `${SEATS[d.to_play]} is thinking…`;
+    H.innerHTML = !d.your_turn
+      ? `${HOLD ? "Opened from a link. Press Continue to go on." : "Waiting for " + SEATS[d.to_play] + "."} ${d.to_play === d.partner_seat ? "That is your partner." : "That is an opponent."}`
+      : d.suggest ? `${d.dealer_name} dealt, ${d.vul_name}. Pick a call, or take the ringed one.`
+                  : `${d.dealer_name} dealt, ${d.vul_name}. Pick a call in the box.`;
+    B.innerHTML = biddingBox(d);
+    panelTools(d);
+    B.querySelectorAll(".bblv button").forEach(b => b.onclick = () => pickLevel(+b.dataset.lv));
+    B.querySelectorAll("button[data-call]").forEach(b => {
+      b.onclick = () => move(() => post("/api/table/call", {call: +b.dataset.call}));
+      // Hovering a call previews what it would say, so the box teaches by itself.
+      b.onmouseenter = () => renderAdvice(D, +b.dataset.call);
+      b.onmouseleave = () => renderAdvice(D);
+    });
+    return;
+  }
+
+  const ct = d.contract;
+  if(!ct){
+    T.textContent = "Passed out";
+    H.textContent = "All four players passed, so nobody plays. The board scores zero.";
+    panelTools(d);
+    return;
+  }
+
+  const role = d.role;
+  if(d.phase === "over"){
+    T.innerHTML = `Thirteen tricks played`;
+    H.innerHTML = `${contractHTML(ct)} by ${ct.declarer_name} — the result is below.`;
+  } else if(d.your_turn){
+    T.innerHTML = multi(d) ? (d.to_play === ct.dummy ? `${ct.declarer_name} plays dummy's card`
+                                                     : `${SEATS[d.to_play]}'s card`) : `Your card`;
+    H.innerHTML = role !== "declarer"
+      ? `You defend ${contractHTML(ct)} by ${ct.declarer_name}. Pick a card in your hand.`
+      : d.to_play === ct.dummy
+        ? `You declare ${contractHTML(ct)}. It is <b>dummy's</b> turn: pick a card from dummy, face up opposite you.`
+        : `You declare ${contractHTML(ct)}. Pick a card from <b>your own hand</b>.`;
+  } else if(HOLD){
+    T.innerHTML = `${SEATS[d.to_play]} plays next`;
+    H.innerHTML = `Opened from a link. Press Continue to let the net play.`;
+  } else {
+    T.innerHTML = `${SEATS[d.to_play]} is playing…`;
+    H.innerHTML = role === "dummy"
+      ? `You are dummy: your partner declares and plays both hands, yours face up. Watch this one.`
+      : d.to_play === ct.dummy
+        ? `The net is playing dummy.`
+        : `Waiting for ${SEATS[d.to_play]}.`;
+  }
+  const need = ct.needs, tw = d.tricks_won || {declaring:0, defending:0};
+  const job = role === "dummy" ? "your partner plays both hands"
+            : role === "declarer" ? "you play your own hand and dummy's"
+            : "you play your own hand";
+  B.innerHTML = auctionRecap(d) +
+    `<div class="counts">` +
+    `<div class="stat"><span>Declaring side</span><b class="num">${tw.declaring}</b>` +
+      `<span>of ${need} needed</span></div>` +
+    `<div class="stat"><span>Defenders</span><b class="num">${tw.defending}</b>` +
+      `<span>of ${14-need} to beat it</span></div></div>` +
+    `<div class="stat"><span>You are</span><b style="font-size:18px">${role}</b>` +
+      `<span>${d.user_seat_name}, partner ${d.partner_name} — ${job}</span></div>`;
+  const rec = B.querySelector("details.recap");
+  if(rec) rec.ontoggle = () => { RECAP_OPEN = rec.open; };
+
+  if(d.phase === "over" && !d.challenge){       // a challenge board is played once
+    A.innerHTML = `<button id="replay">Replay this board</button>`;
+    A.querySelector("#replay").onclick = () => goNow(() => post("/api/table/restart"));
+  }
+  panelTools(d);
+}
+
+/* The finished auction, kept in the panel while the cards are played: one line of calls
+   as the summary, the full W N E S grid when opened. Open on a desk, closed on a phone. */
+let RECAP_OPEN = !(window.matchMedia && matchMedia("(max-width:640px)").matches);
+function auctionRecap(d){
+  if(!d.auction.length) return "";
+  const line = d.auction.map(a => a.name === "Pass" ? "P" : pretty(a.name)).join(" ");
+  return `<details class="recap"${RECAP_OPEN ? " open" : ""}><summary><b>Auction</b> ` +
+    `<span class="dim">${d.dealer_name} dealt, ${d.vul_name}</span><span class="rline">${line}</span></summary>` +
+    auctionTable(Object.assign({}, d, {auction_over: true})) + `</details>`;
+}
+
+// Undo and claim, under the panel, in every phase they apply to.
+function panelTools(d){
+  const A = $("panel-actions");
+  if(d.debug && d.phase !== "over" && !d.challenge){
+    // /debug: the nets act only when asked, for the chair on turn or for every chair to the end.
+    const one = d.phase === "auction" ? "call" : "card";
+    A.insertAdjacentHTML("beforeend",
+      `<button id="db-step" title="The net makes this one ${one} for ${SEATS[d.to_play]}">Net: this ${one} ▸</button>` +
+      `<button id="db-finish" title="The nets bid and play every chair from here to the end">Nets play to the end ▸▸</button>`);
+    A.querySelector("#db-step").onclick = () => move(() => post("/api/table/step"));
+    A.querySelector("#db-finish").onclick = () => goNow(() => post("/api/table/finish"));
+  }
+  if(d.phase === "play" && d.your_turn && d.can_claim){
+    A.insertAdjacentHTML("beforeend", `<button id="claim" title="Your side takes every trick that is left, ` +
+      `whatever the others do. The solver checks it with all four hands face up.">Claim the rest</button>`);
+    A.querySelector("#claim").onclick = () => goNow(async () => {
+      const r = await post("/api/table/claim");
+      JUMP = true;
+      return r;
+    });
+  }
+  if(d.can_undo){
+    A.insertAdjacentHTML("afterbegin", `<button id="undo" title="Take back your last call or card (Backspace)">↶ Undo</button>`);
+    A.querySelector("#undo").onclick = undoMove;
+  }
+}
+
+/* ------------------------------------------------ one big button: the next thing to do */
+let NEXT_ACT = null;
+
+function renderNext(d){
+  const bar = $("nextbar");
+  let label, kbd = "", act = null, cls = "primary";
+  if(d.phase === "over" && d.challenge){
+    const c = d.challenge;
+    label = c.last ? "New challenge ▸" : `Board ${c.i + 2} of ${c.n} ▸`;
+    act = c.last ? startChallenge : () => goNow(() => post("/api/table/challenge/next"));
+  } else if(d.phase === "over"){
+    label = "Next board ▸";
+    act = () => goNow(() => post("/api/table/new_board"));
+  } else if(HOLD && !d.your_turn){
+    label = "Continue from here ▸";
+    kbd = "the others play on from the shared position · Enter";
+    act = () => { HOLD = false; goNow(() => post("/api/table/advance")); };
+  } else if(d.your_turn && d.suggest){
+    label = `Next: ${d.suggest.kind === "call" ? pretty(d.suggest.name) : cardHTML(d.suggest.action)}`;
+    kbd = d.suggest.kind === "call" ? "plays the ringed call · Enter"
+                                    : "plays the ringed card · Enter";
+    act = d.suggest.kind === "call"
+      ? () => move(() => post("/api/table/call", {call: d.suggest.action}))
+      : () => move(() => post("/api/table/card", {card: d.suggest.action}));
+  } else if(d.your_turn){
+    // Hints off: nothing to take, so the button only says whose move it is.
+    label = d.phase === "auction" ? "Your call — pick one above" : "Your card — pick one from your hand";
+    cls = "";
+  } else {
+    const done = SRV && SRV.phase === "over";
+    label = done ? "Skip to the result ▸" : "Play the rest out ▸"; cls = "";
+    act = () => { skip(); if(!done) goNow(() => post("/api/table/finish")); };
+  }
+  NEXT_ACT = act;
+  // The phone keeps undo and claim under the thumb too; these press the panel's own buttons.
+  const extra = [["undo", "↶", "Undo"], ["claim", "Claim", "Claim the rest"]]
+    .filter(([id]) => $(id))
+    .map(([id, txt, lbl]) => `<button class="nb-x nb-${id}" type="button" data-for="${id}" aria-label="${lbl}">${txt}</button>`).join("");
+  bar.innerHTML = extra + `<button class="${cls}" id="nextbtn" ${act ? "" : "disabled"}>${label}</button>` +
+                  `<span class="kbd">${kbd}</span>`;             // always there, so nothing moves
+  const b = bar.querySelector("#nextbtn");
+  if(act) b.onclick = () => { b.blur(); act(); };
+  bar.querySelectorAll(".nb-x").forEach(x => x.onclick = () => $(x.dataset.for).click());
+}
+
+document.addEventListener("keydown", e => {
+  if(e.key !== "Enter" && e.key !== " ") return;
+  const t = document.activeElement;
+  if(t && (t.tagName === "BUTTON" || t.tagName === "SUMMARY" || t.tagName === "INPUT")) return;
+  if(!NEXT_ACT) return;
+  e.preventDefault();
+  NEXT_ACT();
+});
+
+/* ------------------------------------------------ the teacher, in plain English.
+   Every sentence comes from the server's templates; the page only arranges them.
+   Measured self-play meaning first; where self-play never reached the auction,
+   the net's own choice on these cards and the nearest auction it did reach,
+   tagged as approximate. `preview` lets the bidding box show what another call
+   would say without committing to it. With hints off the box stays empty. */
+const APPROX = `<span class="tag approx" title="Not measured at this exact auction">approximate</span>`;
+
+function renderAdvice(d, preview){
+  const box = $("advice");
+  box.classList.toggle("on", !!d.hints);          // reserve the room while hints are on
+  if(!d.hints){ box.innerHTML = ""; return; }
+  const h = d.your_turn ? d.hint : null;
+  if(!h){
+    box.innerHTML = `<div class="advice quiet"><p>Advice appears when it is your turn.</p></div>`;
+    return;
+  }
+  let out = "";
+  if(h.kind === "auction"){
+    out = preview !== undefined ? previewAdvice(h, preview) : auctionAdvice(h);
+    // Measured with nobody vulnerable: say so on a board that is not.
+    if(h.conditions_note) out += `<p class="aside">${APPROX} ${h.conditions_note}</p>`;
+  } else {
+    if(h.context) out += `<p class="aside">${h.context}</p>`;
+    if(h.advice) out += `<p class="say">${h.advice}</p>`;
+    if(h.finesse) out += `<p class="aside">${h.finesse.text}</p>`;
+    else if(h.book) out += `<p class="aside">${h.book}</p>`;
+  }
+  box.innerHTML = `<div class="advice${out.indexOf('class="say"') < 0 ? " quiet" : ""}">${out}</div>`;
+}
+
+function auctionAdvice(h){
+  let out = "";
+  for(const t of (h.told || [])) out += `<p class="aside">${t.sentence}</p>`;
+  if(h.advice){                                   // measured at this exact auction
+    out += `<p class="say">${h.advice}</p>`;
+    if(h.advice_fit) out += `<p class="aside">${h.advice_fit}</p>`;
+    if(h.net_says) out += `<p class="aside">${h.net_says}</p>`;
+    return out;
+  }
+  out += `<p class="say">${h.net_says || h.hand_says}</p>`;
+  if(!h.has_corpus)
+    out += `<p class="aside">This model has no self-play table, so that is the net's own view ` +
+           `of your cards, with nothing measured behind it.</p>`;
+  else if(h.corpus && h.corpus.length)
+    out += `<p class="aside">Self-play reached this auction but rarely made that call here, so ` +
+           `there is no measured meaning for it.</p>`;
+  else if(h.nearest){
+    out += `<p class="aside">${APPROX} ${h.nearest.note}</p>`;
+    if(h.nearest_advice) out += `<p class="aside">${h.nearest_advice} ${h.nearest_fit || ""}</p>`;
+  } else
+    out += `<p class="aside">Self-play never reached this auction (or fewer than 200 hands did), ` +
+           `and nothing close to it either, so that is the net's own view of your cards.</p>`;
+  return out;
+}
+
+/* Rule of thumb, D's style (experimental). A separate card from the advice above,
+   so the two can be compared: one of D's 15 teaching rules (bridge_new/experiments/
+   teaching_D), the line of it that fits these cards, and how often D itself makes
+   that call there. Folded, it has a fixed height; the reasoning and the SAYC notes
+   are one click away. */
+let RULE_OPEN = false;
+try { RULE_OPEN = localStorage.getItem("table-rule-open") === "1"; } catch(e) {}
+const escHTML = t => String(t).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
+// '1H-3H', '2C/2D' in the rule text -> suit symbols, hearts and diamonds in red
+const ruleText = t => escHTML(t).replace(/\b([1-7])([CDHS])\b/g, (m, l, s) =>
+  `<span class="${isRed(s)?'red':''}">${l}${SYM[s]}</span>`);
+const pct = v => v === null || v === undefined ? "?" : Math.round(v * 100) + "%";
+
+function renderRule(d){
+  const box = $("rulecard");
+  const on = !!d.hints && d.phase === "auction";
+  box.classList.toggle("on", on);
+  if(!on){ box.innerHTML = ""; return; }
+  const r = d.your_turn && d.hint && d.hint.kind === "auction" ? d.hint.rule : null;
+  box.classList.toggle("idle", !r);
+  const head = `<span class="rh"><b>Rule of thumb — D's style</b> <span class="tag approx">experimental</span></span>`;
+  if(!r){                                           // keeps the same height, invisible
+    box.innerHTML = `<details class="rule"><summary>${head}</summary></details>`;
+    return;
+  }
+  if(!r.covered){
+    box.innerHTML = `<details class="rule"><summary>${head}` +
+      `<div class="none-note">${escHTML(r.note)}</div></summary></details>`;
+    return;
+  }
+  const alts = (r.d_does || []).map(x => `${escHTML(x.what)} ${pct(x.share)}`).join(", ");
+  const cmp = r.net_call_name === null ? "" : r.same_as_net
+    ? `The net's top call here is the same.`
+    : `The net's top call here is ${pretty(r.net_call_name)}; the rule says ${pretty(r.suggested_name)}.`;
+  const body = [
+    `<p><b>When:</b> ${ruleText(r.when)}</p>`,
+    `<p><b>How to think:</b> ${ruleText(r.think)}</p>`,
+    r.sayc_rule ? `<p class="sayc">${ruleText(r.sayc_rule)}</p>` : "",
+    `<p><b>Your line${r.line_no ? " (" + r.line_no + ")" : ""}:</b> ${ruleText(r.line)} → ${pretty(r.suggested_name)}</p>`,
+    r.sayc_line ? `<p class="sayc">${ruleText(r.sayc_line)}</p>` : "",
+    `<p class="sayc" style="font-style:normal">On held-out self-play D makes exactly this line's call ` +
+      `${pct(r.agree_line)} of the time (D's calls here: ${alts}); the whole rule ${r.number ? "(rule " + r.number + ", " + r.id + ")" : r.id} ` +
+      `agrees ${pct(r.agree_rule)}.` + (r.notes ? ` ${ruleText(r.notes)}` : "") + `</p>`,
+    r.model_note ? `<p class="sayc" style="font-style:normal">${escHTML(r.model_note)}</p>` : "",
+  ].join("");
+  box.innerHTML = `<details class="rule"${RULE_OPEN ? " open" : ""}><summary>${head}` +
+    `<div class="rt">${ruleText(r.title)}</div>` +
+    `<div class="rl">${ruleText(r.line)} <span class="pick">${pretty(r.suggested_name)}</span></div>` +
+    `<div class="rm">D agrees ${pct(r.agree_line)} here. ${cmp}</div>` +
+    `<div class="rm sayc">${r.sayc_line || r.sayc_rule ? ruleText(r.sayc_line || r.sayc_rule) : ""}</div>` +
+    `</summary><div class="rb">${body}</div></details>`;
+  const det = box.querySelector("details");
+  det.addEventListener("toggle", () => {
+    RULE_OPEN = det.open;
+    try { localStorage.setItem("table-rule-open", RULE_OPEN ? "1" : "0"); } catch(e) {}
+  });
+}
+
+// Hovering a call: its measured meaning here, else at the nearest auction, and
+// always the net's own chance for it on these cards.
+function previewAdvice(h, call){
+  const exact = (h.corpus || []).find(r => r.action === call);
+  const near = !exact && h.nearest ? h.nearest.rows.find(r => r.action === call) : null;
+  const p = h.net && h.net.p_by_call ? h.net.p_by_call[call] : undefined;
+  const odds = p === undefined ? "" :
+    `<p class="aside">With your cards the net makes this call ${p < 0.005 ? "<1%" : Math.round(p*100) + "%"} ` +
+    `of the time.</p>`;
+  if(exact) return `<p class="say">${exact.says}</p><p class="aside">${exact.yours}</p>` + odds;
+  if(near) return `<p class="say">${APPROX} ${near.says}</p><p class="aside">${near.yours} ` +
+                  `Measured at the nearest auction self-play reached, not this one.</p>` + odds;
+  return `<p class="say">Self-play has no measured meaning for that call here.</p>` + odds;
+}
+
+/* On a phone the box is two steps: a row of levels, then that level's five strains.
+   The level shown starts at the ringed call's, else the lowest one still open. */
+let BB_LV = {at: null, lv: 1};
+function pickLevel(lv){
+  BB_LV.lv = lv;
+  document.querySelectorAll(".bblv button").forEach(b => b.classList.toggle("on", +b.dataset.lv === lv));
+  document.querySelectorAll(".bb button[data-call]").forEach(b => b.classList.toggle("cur", +b.dataset.lv === lv));
+}
+
+function biddingBox(d){
+  const legal = d.legal_calls || [];
+  const tip = (d.hints && d.hint && d.hint.net && d.hint.net.calls.length)
+    ? d.hint.net.calls[0].action : -1;
+  const at = d.board_no + ":" + d.auction.length;
+  if(BB_LV.at !== at){
+    const open = legal.findIndex((ok, i) => ok && i < 35);
+    BB_LV = {at, lv: tip >= 0 && tip < 35 ? Math.floor(tip / 5) + 1 : open >= 0 ? Math.floor(open / 5) + 1 : 1};
+  }
+  const mk = (i, label) => {
+    const ok = d.your_turn && legal[i];
+    const lv = i < 35 ? Math.floor(i / 5) + 1 : 0;
+    return `<button class="${legal[i]?'':'illegal'}${i===tip?' tip':''}${lv===BB_LV.lv?' cur':''}" ${ok?'':'disabled'} ` +
+           `data-call="${i}"${lv ? ` data-lv="${lv}"` : ""}><span class="c">${label}</span></button>`;
+  };
+  let h = `<div class="bblv" role="group" aria-label="Level">`;
+  for(let lv=1; lv<=7; lv++){
+    const any = legal.some((ok, i) => ok && i < 35 && Math.floor(i / 5) + 1 === lv);
+    const tipHere = tip >= 0 && tip < 35 && Math.floor(tip / 5) + 1 === lv;
+    h += `<button type="button" data-lv="${lv}" class="${lv===BB_LV.lv?'on':''}${tipHere?' tip':''}${any?'':' illegal'}" ` +
+         `${any?'':'disabled'}>${lv}</button>`;
+  }
+  h += `</div><div class="bb">`;
+  for(let lv=1; lv<=7; lv++){
+    h += `<div class="lv">${lv}</div>`;
+    LADDER.forEach((s,k) => h += mk((lv-1)*5+k, `<span class="${isRed(s)?'red':''}">${lv}${SYM[s]}</span>`));
+  }
+  h += `</div><div class="bb2"><div></div>` + mk(35,"Pass") + mk(36,"Double") + mk(37,"Redouble") + `</div>`;
+  return h;
+}
+
+/* ------------------------------------------------ "show the numbers"
+   Nothing is deleted, only folded away: the measured percentages, the sample
+   counts and the source tags all still live here, closed by default. */
+function renderNumbers(d){
+  const row = $("numbers-row");
+  if(!d.hints || d.phase === "over"){ row.style.display = "none"; return; }
+  row.style.display = "";                 // stays put between turns, so nothing below it jumps
+  if(!d.hint){
+    $("numbers-sub").textContent = "filled in on your turn";
+    $("numbers-body").innerHTML = `<p class="hint" style="margin:0">Nothing to show while the ` +
+      `others are ${d.phase === "auction" ? "bidding" : "playing"}.</p>`;
+    return;
+  }
+  $("numbers-sub").textContent = d.hint.kind === "auction"
+    ? "what the sentences above are made of"
+    : "the net's policy, its beliefs, and the solver";
+  if(d.hint.kind === "auction") auctionHints(d); else playHints(d);
+}
+
+const TAGS = {
+  net: `<span class="tag net" title="Read straight out of the deployed net">the net</span>`,
+  sp: `<span class="tag sp" title="A million greedy self-play auctions, summarised by position">self-play</span>`,
+  cards: `<span class="tag cards" title="Arithmetic on the cards you can already see">the cards</span>`,
+  book: `<span class="tag" title="Ordinary club advice, written by us, not by the net">standard advice</span>`,
+  solver: `<span class="tag solver" title="The double dummy solver, which looks at all four hands">solver</span>`,
+};
+
+/* ---- auction */
+function ruler(hcp){
+  const x = v => Math.min(100, v / 30 * 100);
+  return `<div style="position:relative;height:14px;background:var(--bg);border-radius:4px;margin:3px 0 2px">` +
+    `<i style="position:absolute;top:0;bottom:0;left:${x(hcp[0])}%;width:${x(hcp[2])-x(hcp[0])}%;` +
+    `background:var(--accent-bg);border-left:2px solid var(--accent);border-right:2px solid var(--accent);border-radius:3px"></i>` +
+    `<b style="position:absolute;top:0;bottom:0;left:${x(hcp[1])}%;width:2px;background:var(--accent)"></b></div>`;
+}
+
+function sentence(e){
+  const bits = [`${e.hcp[0]}–<b>${e.hcp[1]}</b>–${e.hcp[2]} points`];
+  if(e.suit_len){
+    const pick = e.suit_len[2] >= 0.5 ? 2 : e.suit_len[1] >= 0.5 ? 1 : 0;
+    bits.push(`${pick+4}+ ${suitWord(e.suit)} ${(e.suit_len[pick]*100).toFixed(0)}%`);
+  }
+  bits.push(`balanced ${(e.bal*100).toFixed(0)}%`);
+  return bits.join(" <em>·</em> ") + ` <em>· average shape ${e.len.map(v=>v.toFixed(1)).join("-")} (♠♥♦♣)</em>`;
+}
+
+const FOOT = text => `<p class="hint" style="margin:14px 0 0">${text}</p>`;
+
+function auctionHints(d){
+  const h = d.hint, blocks = [];
+  blocks.push(`<p class="hint" style="grid-column:1/-1;margin:0">${h.hand_says} ` +
+    `Every claim is tagged with where it comes from.</p>`);
+
+  if(h.net){
+    const top = h.net.calls;
+    blocks.push(`<div class="block"><h3>What the net would bid ${TAGS.net}</h3>` +
+      `<p class="note">${h.net.note}</p><div class="bars">` +
+      top.map((c,i) => `<span class="c${i?"":" "}">${pretty(c.call)}</span>` +
+        `<div class="bar${i?"":" "}" style="width:${Math.max(2,(c.p===null?100:c.p)*100)}%;` +
+        `${i?"":"background:var(--pick);opacity:.85"}"></div>` +
+        `<span class="pc">${c.p===null?"best":c.p<0.005?"<1%":(c.p*100).toFixed(0)+"%"}` +
+        `${c.q===null?"":` · ${fmtPts(c.q)}`}</span>`).join("") +
+      `</div><p class="note" style="margin-top:8px">It is given your exact thirteen cards and ` +
+      `the auction so far — nothing you cannot see. The second number is its guess at how many ` +
+      `points below the best possible contract the board ends after that call.</p>` +
+      `<div style="margin-top:8px"><button id="why-run">Where does each call lead?</button> ` +
+      `<span class="dim" id="why-status"></span></div><div id="why-lines"></div></div>`);
+  }
+
+  if(h.partner_last){
+    const p = h.partner_last;
+    blocks.push(`<div class="block"><h3>What partner's ${pretty(p.call)} showed ${TAGS.sp}</h3>` +
+      (p.stats
+        ? `<p class="note">In a million self-play auctions, ${p.n.toLocaleString()} reached ` +
+          `<span class="num">${p.position}</span> and ${p.stats.n.toLocaleString()} of them bid ` +
+          `${pretty(p.call)} there.</p>${ruler(p.stats.hcp)}<div>${sentence(p.stats)}</div>`
+        : `<p class="note">Self-play never reached this exact sequence, so there is nothing ` +
+          `measured to show. Better to say nothing than to guess.</p>`) + `</div>`);
+  } else if(d.auction.length === 0){
+    blocks.push(`<div class="block"><h3>Partner has not called yet ${TAGS.cards}</h3>` +
+      `<p class="note">${d.dealer_name} deals, so you are hearing the first round. ` +
+      `Come back to this panel once your partner has said something.</p></div>`);
+  }
+
+  if(h.corpus && h.corpus.length){
+    blocks.push(`<div class="block" style="grid-column:1/-1"><h3>Every call the net makes here ${TAGS.sp}</h3>` +
+      `<p class="note"><span class="num">${(h.corpus_n||0).toLocaleString()}</span> self-play hands ` +
+      `reached <span class="num">${h.position}</span>. Green means your hand sits inside the band ` +
+      `this call showed: your points between its 5th and 95th percentile, and four or more cards ` +
+      `in the suit when it usually had four or more. That test is ours, the numbers are measured.</p>` +
+      `<div class="sys">` + h.corpus.map(r =>
+        `<span class="c${r.legal?"":" illegal"}">${pretty(r.call)}</span>` +
+        `<span class="sh">${(r.stats.share*100).toFixed(0)}%</span>` +
+        `<span class="d${r.fit && r.fit.fits ? " fit" : ""}" title="${r.fit ? r.fit.checks.map(c=>c.detail).join(" · ") : ""}">` +
+        `${sentence(r.stats)}</span>`).join("") + `</div></div>`);
+  } else if(h.nearest){
+    const n = h.nearest;
+    blocks.push(`<div class="block" style="grid-column:1/-1"><h3>The nearest auction self-play ` +
+      `reached ${TAGS.sp} ${APPROX}</h3>` +
+      `<p class="note">Fewer than 200 self-play hands reached <span class="num">${h.position}</span>, ` +
+      `so it has no entry. <span class="num">${n.n.toLocaleString()}</span> reached ` +
+      `<span class="num">${n.position}</span> — ${n.change}. These are that auction's calls, ` +
+      `legal ones only: close, but not measured here.</p>` +
+      `<div class="sys">` + n.rows.map(r =>
+        `<span class="c">${pretty(r.call)}</span>` +
+        `<span class="sh">${(r.stats.share*100).toFixed(0)}%</span>` +
+        `<span class="d${r.fit && r.fit.fits ? " fit" : ""}">${sentence(r.stats)}</span>`).join("") +
+      `</div></div>`);
+  } else if(h.has_corpus){
+    blocks.push(`<div class="block"><h3>No measured meaning here ${TAGS.sp}</h3>` +
+      `<p class="note">Fewer than 200 self-play auctions reached ` +
+      `<span class="num">${h.position}</span>, so the table has no entry, and no nearby auction ` +
+      `it did reach is close enough to stand in. Anything said about what these calls mean ` +
+      `would be invented.</p></div>`);
+  }
+
+  for(const r of (h.partner_next || [])){
+    blocks.push(`<div class="block"><h3>If you bid ${pretty(r.call)} ${TAGS.sp}</h3>` +
+      `<p class="note">Self-play's likeliest answer from your left is ${pretty(r.assumed.call)} ` +
+      `(${(r.assumed.share*100).toFixed(0)}%). After that, in ${r.n.toLocaleString()} hands at ` +
+      `<span class="num">${r.position}</span>, your partner said:</p><div class="sys">` +
+      Object.entries(r.calls).sort((a,b)=>b[1].share-a[1].share).map(([name,e]) =>
+        `<span class="c">${pretty(name)}</span><span class="sh">${(e.share*100).toFixed(0)}%</span>` +
+        `<span class="d">${sentence(e)}</span>`).join("") + `</div></div>`);
+  }
+
+  $("numbers-body").innerHTML = `<div class="hintgrid">${blocks.join("")}</div>` + FOOT(
+    `The net has no explanation head. <b>the net</b> is its own output on your cards; ` +
+    `<b>self-play</b> is what its calls actually held across a million auctions it bid against ` +
+    `itself; <b>the cards</b> is arithmetic. Nothing here is a reason it told us.`);
+  if($("why-run")){
+    $("why-run").onclick = runWhy;
+    if(WHY.lines) drawWhy();
+  }
+}
+
+async function runWhy(){
+  $("why-status").textContent = "imagining hands…";
+  try {
+    const r = await post("/api/table/explain", {samples: 128});
+    WHY.job = r.job;
+    if(r.status === "done"){ WHY.lines = r.result; $("why-status").textContent = ""; drawWhy(); }
+    else pollWhy();
+  } catch(e){ $("why-status").textContent = (e && e.message) || "could not roll it out"; }
+}
+async function pollWhy(){
+  try {
+    const res = await fetch("/api/table/explain?job=" + encodeURIComponent(WHY.job));
+    const r = await res.json();
+    if(r.status === "done"){ WHY.lines = r.result; $("why-status").textContent = ""; return drawWhy(); }
+    if(r.status === "error"){ $("why-status").textContent = r.error; return; }
+    WHY.timer = setTimeout(pollWhy, 400);
+  } catch(e){ $("why-status").textContent = (e && e.message) || "lost the rollout"; }
+}
+function drawWhy(){
+  const box = $("why-lines"); if(!box || !WHY.lines) return;
+  const r = WHY.lines, me = D.user_seat;
+  box.innerHTML = r.candidates.map(c =>
+    `<p class="sub" style="margin:10px 0 3px">after ${pretty(c.call)}</p>` +
+    c.lines.slice(0,4).map(l => {
+      const chips = l.calls.slice(0,9).map((x,i) => {
+        const seat = (me + i) % 4;
+        return `<span class="chip${seat%2===me%2?" us":""}">${pretty(x)}</span>`;
+      }).join("") + (l.calls.length > 9 ? '<span class="chip">…</span>' : "");
+      const end = l.contract ? `<span class="chip end">${l.contract}` +
+        `${l.declarer===null?"":" "+SEATS[l.declarer][0]}</span>` : '<span class="chip">passed out</span>';
+      return `<div class="line"><span class="pc">${(l.share*100).toFixed(0)}%</span>` +
+             `<span class="chips">${chips}${end}</span></div>`;
+    }).join("")).join("") +
+    `<p class="note">${r.samples} hands dealt at random into the other three seats, then ` +
+    `weighted by how likely this net thinks their calls so far were — ${r.ess} of them carry ` +
+    `the weight, after the softening that stops one lucky hand taking it all. They are the net's ` +
+    `imagination, not the real cards: the true hand usually ranks around the 18th percentile of them. ` +
+    `Blue chips are your side.</p>`;
+}
+
+/* ---- play */
+function playHints(d){
+  const h = d.hint, blocks = [];
+  blocks.push(`<div class="block"><h3>The position ${TAGS.cards}</h3><ul>` +
+    h.facts.map(f => `<li>${f}</li>`).join("") + `</ul>` +
+    (h.finesse ? `<div class="callout"><b>A finesse is on offer.</b> ${h.finesse.text}</div>` : "") +
+    (h.book ? `<div class="callout book">${TAGS.book} ${h.book}</div>` : "") + `</div>`);
+
+  if(h.net){
+    const n = h.net;
+    blocks.push(`<div class="block"><h3>What the net would play ${TAGS.net}</h3>` +
+      `<p class="note">It is given exactly what you can see: this hand, the face-up hand, and ` +
+      `every card already played. Its policy over the fifty-two cards, legal ones only.</p>` +
+      `<div class="bars">` + n.top.map((t,i) =>
+        `<span class="c">${cardHTML(t.card)}</span>` +
+        `<div class="bar" style="width:${Math.max(2,t.p*100)}%;${i?"":"background:var(--pick);opacity:.85"}"></div>` +
+        `<span class="pc">${(t.p*100).toFixed(0)}%</span>`).join("") + `</div>` +
+      (n.notes.length
+        ? `<div class="notes">About ${cardHTML(n.pick)}: it is ${n.notes.join(", ")}. ` +
+          `<span class="dim">Those are facts about the card, read off the cards you can see — ` +
+          `not the net's reasons.</span></div>`
+        : `<div class="notes dim">Nothing plain to say about ${cardHTML(n.pick)} beyond that it ` +
+          `is legal here.</div>`) + `</div>`);
+  }
+
+  if(h.belief && h.belief.cards.length){
+    blocks.push(`<div class="block"><h3>Where it thinks the missing honours are ${TAGS.net}</h3>` +
+      `<p class="note">The net's belief head, over the ${h.belief.hidden} cards it cannot see, ` +
+      `shown for aces, kings and queens only. It is a guess the net makes, and it is often wrong.</p>` +
+      `<div class="bel">` + h.belief.cards.map(c =>
+        `<span class="num">${cardHTML(c.card)}</span>` +
+        `<div class="bar" style="width:${Math.max(3,c.p*100)}%;background:${seatColor(c.seat)}"></div>` +
+        `<span class="who">${c.seat_name} ${(c.p*100).toFixed(0)}%</span>`).join("") + `</div></div>`);
+  }
+
+  const peek = `<span class="seg" style="margin-left:6px"><button data-p="1" class="${d.peek?"on":""}">on</button>` +
+               `<button data-p="0" class="${d.peek?"":"on"}">off</button></span>`;
+  let s = `<div class="block"><h3>The double dummy answer ${TAGS.solver} ${peek}</h3>` +
+    `<p class="note">This one looks at <b>all four hands</b>. It is the truth about the position ` +
+    `and it spoils the puzzle, so it is off unless you ask.</p>`;
+  if(d.peek && h.solver && h.solver.available){
+    const best = h.solver.best_tricks;
+    s += `<p class="note">Tricks the ${h.solver.side} side still takes after each legal card, ` +
+         `with perfect play on both sides. Best is ${best}.</p><div class="ddgrid">` +
+      Object.entries(h.solver.cards).sort((a,b)=>b[1]-a[1]).map(([c,v]) =>
+        `<span class="ddc${+v===best?" best":""}">${cardHTML(+c)} ${v}</span>`).join("") + `</div>`;
+  } else if(d.peek && h.solver){
+    s += `<p class="note">No answer here: ${h.solver.reason}</p>`;
+  }
+  blocks.push(s + `</div>`);
+
+  $("numbers-body").innerHTML = `<div class="hintgrid">${blocks.join("")}</div>` + FOOT(
+    `<b>the net</b> is the card-play net's own output, given your information and nothing more. ` +
+    `<b>the cards</b> is arithmetic on what is already face up. <b>standard advice</b> is an ` +
+    `ordinary club rule of thumb, written by us. <b>solver</b> sees everything and is only there ` +
+    `when you ask for it.`);
+  $("numbers-body").querySelectorAll("[data-p]").forEach(b =>
+    b.onclick = () => go(() => post("/api/table/hints", {peek: b.dataset.p === "1"})));
+}
+
+/* ------------------------------------------------ result */
+function renderResult(d){
+  const row = $("result-row"), r = d.result;
+  if(d.phase !== "over" || !r){ row.style.display = "none"; return; }
+  row.style.display = "";
+  $("res-chal").innerHTML = d.challenge ? challengeHTML(d.challenge) : "";
+  if($("match-open")) $("match-open").onclick = () => showMatch(d.challenge);
+  const ct = d.contract;
+  if(r.passed_out){
+    $("res-title").textContent = "Passed out";
+    $("res-hint").textContent = "Nobody bid, so there is nothing to play and nothing to score.";
+    $("res-stats").innerHTML =
+      `<div class="stat"><span>Your side scored</span><b class="num">0</b></div>` +
+      (r.par_mine === null ? "" :
+        `<div class="stat ${r.imps>=0?"good":"bad"}"><span>Double dummy par for your side</span>` +
+        `<b class="num">${fmtPts(r.par_mine)}</b><span>what perfect bidding by both sides is worth. ` +
+        `Passing it out cost you ${fmtPts(-r.imps)} IMPs against that.</span></div>`);
+    $("res-review").innerHTML = "";
+    return;
+  }
+  const made = r.made;
+  const line = made
+    ? `${contractHTML(ct)} by ${ct.declarer_name} made ${r.tricks}` +
+      (r.delta ? ` — ${r.delta} over` : " exactly")
+    : `${contractHTML(ct)} by ${ct.declarer_name} went ${-r.delta} down`;
+  $("res-title").innerHTML = line;
+  $("res-hint").innerHTML = (r.we_declared
+    ? `Your side declared, so that score is yours.`
+    : `Their side declared, so the sign flips for you.`) +
+    (d.claim ? ` You claimed the last ${d.claim.tricks} trick${d.claim.tricks === 1 ? "" : "s"}.` : "");
+  const good = r.my_score >= 0;
+  let s = `<div class="stat ${good?"good":"bad"}"><span>Your side scored</span>` +
+          `<b class="num">${fmtPts(r.my_score)}</b>` +
+          `<span>duplicate scoring, ${d.vul_name}</span></div>`;
+  if(r.par_mine !== null){
+    const d1 = r.my_score - r.par_mine;
+    s += `<div class="stat"><span>Double dummy par for your side</span>` +
+         `<b class="num">${fmtPts(r.par_mine)}</b>` +
+         `<span>what the board is worth if both sides bid and play perfectly. ` +
+         `You are ${fmtPts(d1)} against it, <b>${fmtPts(r.imps)} IMPs</b>.</span></div>`;
+  }
+  if(r.dd_tricks !== null){
+    const gap = r.tricks - r.dd_tricks;
+    s += `<div class="stat"><span>This contract double dummy</span><b class="num">${r.dd_tricks}</b>` +
+         `<span>${gap === 0 ? "the play matched it exactly."
+            : gap > 0 ? `the table took ${gap} more — the defence let ${gap === 1 ? "one" : "some"} through.`
+            : `the table fell ${-gap} short of it.`}</span></div>`;
+  }
+  $("res-stats").innerHTML = s;
+
+  const rv = d.review;
+  if(!rv){ $("res-review").innerHTML = ""; return; }
+  const side = `<p class="hint">Across the whole board, the declaring side gave away ` +
+    `<b>${rv.declaring_lost}</b> trick${rv.declaring_lost===1?"":"s"} and the defenders ` +
+    `<b>${rv.defending_lost}</b>.</p>`;
+  let own;
+  if(d.role === "dummy")
+    own = `<p class="hint">You were dummy, so you played no cards of your own — your partner, ` +
+          `the net, played both hands.</p>`;
+  else if(rv.mine.length)
+    own = `<div class="rvwrap"><table class="rv"><tr><th>trick</th><th>you played</th><th>cost</th><th>it wanted</th></tr>` +
+      rv.mine.map(m => `<tr><td>${m.trick+1}</td><td>${cardHTML(m.card)}</td>` +
+        `<td>${m.lost} trick${m.lost===1?"":"s"}</td>` +
+        `<td>${m.best_cards.slice(0,5).join(" ")}</td></tr>`).join("") + `</table></div>`;
+  else
+    own = `<p class="hint">Not one of your ${rv.played} cards cost a trick against perfect ` +
+          `defence. That is a clean board.</p>`;
+  $("res-review").innerHTML = `<p class="sub" style="margin-top:12px">Your cards, re-solved ` +
+    `${TAGS.solver}</p><p class="hint">${rv.note}</p>` + own + side;
+}
+
+/* ------------------------------------------------ rating and leaderboard, kept on the server
+
+Elo against the bots, who are fixed at 1500. The server rates each board of a
+challenge it dealt, and sends the player's record as `me` with every state. */
+let ME = null;
+const esc = t => String(t).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+const delta = x => { const d = x.after - x.before; return `${d > 0 ? "+" : d < 0 ? "−" : "±"}${Math.abs(d)}`; };
+
+function showMe(me){
+  if(!me) return;
+  ME = me;
+  $("rank").textContent = `🏆 ${me.rating}`;
+  $("rank").title = `Your challenge rating: ${me.rating} after ${me.boards} board${me.boards === 1 ? "" : "s"} ` +
+    `(best ${me.best}; the bots are ${me.bots}). Opens the leaderboard.`;
+  const champ = $("deck").querySelector('option[value="champion"]');
+  champ.disabled = !me.champion;
+  champ.textContent = me.champion ? "Champion (yours while you top the board)" : "Champion (top of the leaderboard)";
+  if(!me.champion && document.documentElement.dataset.deck === "champion") applyDeck("modern");
+  if(me.champion && DECK === "champion" && document.documentElement.dataset.deck !== "champion") applyDeck("champion");
+}
+function ratingLine(b){
+  const x = b.rating;
+  if(!x) return "";
+  return `<p class="hint" style="margin-top:4px">Your rating: <b class="num">${x.before} → ${x.after}</b> ` +
+    `(${delta(x)}). The bots are 1500.</p>`;
+}
+
+async function openLeaderboard(){
+  const dlg = $("lb"), body = $("lb-body");
+  if(!dlg.open) dlg.showModal();
+  body.innerHTML = `<p class="hint">Loading…</p>`;
+  let j;
+  try { j = await (await fetch("/api/leaderboard")).json(); }
+  catch(e){ body.innerHTML = `<p class="err">Could not load the leaderboard.</p>`; return; }
+  showMe(j.me);
+  if(!j.me.name) return nameForm(body, j, false);
+  const rows = j.players.map((r, i) =>
+    `<tr class="${r.you ? "you" : ""}"><td class="n">${i + 1}</td><td>${esc(r.name)}${r.champion ? " 👑" : ""}</td>` +
+    `<td class="n">${r.rating}</td><td class="n">${r.boards}</td><td class="n">${r.best}</td></tr>`).join("");
+  body.innerHTML =
+    `<p class="hint" style="margin-top:0">Rated on challenge boards against the bots (1500). ` +
+    `The top player with at least ${j.min_boards} boards is the champion 👑 and gets the Champion card theme.</p>` +
+    (rows ? `<table class="lb"><tr><th class="n">#</th><th>Player</th><th class="n">Rating</th>` +
+            `<th class="n">Boards</th><th class="n">Best</th></tr>${rows}</table>`
+          : `<p>Nobody is on the board yet. Play a challenge to be the first.</p>`) +
+    `<p class="hint" style="margin:14px 0 0">You are <b>${esc(j.me.name)}</b>, ${j.me.rating} after ${j.me.boards} ` +
+    `board${j.me.boards === 1 ? "" : "s"}. <a href="#" id="rename">Change name</a></p>`;
+  $("rename").onclick = e => { e.preventDefault(); nameForm(body, j, true); };
+}
+function nameForm(body, j, rename){
+  body.innerHTML =
+    `<p style="margin-top:0">${rename ? "Pick a new name." : "Pick a name to see the leaderboard and appear on it."}</p>` +
+    `<p class="hint">No password: this browser is your account for now. Your rating so far stays with you.</p>` +
+    `<form class="namef" id="namef"><input id="namein" maxlength="20" autocomplete="nickname" ` +
+    `placeholder="3 to 20 letters or digits" value="${rename ? esc(j.me.name) : ""}" aria-label="Your name">` +
+    `<button class="primary" type="submit">${rename ? "Save" : "Join"}</button></form><p class="err" id="nameerr"></p>`;
+  $("namein").focus();
+  $("namef").onsubmit = async e => {
+    e.preventDefault();
+    try { showMe(await post("/api/me/name", {name: $("namein").value})); openLeaderboard(); }
+    catch(err){ $("nameerr").textContent = err.message; }
+  };
+}
+
+/* The end of a challenge: a modal with the match, the rating change and review links.
+   It opens once per challenge, when the last card of the last board is on screen. */
+const MATCH_SHOWN = new Set();
+function reviewHref(c, b, who){
+  const [a, p] = b.moves[who], q = new URLSearchParams();
+  q.set("d", c.code.c.split(".")[b.no - 1]);
+  if(a) q.set("a", a);
+  q.set("dr", 0); q.set("v", "none");
+  if(p) q.set("p", p);
+  q.set("s", "S"); q.set("m", c.code.m); q.set("pm", c.code.pm); q.set("h", 1);
+  return "/#" + q.toString();
+}
+function maybeShowMatch(c, full){
+  if(!c.done || !full || MATCH_SHOWN.has(c.code.c)) return;
+  MATCH_SHOWN.add(c.code.c);
+  showMatch(c);
+}
+function showMatch(c){
+  const verdict = c.total > 0 ? "You beat the bots" : c.total < 0 ? "The bots won" : "A tie with the bots";
+  const rated = c.boards.map(b => b.rating).filter(Boolean);
+  const rline = rated.length
+    ? `<p>Your rating: <b class="num">${rated[0].before} → ${rated[rated.length - 1].after}</b> ` +
+      `(${delta({before: rated[0].before, after: rated[rated.length - 1].after})})</p>`
+    : `<p class="hint">Not rated: this challenge came from a link. Press Challenge for a rated one.</p>`;
+  const link = (b, who, t) => `<a href="${reviewHref(c, b, who)}" target="_blank" rel="noopener">${t}</a>`;
+  $("match-title").textContent = `Challenge over · ${c.n} boards`;
+  $("match-body").innerHTML =
+    `<p class="sub" style="margin:0">${verdict}</p>` +
+    `<div class="bigscore ${c.total > 0 ? "good" : c.total < 0 ? "bad" : ""}">${impWord(c.total)}</div>` + rline +
+    `<div class="rvwrap"><table class="match"><tr><th>Board</th><th>You</th><th class="n">N/S</th>` +
+    `<th>Bots</th><th class="n">N/S</th><th class="n">IMPs</th><th class="n">Rating</th><th>Review</th></tr>` +
+    c.boards.map(b => `<tr><td>${b.no}</td><td>${tableLine(b.mine)}</td><td class="n">${signed(b.mine.ns_score)}</td>` +
+      `<td>${tableLine(b.bot)}</td><td class="n">${signed(b.bot.ns_score)}</td>` +
+      `<td class="n"><b>${signed(b.imps)}</b></td><td class="n">${b.rating ? delta(b.rating) : "—"}</td>` +
+      `<td>${link(b, "mine", "Your table")} · ${link(b, "bot", "Bots")}</td></tr>`).join("") +
+    `</table></div>` +
+    `<p class="hint" style="margin-top:8px">Review opens the board in a new tab with all four hands and the solver's ` +
+    `notes. <b>Copy link</b> sends a friend the same boards against the same bot table.</p>` +
+    `<div class="actions" style="margin-top:12px"><button id="m-lb">Leaderboard</button>` +
+    `<button id="m-again" class="primary">New challenge</button></div>`;
+  $("m-lb").onclick = () => { $("match").close(); openLeaderboard(); };
+  $("m-again").onclick = () => { $("match").close(); startChallenge(); };
+  if(!$("match").open) $("match").showModal();
+}
+
+/* ------------------------------------------------ challenge: you and three bots against four bots
+
+The other table's result for a board arrives only once your own board is over. */
+const signed = n => (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(n);
+const impWord = n => `${signed(n)} IMP${Math.abs(n) === 1 ? "" : "s"}`;
+
+function renderChallengeMeta(c, full){
+  // Until the last card of the board is on screen, its score stays hidden.
+  const shown = b => b.imps !== null && (full || b.no !== c.i + 1);
+  const total = c.boards.reduce((t, b) => t + (shown(b) ? b.imps : 0), 0);
+  const chips = c.boards.map(b => {
+    if(shown(b)) return `<span class="chip ${b.imps > 0 ? "pos" : b.imps < 0 ? "neg" : ""}" ` +
+                               `title="Board ${b.no}: ${impWord(b.imps)}">${signed(b.imps)}</span>`;
+    return `<span class="chip ${b.status === "playing" ? "now" : ""}" title="Board ${b.no}">${b.no}</span>`;
+  }).join("");
+  const played = c.boards.filter(shown).length;
+  $("meta").innerHTML = `<b>Challenge</b> · board ${c.i + 1} of ${c.n} · ` +
+    (played ? `you ${impWord(total)} against the bots` : `you sit South, four bots play the other table`) + chips;
+}
+
+function tableLine(t){
+  if(t.passed_out) return "Passed out";
+  const res = t.delta === 0 ? "made exactly" : t.delta > 0 ? `made ${t.tricks} (+${t.delta})` : `${-t.delta} down`;
+  return `${contractHTML(t.contract)} by ${t.contract.declarer_name}, ${res}`;
+}
+function auctionLine(t){
+  return t.auction.map(a => pretty(a.name)).join(" ");
+}
+
+function challengeHTML(c){
+  const b = c.boards[c.i];
+  if(!b || b.imps === null) return "";
+  const who = b.imps > 0 ? "You won this board" : b.imps < 0 ? "The bots won this board" : "A tie on this board";
+  let s = `<p class="sub">Challenge · board ${b.no} of ${c.n}</p>` +
+    `<h2>${who}: ${impWord(b.imps)}</h2>` + ratingLine(b) +
+    `<div class="vs">` +
+      `<div class="stat ${b.imps>0?"good":b.imps<0?"bad":""}"><span>Your table — you in South</span>` +
+        `<b class="num">${signed(b.mine.ns_score)}</b><span>${tableLine(b.mine)}</span>` +
+        `<div class="auc">${auctionLine(b.mine)}</div></div>` +
+      `<div class="stat"><span>Other table — four bots</span>` +
+        `<b class="num">${signed(b.bot.ns_score)}</b><span>${tableLine(b.bot)}</span>` +
+        `<div class="auc">${auctionLine(b.bot)}</div></div>` +
+    `</div><p class="hint" style="margin-top:8px">Scores are for North–South. ` +
+    `The difference, ${signed(b.mine.ns_score - b.bot.ns_score)}, is ${impWord(b.imps)}.</p>`;
+  if(c.done) s += `<div class="actions" style="margin-top:12px"><button id="match-open">The match: ` +
+    `${impWord(c.total)}</button></div>`;
+  return s + `<hr style="border:0;border-top:1px solid var(--line);margin:16px 0">`;
+}
+
+/* Dealing a challenge is a job on the server: the bots play the other table first.
+   The modal shows how far it is and can cancel it. Closing it in any way cancels. */
+let DEALING = null;                    // {job, timer} while a challenge is being dealt
+async function startChallenge(){
+  if(DEALING) return;
+  if(SRV && SRV.challenge && !SRV.challenge.done &&
+     !confirm("Start a new challenge? The one you are playing ends" +
+              (SRV.challenge.rated ? ", and its unfinished board counts as a loss." : "."))) return;
+  const dlg = $("gen");
+  $("gen-err").textContent = ""; $("gen-cancel").textContent = "Cancel";
+  genPaint({n: 4, board: 0, cards: 0, state: "running"});
+  dlg.showModal();
+  let j;
+  try { j = await post("/api/table/challenge/job", {boards: 4}); }
+  catch(e){ $("gen-err").textContent = e.message; $("gen-cancel").textContent = "Close"; return; }
+  DEALING = {job: j.job, timer: null};
+  genPoll();
+}
+async function genPoll(){
+  if(!DEALING) return;
+  let j;
+  try { j = await (await fetch(`/api/table/challenge/progress?job=${DEALING.job}`)).json(); }
+  catch(e){ j = null; }
+  if(!DEALING) return;                                    // cancelled while we waited
+  if(!j || j.error || j.state === "error" || j.state === "cancelled"){
+    $("gen-err").textContent = (j && (j.error || "The challenge was cancelled.")) || "Lost contact with the server.";
+    $("gen-cancel").textContent = "Close"; DEALING = null; return;
+  }
+  genPaint(j);
+  if(j.state === "ready"){
+    const job = DEALING.job; DEALING = null;
+    $("gen").close();
+    return goNow(() => post("/api/table/challenge/start", {job}));
+  }
+  DEALING.timer = setTimeout(genPoll, 350);
+}
+function genPaint(j){
+  // Each board: a little for the auction, the rest for the 52 cards.
+  const part = j.state === "ready" ? 1 : (j.board + (j.cards ? .1 + .9 * j.cards / 52 : .05)) / j.n;
+  $("gen-bar").firstElementChild.style.width = `${Math.round(100 * Math.min(1, part))}%`;
+  $("gen-bar").setAttribute("aria-valuenow", Math.round(100 * part));
+  const k = Math.min(j.board, j.n - 1);
+  $("gen-now").textContent = j.state === "ready" ? "All boards dealt. Sit down in South…"
+    : `Board ${k + 1} of ${j.n}: the bots are ` +
+      (j.cards ? `playing, trick ${Math.min(13, Math.floor(j.cards / 4) + 1)} of 13` : "bidding");
+  let li = "";
+  for(let i = 0; i < j.n; i++)
+    li += `<li class="${i < j.board || j.state === "ready" ? "done" : i === j.board ? "now" : ""}">Board ${i + 1}</li>`;
+  $("gen-steps").innerHTML = li;
+}
+function genCancel(){
+  if(!DEALING) return;
+  const job = DEALING.job;
+  clearTimeout(DEALING.timer); DEALING = null;
+  post("/api/table/challenge/cancel", {job}).catch(() => {});
+}
+$("gen-cancel").onclick = () => $("gen").close();
+$("gen").addEventListener("close", genCancel);       // Esc, the button, the backdrop: all cancel
+function leaveChallengeOk(){
+  const c = SRV && SRV.challenge;
+  if(!c || c.done) return true;
+  const open = c.boards[c.i].status === "playing";
+  return confirm("Leave the challenge?" + (c.rated && open
+    ? " The board you are playing counts as a loss for your rating." : " Your score so far is lost."));
+}
+
+function renderSettings(d){
+  $("seats").innerHTML = SEATS.map((n,i) =>
+    `<button data-seat="${i}" class="${i===d.user_seat?"primary":""}" style="flex:0 0 auto;min-width:0">` +
+    `${n}${i===d.dealer?" (deals)":""}</button>`).join("");
+  $("seats").querySelectorAll("button").forEach(b =>
+    b.onclick = () => { if(!leaveChallengeOk()) return;
+      $("settings").close(); goNow(() => post("/api/table/new_board", {seat: +b.dataset.seat})); });
+  $("setup-note").innerHTML = `Board #${d.board_no} · <span class="dim">${d.meta_long || d.meta}</span>`;
+}
+
+$("new-board").onclick = () => leaveChallengeOk() && goNow(() => post("/api/table/new_board"));
+$("challenge").onclick = startChallenge;
+$("restart").onclick = () => { $("settings").close(); goNow(() => post("/api/table/restart")); };
+$("skip").onclick = skip;
+function undoMove(){
+  if(!SRV || !SRV.can_undo) return;
+  goNow(() => post("/api/table/undo"));
+}
+// Settings is a modal. Esc closes it (the browser does that), so do ✕ and a click on the backdrop.
+$("gear").onclick = () => $("settings").showModal();
+$("settings-close").onclick = () => $("settings").close();
+$("rank").onclick = openLeaderboard;
+/* The phone's ⋯ menu: the header tools slide up as a sheet. */
+function menu(open){
+  document.documentElement.classList.toggle("menu", open);
+  $("more").setAttribute("aria-expanded", String(open));
+}
+$("more").onclick = () => menu(!document.documentElement.classList.contains("menu"));
+$("scrim").onclick = () => menu(false);
+$("tools").addEventListener("click", e => { if(e.target.closest("#new-board,#challenge")) menu(false); });
+document.addEventListener("keydown", e => { if(e.key === "Escape") menu(false); });
+for(const dlg of document.querySelectorAll("dialog.modal")){
+  dlg.addEventListener("click", e => { if(e.target === dlg) dlg.close(); });   // the backdrop
+  const x = dlg.querySelector("[data-close]");
+  if(x) x.onclick = () => dlg.close();
+}
+document.addEventListener("keydown", e => {
+  if(e.key !== "Backspace" || e.metaKey || e.ctrlKey || e.altKey || document.querySelector("dialog[open]")) return;
+  const t = document.activeElement;
+  if(t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA")) return;
+  e.preventDefault();
+  undoMove();
+});
+$("table").addEventListener("click", e => { if(!e.target.closest("button")) skip(); });
+$("speedseg").querySelectorAll("button").forEach(b => b.onclick = () => {
+  SPEED = b.dataset.s;
+  try { localStorage.setItem("table-speed", SPEED); } catch(e) {}
+  applySpeed();
+  if(SPEED === "off") skip(); else schedule();
+});
+/* ------------------------------------------------ the shared link
+
+The address bar always holds the position on screen:
+  #d=<deal>&a=<calls>&dr=0&v=none&p=<cards>&s=<seat>&m=<bid model>&pm=<play model>&h=<hints>
+`d`, `a` and `p` are the bid desk's and play desk's own codecs; the server sends
+them in `code`, and the page cuts `a` and `p` back to the frame it is drawing (one
+character per call, one per card), so a link copied mid-animation is exactly what
+is on the table. replaceState: no reload, no history entry per card. */
+function linkHash(){
+  if(DEBUG) return debugHash();
+  if(SRV && SRV.challenge){        // a challenge link: every deal and the other table, never your own play
+    const k = SRV.challenge.code, q = new URLSearchParams();
+    q.set("c", k.c); q.set("ca", k.ca); q.set("cp", k.cp);
+    q.set("m", k.m); q.set("pm", k.pm); q.set("r", k.r);
+    return "#" + q.toString();
+  }
+  const c = SRV && SRV.code;
+  if(!c || !c.d) return null;
+  const q = new URLSearchParams();
+  q.set("d", c.d);
+  const a = c.a.slice(0, VIEW.calls), p = c.p.slice(0, VIEW.cards);
+  if(a) q.set("a", a);
+  q.set("dr", c.dr); q.set("v", c.v);
+  if(p) q.set("p", p);
+  q.set("s", c.s);
+  if(c.m) q.set("m", c.m);
+  if(c.pm) q.set("pm", c.pm);
+  q.set("h", c.h);
+  return "#" + q.toString();
+}
+/* The debug page's link is the same position in words a person can read and type:
+  /debug#n=<hand>&e=<hand>&s=<hand>&w=<hand>&dealer=<N|E|S|W>&vul=<none|ns|ew|both>
+        &auction=<1S-P-2C-P>&play=<HK-HA-H2>&seat=<N|E|S|W>&bm=<bid model>&pm=<play model>&hints=<0|1>
+Hands are spades.hearts.diamonds.clubs with - for a void, always all thirteen cards.
+`bm` and `pm` are left out for the default models (the server sends them as ""); an old
+link's `m` still reads as `bm`.
+The server parses and checks it (`debug_board` in tabledesk.py); `debug_code` sends it
+back with one entry per call and per card, cut here to the frame on screen. */
+function debugHash(){
+  const c = SRV && SRV.debug_code;
+  if(!c) return null;
+  const q = [];
+  for(const k of ["n", "e", "s", "w", "dealer", "vul"]) q.push(`${k}=${encodeURIComponent(c[k])}`);
+  const a = c.auction.slice(0, VIEW.calls), p = c.play.slice(0, VIEW.cards);
+  if(a.length) q.push("auction=" + a.join("-"));
+  if(p.length) q.push("play=" + p.join("-"));
+  // Who plays what: nothing for "you play all four" (South at the bottom), seat=X for one
+  // chair against three nets, or bots=<chairs the nets play> with the bottom chair.
+  const others = "NESW".replace(c.seat, "");
+  if(c.bots === others) q.push("seat=" + c.seat);
+  else if(c.bots || c.seat !== "S") q.push("bots=" + (c.bots || "-"), "seat=" + c.seat);
+  if(c.bm) q.push("bm=" + encodeURIComponent(c.bm));
+  if(c.pm) q.push("pm=" + encodeURIComponent(c.pm));
+  q.push("hints=" + c.hints);
+  return "#" + q.join("&");
+}
+function debugBody(p, over){
+  const b = {n: p.get("n") || "", e: p.get("e") || "", s: p.get("s") || "", w: p.get("w") || "",
+             dealer: p.get("dealer") || "", vul: p.get("vul") || "", seat: p.get("seat") || "",
+             bots: p.get("bots") || "",
+             auction: p.get("auction") || "", play: p.get("play") || "",
+             model: p.get("bm") || p.get("m") || "", play_model: p.get("pm") || "", hints: p.get("hints") || ""};
+  return Object.assign(b, over || {});
+}
+// Dealer, vul and chair from the bar: the same hands again. A new chair keeps the position;
+// a new dealer or vulnerability makes the calls mean something else, so the auction starts over.
+function debugReload(){
+  const c = SRV && SRV.debug_code;
+  if(!c) return;
+  const dealer = $("db-dealer").value, vul = $("db-vul").value, pick = $("db-seat").value;
+  const keep = dealer === c.dealer && vul === c.vul;
+  // "all four" is no seat; "N only" is that seat; an unchanged custom mix keeps its bots.
+  const who = pick === "custom" ? {seat: c.seat, bots: c.bots || "-"} : {seat: pick, bots: ""};
+  const body = {n: c.n, e: c.e, s: c.s, w: c.w, dealer, vul, ...who, model: c.bm, play_model: c.pm, hints: String(c.hints),
+                auction: keep ? c.auction.slice(0, VIEW.calls).join("-") : "",
+                play: keep ? c.play.slice(0, VIEW.cards).join("-") : ""};
+  goNow(async () => { const d = await post("/api/table/debug", body); HOLD = true; return d; });
+}
+function renderDebugBar(d){
+  const c = d.debug_code;
+  const opts = (list, cur) => list.map(m =>
+    `<option value="${esc(m.id)}"${m.id === cur ? " selected" : ""}>${esc(m.label)}</option>`).join("");
+  $("db-m").innerHTML = opts(d.models, d.model);
+  $("db-pm").innerHTML = opts(d.play_models, d.play_model);
+  $("db-dealer").value = c.dealer; $("db-vul").value = c.vul;
+  const custom = $("db-seat").querySelector('option[value="custom"]');
+  const pick = !c.bots ? "" : c.bots === "NESW".replace(c.seat, "") ? c.seat : "custom";
+  custom.hidden = pick !== "custom";
+  custom.textContent = "you: " + d.user_chairs.map(s => SEATS[s][0]).join(" ");
+  $("db-seat").value = pick;
+}
+if(DEBUG){
+  for(const id of ["db-dealer", "db-vul", "db-seat"]) $(id).onchange = debugReload;
+  $("db-m").onchange = () => go(() => post("/api/table/models", {model: $("db-m").value}));
+  $("db-pm").onchange = () => go(() => post("/api/table/models", {play_model: $("db-pm").value}));
+}
+
+function syncLink(){
+  const h = linkHash();
+  if(!h) return;
+  document.body.dataset.code = h;
+  if(location.hash !== h) history.replaceState(history.state, "", h);
+}
+
+function copyFallback(text){
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.setAttribute("readonly", "");
+  ta.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0";
+  document.body.appendChild(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch(e) {}
+  ta.remove();
+  return ok;
+}
+let SHARE_T = null;
+$("share").onclick = async () => {
+  const b = $("share");
+  syncLink();
+  const url = location.href;
+  let ok = false;
+  try { await navigator.clipboard.writeText(url); ok = true; } catch(e) { ok = copyFallback(url); }
+  b.focus({preventScroll: true});
+  if(!ok){ prompt("Copy this link:", url); return; }
+  b.classList.add("done");
+  $("share-status").textContent = SRV && SRV.challenge ? "Challenge link copied" : "Link copied";
+  clearTimeout(SHARE_T);
+  SHARE_T = setTimeout(() => { b.classList.remove("done"); $("share-status").textContent = ""; }, 1600);
+};
+
+function notice(msg){
+  NOTICE_UNTIL = Date.now() + 9000;
+  $("err").textContent = msg;
+  setTimeout(() => { if(Date.now() >= NOTICE_UNTIL && $("err").textContent === msg) $("err").textContent = ""; }, 9100);
+}
+
+function linkBody(p){
+  return {deal: p.get("d"), auction: p.get("a") || "", played: p.get("p") || "",
+          seat: p.get("s") || "", model: p.get("m") || "", play_model: p.get("pm") || "",
+          hints: p.get("h"), dealer: p.get("dr") || "", vul: p.get("v") || ""};
+}
+
+function boot(over){
+  const p = new URLSearchParams(location.hash.slice(1));
+  if(DEBUG){
+    // Always through the debug loader: no hands at all is a random deal. A link that does not
+    // check out keeps its text on screen, next to the reason, and a random board comes up.
+    return goNow(async () => {
+      try {
+        const d = await post("/api/table/debug", debugBody(p, over));
+        $("debug-err").textContent = "";
+        HOLD = true;             // stop exactly at the position; Continue lets the nets go on
+        return d;
+      } catch(e){
+        $("debug-err").textContent = `Could not open that position — ${e.message}. ` +
+          `It was: ${decodeURIComponent(location.hash.slice(1)) || "(empty)"}. Here is a random board instead.`;
+        return await post("/api/table/debug", debugBody(new URLSearchParams(),
+          {dealer: p.get("dealer") || "", vul: p.get("vul") || "", seat: p.get("seat") || "", bots: p.get("bots") || "",
+           model: p.get("bm") || p.get("m") || "", play_model: p.get("pm") || ""}))
+          .catch(() => post("/api/table/debug", {}));
+      }
+    });
+  }
+  if(p.get("c") !== null){
+    return goNow(async () => {
+      // A reload of the same challenge keeps your place: this tab's game still holds it.
+      const r = await fetch("/api/table/state", {headers:{"X-Game": GAME_ID}});
+      const cur = r.ok ? await r.json() : null;
+      const k = cur && cur.challenge && cur.challenge.code;
+      if(k && k.c === p.get("c") && k.ca === p.get("ca") && k.cp === p.get("cp")) return cur;
+      try {
+        return await post("/api/table/challenge/load",
+          {deals: p.get("c"), auctions: p.get("ca") || "", played: p.get("cp") || "",
+           model: p.get("m") || "", play_model: p.get("pm") || "", search: p.get("r") || "1"});
+      } catch(e){
+        const d = await post("/api/table/new_board");
+        notice(`That challenge link could not be opened — ${e.message}. Here is a fresh board instead.`);
+        return d;
+      }
+    });
+  }
+  if(p.get("d") !== null){
+    return goNow(async () => {
+      try {
+        const d = await post("/api/table/load", linkBody(p));
+        HOLD = true;             // stop exactly at the shared position; Continue goes on
+        return d;
+      } catch(e){
+        const d = await post("/api/table/new_board");
+        notice(`That link could not be opened — ${e.message}. Here is a fresh board instead.`);
+        return d;
+      }
+    });
+  }
+  return goNow(() => fetch("/api/table/state", {headers:{"X-Game": GAME_ID}})
+    .then(r => r.ok ? r.json() : r.text().then(t => { throw new Error(`state → ${r.status}: ${t.slice(0,120)}`); })));
+}
+// A different link pasted into the same tab opens it; our own replaceState never fires this.
+window.addEventListener("hashchange", () => {
+  const p = new URLSearchParams(location.hash.slice(1));
+  if(DEBUG){ if(location.hash !== document.body.dataset.code) boot(); return; }
+  if((p.get("d") !== null || p.get("c") !== null) && ("#" + p.toString()) !== document.body.dataset.code) boot();
+});
+
+/* ------------------------------------------------ card themes
+The mat, faces and backs. Same drawings as design/themes.html. One theme for the
+whole table, kept in this browser. */
+const SVG = body => `url("data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 70 100'>${body}</svg>`)}")`;
+const f2 = n => n.toFixed(2);
+
+function modernBack(){
+  return SVG(`<defs><pattern id='p' width='8' height='8' patternUnits='userSpaceOnUse' patternTransform='rotate(45)'>
+    <rect width='8' height='8' fill='#1f45ad'/><rect width='4' height='8' fill='#2d5bd8'/></pattern></defs>
+    <rect width='70' height='100' rx='5' fill='url(#p)' stroke='#1f45ad' stroke-width='2'/>`);
+}
+
+// A red lattice with a white margin: the look of a plain club deck, not any maker's design.
+function classicBack(){
+  return SVG(`<defs><pattern id='p' width='5' height='5' patternUnits='userSpaceOnUse' patternTransform='rotate(45)'>
+    <path d='M0 0H5M0 0V5' stroke='#f6d5da' stroke-width='.55'/></pattern></defs>
+    <rect width='70' height='100' rx='5' fill='#fff'/>
+    <rect x='4' y='4' width='62' height='92' rx='3' fill='#9b1c2c'/>
+    <rect x='6' y='6' width='58' height='88' rx='2' fill='url(#p)'/>
+    <rect x='6.5' y='6.5' width='57' height='87' rx='2' fill='none' stroke='#fff' stroke-width='.9'/>
+    <ellipse cx='35' cy='50' rx='14' ry='19' fill='#9b1c2c' stroke='#fff' stroke-width='1.2'/>
+    <ellipse cx='35' cy='50' rx='11' ry='16' fill='none' stroke='#fff' stroke-width='.5'/>
+    <text x='35' y='56.5' text-anchor='middle' font-size='18' fill='#fff' font-family='Georgia'>♣</text>`);
+}
+
+// Navy and gold, a rosette in the middle and fine cross-hatching, after 1890s backs.
+function victorianBack(){
+  let petals = "";
+  for(let a = 0; a < 180; a += 22.5)
+    petals += `<ellipse cx='35' cy='50' rx='13' ry='3.2' transform='rotate(${a} 35 50)' fill='none' stroke='#d9b862' stroke-width='.6'/>`;
+  const corner = (x, y) => `<circle cx='${x}' cy='${y}' r='3' fill='none' stroke='#d9b862' stroke-width='.6'/><circle cx='${x}' cy='${y}' r='1' fill='#d9b862'/>`;
+  return SVG(`<defs><pattern id='p' width='3' height='3' patternUnits='userSpaceOnUse' patternTransform='rotate(30)'>
+    <path d='M0 0H3' stroke='#c9a54a' stroke-width='.35' opacity='.55'/></pattern>
+    <pattern id='q' width='3' height='3' patternUnits='userSpaceOnUse' patternTransform='rotate(-30)'>
+    <path d='M0 0H3' stroke='#c9a54a' stroke-width='.35' opacity='.55'/></pattern></defs>
+    <rect width='70' height='100' rx='5' fill='#f1e6c8'/>
+    <rect x='3' y='3' width='64' height='94' rx='3' fill='#1b2a4a'/>
+    <rect x='3' y='3' width='64' height='94' rx='3' fill='url(#p)'/><rect x='3' y='3' width='64' height='94' rx='3' fill='url(#q)'/>
+    <rect x='6' y='6' width='58' height='88' rx='2' fill='none' stroke='#d9b862' stroke-width='.8'/>
+    <rect x='8' y='8' width='54' height='84' rx='1.5' fill='none' stroke='#d9b862' stroke-width='.4'/>
+    ${corner(12, 14)}${corner(58, 14)}${corner(12, 86)}${corner(58, 86)}
+    <circle cx='35' cy='50' r='16' fill='#1b2a4a' stroke='#d9b862' stroke-width='.9'/>
+    ${petals}<circle cx='35' cy='50' r='3.5' fill='#d9b862'/>`);
+}
+
+// Black and gold, a sunburst behind stepped diamonds: the 1920s look.
+function decoBack(){
+  let rays = "";
+  for(let i = 0; i < 36; i++){
+    const a = i * Math.PI / 18;
+    rays += `<line x1='35' y1='50' x2='${f2(35 + 80 * Math.cos(a))}' y2='${f2(50 + 80 * Math.sin(a))}' stroke='#d4af37' stroke-width='${i % 2 ? .3 : .7}'/>`;
+  }
+  const dia = (r, w, fill = "none") =>
+    `<path d='M35 ${50 - r * 1.4}L${35 + r} 50L35 ${50 + r * 1.4}L${35 - r} 50Z' fill='${fill}' stroke='#d4af37' stroke-width='${w}'/>`;
+  return SVG(`<defs><clipPath id='c'><rect x='7' y='7' width='56' height='86'/></clipPath></defs>
+    <rect width='70' height='100' rx='5' fill='#111'/>
+    <rect x='3' y='3' width='64' height='94' rx='3' fill='none' stroke='#d4af37' stroke-width='1'/>
+    <path d='M7 11V7H11M59 7H63V11M63 89V93H59M11 93H7V89' fill='none' stroke='#d4af37' stroke-width='.9'/>
+    <g clip-path='url(#c)' opacity='.55'>${rays}</g>
+    ${dia(15, .5, "#111")}${dia(11, .9)}${dia(7, .5)}${dia(3.5, 0, "#d4af37")}`);
+}
+
+// Teal with orange starbursts and mustard dots, 1960s holiday deck.
+function rivieraBack(){
+  const star = (x, y, r) => {
+    let s = "";
+    for(let i = 0; i < 8; i++){
+      const a = i * Math.PI / 4, rr = i % 2 ? r * .55 : r;
+      s += `<line x1='${x}' y1='${y}' x2='${f2(x + rr * Math.cos(a))}' y2='${f2(y + rr * Math.sin(a))}' stroke='#f08a4b' stroke-width='.9' stroke-linecap='round'/>`;
+    }
+    return s + `<circle cx='${x}' cy='${y}' r='1.1' fill='#fff4dc'/>`;
+  };
+  const dots = [[18,22,2.2],[52,30,1.6],[24,70,1.8],[50,78,2.4],[40,16,1.2],[14,48,1.3],[58,58,1.4]]
+    .map(([x, y, r]) => `<circle cx='${x}' cy='${y}' r='${r}' fill='#f2c14e'/>`).join("");
+  return SVG(`<rect width='70' height='100' rx='5' fill='#fff4dc'/>
+    <rect x='4' y='4' width='62' height='92' rx='8' fill='#1d6f6b'/>
+    ${dots}${star(30, 36, 7)}${star(46, 62, 9)}${star(20, 84, 5)}${star(56, 14, 5)}`);
+}
+
+// The champion's deck: one holder at a time, the top rated player (or pair) of the season.
+function championBack(word){
+  // Two laurel branches curving round the crown, from the bottom up to the top.
+  let leaves = "";
+  for(let i = 0; i < 8; i++){
+    const deg = 105 + i * 19, a = deg * Math.PI / 180;
+    const x = 35 + 18 * Math.cos(a), y = 51 + 18 * Math.sin(a), rot = deg + 90 + 28;
+    for(const [lx, lr] of [[x, rot], [70 - x, 180 - rot]])
+      leaves += `<ellipse cx='${f2(lx)}' cy='${f2(y)}' rx='3.6' ry='1.5' fill='url(#g)' transform='rotate(${f2(lr)} ${f2(lx)} ${f2(y)})'/>`;
+  }
+  return SVG(`<defs>
+    <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#fbe7a1'/><stop offset='.5' stop-color='#c9962b'/><stop offset='1' stop-color='#f5d77a'/></linearGradient>
+    <radialGradient id='b' cx='.5' cy='.45' r='.7'><stop offset='0' stop-color='#3a2c10'/><stop offset='1' stop-color='#0e0b05'/></radialGradient></defs>
+    <rect width='70' height='100' rx='5' fill='url(#g)'/>
+    <rect x='2.5' y='2.5' width='65' height='95' rx='3.5' fill='url(#b)'/>
+    <rect x='5' y='5' width='60' height='90' rx='2' fill='none' stroke='url(#g)' stroke-width='.7'/>
+    ${leaves}
+    <path d='M26 58V46L30.5 50.5L35 42L39.5 50.5L44 46V58Z' fill='url(#g)'/>
+    <rect x='26' y='59' width='18' height='2.6' rx='.6' fill='url(#g)'/>
+    <circle cx='35' cy='42' r='1.3' fill='#fff6d0'/>
+    <path d='M35 15l1.2 3.4h3.6l-2.9 2.1 1.1 3.4-3-2.1-3 2.1 1.1-3.4-2.9-2.1h3.6z' fill='url(#g)'/>
+    <text x='35' y='88' text-anchor='middle' font-size='${word.length > 8 ? 5.6 : 6.2}' letter-spacing='1.2' fill='url(#g)' font-family='Georgia' font-weight='700'>${word}</text>`);
+}
+const DECKS = {modern: null, classic: classicBack, victorian: victorianBack, deco: decoBack,
+               riviera: rivieraBack, champion: () => championBack("CHAMPION")};
+// Film grain for the cloth and leather mats.
+document.documentElement.style.setProperty("--noise", `url("data:image/svg+xml,${encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .22 0'/></filter><rect width='100%' height='100%' filter='url(#n)'/></svg>")}")`);
+function applyDeck(name){
+  if(!(name in DECKS)) name = "modern";
+  const root = document.documentElement, draw = DECKS[name];
+  root.dataset.deck = name;
+  root.classList.toggle("deck-img", !!draw);
+  if(draw) root.style.setProperty("--back-img", draw());
+  $("deck").value = name;
+  try { localStorage.setItem("table-deck", name); } catch(e) {}
+}
+let DECK = "modern";
+try { DECK = localStorage.getItem("table-deck") || "modern"; } catch(e) {}
+applyDeck(DECK);
+$("deck").onchange = e => { DECK = e.target.value; applyDeck(DECK); };
+
+applySpeed();
+boot();
+</script>
+</body>
+</html>

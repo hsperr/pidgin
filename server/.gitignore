@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.DS_Store
+.ruff_cache/
+
+# Model weights: copies of bridge_new/runs/, 64 MB, restored by sync_models.sh
+# or by hand. The manifests below them are tracked, because reordering
+# models/play_models.json is how a deploy is rolled back.
+models/*.pt
+models/*.npz
+data/
+dist/

@@ -1,0 +1,13 @@
+{
+  "name": "Bridge table",
+  "short_name": "Bridge",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f5f1",
+  "theme_color": "#ffffff",
+  "icons": [
+    {"src": "/table-icon.svg", "sizes": "any", "type": "image/svg+xml"},
+    {"src": "/table-icon-180.png", "sizes": "180x180", "type": "image/png"}
+  ]
+}

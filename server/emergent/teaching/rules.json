@@ -1,0 +1,4479 @@
+{
+ "about": "Teaching rules distilled from bridge bidding net D (D_cw_s75k, stage D5OWN4XC). situations.advise(calls, dealer, seat, hand, rules) applies them.",
+ "schema": {
+  "rules": "ordered list; the FIRST rule whose `situation` matches owns the decision",
+  "rules[].situation": "conditions on the features below (all must hold)",
+  "rules[].branches": "ordered; the first branch whose `when` holds and whose action is possible gives the call",
+  "condition": "feature: [lo, hi] inclusive numeric range (null = open) | string or bool equality | list of strings (membership); special keys: 'any': [conditions, ...] (one must hold), 'not': conditions",
+  "do.type": {
+   "pass": "pass",
+   "double": "double",
+   "redouble": "redouble",
+   "support": "raise / support partner's suit",
+   "rebid": "rebid own suit",
+   "new_suit": "new suit",
+   "nt": "notrump",
+   "their_suit": "bid their suit (natural)"
+  },
+  "do.level": "min = cheapest legal bid in that strain; jump = one level higher; game = 3NT/4M/5m (or cheapest if above); slam = 6-level; an integer = that exact level. Strain: support = the partner suit I hold most of; rebid = my longest bid suit; new_suit = see situations._pick_new_suit; their_suit = their last suit",
+  "stats": "measured on held-out self-play: situation_share / coverage = share of all post-opening decisions; agree_call = exact call agreement with D; agree_type = same action type; branch d_does = D's action labels in that branch; hcp_when_agree = 10th-90th pct HCP where rule and D agree",
+  "sayc": "rules[].sayc / branches[].sayc / core_ideas / habits / sayc_differences: how Standard American Yellow Card treats the same spot, and where D differs (teaching text only; a branch without `sayc` has no note)",
+  "call_meanings": "what a call showed: HCP of D's hands making it (lo = 10th pct, mid = median, hi = 90th pct), keyed 'situation|action' as returned by situations.call_keys()"
+ },
+ "features": {
+  "sit": "coarse situation id, see SITUATIONS",
+  "we_opened": "our side made the first bid",
+  "rho": "right-hand opponent's last call: pass / bid / double / redouble / none",
+  "contested": "the other side has made a non-pass call",
+  "opp_bids": "number of bids (not passes or doubles) by the opponents",
+  "level": "level of the current contract (0 = none)",
+  "owner": "who holds the current contract: us / them",
+  "doubled": "current contract is doubled (1) or redoubled (2)",
+  "game_reached": "current contract is at game level or higher (3NT, 4H/4S, 5C/5D)",
+  "fit": "partner and I have both bid the same suit",
+  "partner_suit": "partner has bid a suit",
+  "partner_nt": "partner has bid notrump",
+  "partner_doubled": "partner has doubled",
+  "partner_bids": "number of partner's non-pass calls",
+  "my_bids": "number of my non-pass calls",
+  "my_suit": "I have bid a suit",
+  "partner_last": "action label of partner's last informative call (e.g. support_min, nt_min, pass)",
+  "partner_key": "meaning key 'situation|action' of partner's last informative call",
+  "partner_last_type": "type of partner's last informative call: support / new_suit / rebid / nt / pass / double / their_suit",
+  "partner_last_level": "level kind of partner's last call: min / jump / game / slam / ''",
+  "partner_raised_me": "partner's last suit bid was in a suit I bid first or also bid",
+  "partner_lo": "HCP partner has shown: 10th percentile of D's hands for that call",
+  "partner_mid": "HCP partner has shown: median",
+  "partner_hi": "HCP partner has shown: 90th percentile",
+  "my_shown": "median HCP D holds for my own last informative call (what partner thinks I have)",
+  "hcp": "high card points (A4 K3 Q2 J1)",
+  "balanced": "4333, 4432 or 5332",
+  "longest": "length of my longest suit",
+  "shortest": "length of my shortest suit",
+  "support": "my length in partner's suit (the partner suit I hold most of)",
+  "own_len": "length of my longest suit that I have already bid",
+  "new_len": "length of the new suit I would bid (see _pick_new_suit)",
+  "new_level": "level at which that new suit would be bid (0 = none possible)",
+  "suit_margin": "suit test: HCP + 3 x new_len - (18 + 3 x new_level); >= 0 passes",
+  "their_len": "my length in the opponents' last bid suit (-1 = they bid no suit)",
+  "their_hcp": "my HCP in the opponents' last bid suit",
+  "their_stopper": "A, Kx, Qxx or Jxxx in the opponents' last bid suit",
+  "fit_cards": "most cards partner and I hold together in one of partner's suits (partner counted 4 per suit, +1 per rebid, 3 for raising mine)",
+  "total": "hcp + partner_mid",
+  "extra": "hcp - my_shown (points beyond what I have already shown)"
+ },
+ "situations": {
+  "R_1suit": "Partner opened one of a suit; my first turn",
+  "R_1NT": "Partner opened 1NT (strong, any shape); my first turn",
+  "O_rebid": "I opened, partner has bid; my second turn",
+  "O_alone": "I opened, partner only passed, opponents compete; my second turn",
+  "R_rebid": "Partner opened, I have had one turn; my second turn",
+  "WE_later": "We opened; my third turn or later",
+  "D_direct": "Right-hand opponent opened; my first turn",
+  "D_lho": "Left-hand opponent opened, partner passed; my first turn",
+  "D_advance": "They opened, partner has bid or doubled, I have not bid yet",
+  "D_silent": "They opened, neither partner nor I have bid, my second turn or later",
+  "D_later": "They opened, I have already bid or doubled"
+ },
+ "overall": {
+  "decisions": 916572,
+  "auctions": 99987,
+  "source": "/private/tmp/claude-501/-Users-hsperr-code-bridge-public/e0ecacda-5693-45c8-a8b9-4a7c207fcd13/scratchpad/teach/holdout.pkl",
+  "coverage": 1.0,
+  "agree_call": 0.7402,
+  "groups": {
+   "first round after the opening": {
+    "share": 0.493,
+    "agree_call": 0.729
+   },
+   "game reached": {
+    "share": 0.268,
+    "agree_call": 0.867
+   },
+   "later rounds below game": {
+    "share": 0.239,
+    "agree_call": 0.621
+   }
+  },
+  "d_sure_share": 0.933,
+  "agree_call_when_d_sure": 0.765,
+  "disagreements_that_are_d_second_choice": 0.479
+ },
+ "rules": [
+  {
+   "id": "G1",
+   "title": "We are already in game: stop, or bid a slam",
+   "when": "Our side holds the contract and it is already a game (3NT, 4 of a major, 5 of a minor) or higher.",
+   "think": "The job is done: game is where most of D's points come from, and D almost never looks for slam with careful asking bids. Pass unless one of two things is true: partner has just shown slam interest at the 5-level, or 3NT is the wrong game because you hold a long suit and a singleton.",
+   "notes": "Slam bidding is D's weakest spot for rules: at the 4-level D sometimes jumps straight to slam with 30+ combined, with no asking bid first. No rule here catches that.",
+   "situation": {
+    "owner": "us",
+    "game_reached": true
+   },
+   "sayc": "Slams in SAYC are bid with asking bids: Blackwood 4NT asks for aces (5NT for kings), Gerber 4C over a notrump opening. D has no asking bids and jumps to slam on combined strength.",
+   "branches": [
+    {
+     "when": {
+      "level": [
+       5,
+       5
+      ],
+      "partner_last_type": "nt",
+      "own_len": [
+       6,
+       null
+      ]
+     },
+     "do": {
+      "type": "rebid",
+      "level": "slam"
+     },
+     "say": "Partner bid notrump at the 4- or 5-level: that asks you to choose a slam. With a 6-card suit bid 6 of it",
+     "sayc": "4NT is Blackwood in SAYC (it asks how many aces you hold, answered by steps), or a natural slam invitation after notrump. D differs.",
+     "stats": {
+      "share": 0.0004,
+      "agree_call": 0.575,
+      "d_does": {
+       "rebid_slam": 0.61,
+       "nt_slam": 0.15,
+       "new_suit_slam": 0.08,
+       "support_slam": 0.08
+      },
+      "hcp_when_agree": [
+       8,
+       18
+      ]
+     }
+    },
+    {
+     "when": {
+      "level": [
+       5,
+       5
+      ],
+      "partner_last_type": "nt"
+     },
+     "do": {
+      "type": "nt",
+      "level": "slam"
+     },
+     "say": "... otherwise bid 6NT",
+     "stats": {
+      "share": 0.0008,
+      "agree_call": 0.463,
+      "d_does": {
+       "nt_slam": 0.48,
+       "new_suit_slam": 0.26,
+       "support_slam": 0.16,
+       "rebid_slam": 0.1
+      },
+      "hcp_when_agree": [
+       11,
+       22
+      ]
+     }
+    },
+    {
+     "when": {
+      "level": [
+       5,
+       5
+      ],
+      "total": [
+       29,
+       null
+      ],
+      "fit_cards": [
+       8,
+       null
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "slam"
+     },
+     "say": "At the 5-level with a fit and 29+ points together: bid the slam",
+     "sayc": "SAYC wants about 33 points together for a small slam and checks aces with Blackwood first. D bids slam lighter.",
+     "stats": {
+      "share": 0.0016,
+      "agree_call": 0.573,
+      "d_does": {
+       "support_slam": 0.62,
+       "pass": 0.27,
+       "nt_game": 0.04,
+       "support_game": 0.03
+      },
+      "hcp_when_agree": [
+       16,
+       22
+      ]
+     }
+    },
+    {
+     "when": {
+      "level": [
+       5,
+       5
+      ],
+      "total": [
+       26,
+       null
+      ],
+      "fit_cards": [
+       8,
+       null
+      ],
+      "partner_last_type": [
+       "new_suit",
+       "rebid"
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "slam"
+     },
+     "say": "Partner keeps bidding new suits at the 5-level and you have 26+ together: slam",
+     "stats": {
+      "share": 0.0002,
+      "agree_call": 0.573,
+      "d_does": {
+       "support_slam": 0.58,
+       "pass": 0.32,
+       "redouble": 0.02,
+       "support_game": 0.02
+      },
+      "hcp_when_agree": [
+       12,
+       17
+      ]
+     }
+    },
+    {
+     "when": {
+      "level": [
+       3,
+       3
+      ],
+      "fit_cards": [
+       8,
+       null
+      ],
+      "balanced": false,
+      "hcp": [
+       null,
+       13
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "game"
+     },
+     "say": "We are in 3NT but you have an 8-card fit and a short suit: move to 4 of the major (5 of a minor)",
+     "sayc": "Similar in SAYC for a major fit; moving from 3NT to 5 of a minor is rare in SAYC.",
+     "stats": {
+      "share": 0.0018,
+      "agree_call": 0.542,
+      "d_does": {
+       "support_game": 0.55,
+       "pass": 0.21,
+       "support_min": 0.13,
+       "new_suit_game": 0.05
+      },
+      "hcp_when_agree": [
+       6,
+       13
+      ]
+     }
+    },
+    {
+     "when": {
+      "level": [
+       3,
+       3
+      ],
+      "own_len": [
+       6,
+       null
+      ],
+      "shortest": [
+       null,
+       1
+      ]
+     },
+     "do": {
+      "type": "rebid",
+      "level": "game"
+     },
+     "say": "We are in 3NT but you have a 6-card suit and a singleton or void: play in your suit",
+     "stats": {
+      "share": 0.0039,
+      "agree_call": 0.446,
+      "d_does": {
+       "rebid_game": 0.45,
+       "pass": 0.31,
+       "rebid_min": 0.08,
+       "new_suit_game": 0.05
+      },
+      "hcp_when_agree": [
+       6,
+       17
+      ]
+     }
+    },
+    {
+     "when": {},
+     "do": {
+      "type": "pass"
+     },
+     "say": "Otherwise pass: game is reached",
+     "sayc": "Same in SAYC.",
+     "stats": {
+      "share": 0.0889,
+      "agree_call": 0.843,
+      "d_does": {
+       "pass": 0.84,
+       "support_slam": 0.04,
+       "rebid_game": 0.03,
+       "support_game": 0.03
+      },
+      "hcp_when_agree": [
+       6,
+       17
+      ]
+     }
+    }
+   ],
+   "stats": {
+    "situation_share": 0.0976,
+    "coverage": 0.0976,
+    "agree_call": 0.813,
+    "agree_type": 0.821,
+    "d_sure_share": 0.964,
+    "agree_when_d_sure": 0.833,
+    "rule_is_d_second_choice": 0.304
+   }
+  },
+  {
+   "id": "G2",
+   "title": "They are in game: pass, double, or bid on",
+   "when": "The opponents hold the contract at game level or higher.",
+   "think": "Defend. D bids on over their game only with a huge fit, and doubles only when they have climbed above our own game (a sacrifice) and our side has the points.",
+   "notes": "With 24-27 together against their 4-level game D is split three ways (pass ~40%, bid 5 ~27%, double ~26%): that is judgment, not a rule.",
+   "situation": {
+    "owner": "them",
+    "game_reached": true
+   },
+   "sayc": "Same in SAYC: defend against their game; bidding on (a sacrifice) or doubling is judgment, and vulnerability matters a lot.",
+   "branches": [
+    {
+     "when": {
+      "level": [
+       5,
+       null
+      ],
+      "total": [
+       24,
+       null
+      ],
+      "doubled": 0
+     },
+     "do": {
+      "type": "double"
+     },
+     "say": "They bid 5 or more over our game and we hold 24+ together: double",
+     "stats": {
+      "share": 0.0025,
+      "agree_call": 0.54,
+      "d_does": {
+       "double": 0.54,
+       "pass": 0.34,
+       "support_game": 0.04,
+       "support_slam": 0.04
+      },
+      "hcp_when_agree": [
+       11,
+       18
+      ]
+     }
+    },
+    {
+     "when": {
+      "fit_cards": [
+       10,
+       null
+      ],
+      "level": [
+       null,
+       4
+      ],
+      "doubled": 0
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "A 10-card fit: bid one more (5 over their 4)",
+     "stats": {
+      "share": 0.0023,
+      "agree_call": 0.543,
+      "d_does": {
+       "support_game": 0.54,
+       "pass": 0.4,
+       "double": 0.04,
+       "support_slam": 0.01
+      },
+      "hcp_when_agree": [
+       5,
+       14
+      ]
+     }
+    },
+    {
+     "when": {},
+     "do": {
+      "type": "pass"
+     },
+     "say": "Otherwise pass",
+     "sayc": "Same in SAYC.",
+     "stats": {
+      "share": 0.166,
+      "agree_call": 0.909,
+      "d_does": {
+       "pass": 0.91,
+       "support_game": 0.05,
+       "double": 0.03,
+       "rebid_game": 0.01
+      },
+      "hcp_when_agree": [
+       3,
+       12
+      ]
+     }
+    }
+   ],
+   "stats": {
+    "situation_share": 0.1708,
+    "coverage": 0.1708,
+    "agree_call": 0.898,
+    "agree_type": 0.899,
+    "d_sure_share": 0.968,
+    "agree_when_d_sure": 0.913,
+    "rule_is_d_second_choice": 0.649
+   }
+  },
+  {
+   "id": "R1",
+   "title": "Answering partner's one-of-a-suit opening",
+   "when": "Partner opened 1C/1D/1H/1S and this is your first turn (the opponent on your right may have bid).",
+   "think": "Partner has 8-16 HCP (usually about 12) and 4+ cards in the suit, 5+ two times out of three. Your first question: do I have a strong hand (13+)? Then say so with notrump. Otherwise: do we have a fit (3+ cards, better 4+)? Raise. No fit: show your own suit, cheaply. D prefers showing a 4-card suit at the 1-level to raising with only 3 cards.",
+   "notes": "Game raises (1H-4H) are rare: with 4+ support and 13+ D bids 1NT first; after an overcall it splits between the jump raise, game and 2NT. At exactly 12 HCP D is about half 1NT, half a suit bid.",
+   "situation": {
+    "sit": "R_1suit"
+   },
+   "sayc": "In SAYC: responder with 6-10 raises a major with 3+ cards, bids a 4-card suit at the 1-level, or bids 1NT (6-10, no fit, not forcing); 10-12 with support makes a limit raise (1H-3H); 13+ bids a new suit (forcing) and heads for game. After an overcall, double is negative (takeout). D differs most on 1NT (13+ any shape, forcing) and on the double.",
+   "branches": [
+    {
+     "when": {
+      "hcp": [
+       13,
+       null
+      ],
+      "level": [
+       null,
+       1
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": "min"
+     },
+     "say": "13+ HCP: bid 1NT = 'I have a strong hand, any shape'. Your suits come later",
+     "sayc": "1NT is 6-10, no fit, not forcing in SAYC. With 13+ you bid a new suit (forcing) and make sure of game later. D differs.",
+     "stats": {
+      "share": 0.0187,
+      "agree_call": 0.825,
+      "d_does": {
+       "nt_min": 0.83,
+       "support_jump": 0.05,
+       "support_game": 0.04,
+       "new_suit_min": 0.04
+      },
+      "hcp_when_agree": [
+       13,
+       18
+      ]
+     }
+    },
+    {
+     "when": {
+      "support": [
+       4,
+       null
+      ],
+      "hcp": [
+       11,
+       null
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "jump"
+     },
+     "say": "4+ card support and 11-12 HCP: jump raise (1H-3H)",
+     "sayc": "Same in SAYC without competition: a jump raise is a limit raise, 10-12 with support.",
+     "stats": {
+      "share": 0.0048,
+      "agree_call": 0.399,
+      "d_does": {
+       "support_jump": 0.39,
+       "support_game": 0.26,
+       "support_min": 0.22,
+       "nt_min": 0.06
+      },
+      "hcp_when_agree": [
+       11,
+       13
+      ]
+     }
+    },
+    {
+     "when": {
+      "support": [
+       null,
+       3
+      ],
+      "new_level": [
+       1,
+       1
+      ],
+      "new_len": [
+       4,
+       null
+      ],
+      "hcp": [
+       6,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "6+ HCP and a 4-card suit you can bid at the 1-level: bid it (even with 3-card support)",
+     "sayc": "Same in SAYC without a fit. With 3+ cards for partner's major and 6-10, SAYC raises instead.",
+     "stats": {
+      "share": 0.0127,
+      "agree_call": 0.758,
+      "d_does": {
+       "new_suit_min": 0.8,
+       "pass": 0.07,
+       "nt_min": 0.05,
+       "support_min": 0.05
+      },
+      "hcp_when_agree": [
+       6,
+       12
+      ]
+     }
+    },
+    {
+     "when": {
+      "support": [
+       null,
+       3
+      ],
+      "new_level": [
+       1,
+       1
+      ],
+      "new_len": [
+       5,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "A 5-card suit you can bid at the 1-level: bid it, even with very few points",
+     "sayc": "A new suit needs 6+ HCP in SAYC; with less you pass. D differs.",
+     "stats": {
+      "share": 0.0014,
+      "agree_call": 0.917,
+      "d_does": {
+       "new_suit_min": 0.94,
+       "pass": 0.05,
+       "new_suit_jump": 0.01
+      },
+      "hcp_when_agree": [
+       2,
+       5
+      ]
+     }
+    },
+    {
+     "when": {
+      "support": [
+       4,
+       null
+      ],
+      "any": [
+       {
+        "hcp": [
+         6,
+         null
+        ]
+       },
+       {
+        "rho": "bid"
+       }
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "4+ card support: simple raise (6-10 HCP; if they overcalled, raise with any strength)",
+     "sayc": "Same in SAYC for 6-10. After an overcall SAYC raises a little lighter too, but not with nothing.",
+     "stats": {
+      "share": 0.0143,
+      "agree_call": 0.735,
+      "d_does": {
+       "support_min": 0.73,
+       "support_jump": 0.12,
+       "pass": 0.06,
+       "support_game": 0.04
+      },
+      "hcp_when_agree": [
+       4,
+       10
+      ]
+     }
+    },
+    {
+     "when": {
+      "support": [
+       3,
+       null
+      ],
+      "hcp": [
+       8,
+       null
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "3-card support and 8-12 HCP: simple raise",
+     "sayc": "3 cards are enough to raise a major in SAYC (6-10); with 10-12 you make a limit raise instead. A minor is usually raised with 4-5 cards.",
+     "stats": {
+      "share": 0.0113,
+      "agree_call": 0.582,
+      "d_does": {
+       "support_min": 0.58,
+       "pass": 0.13,
+       "support_jump": 0.08,
+       "nt_min": 0.06
+      },
+      "hcp_when_agree": [
+       8,
+       12
+      ]
+     }
+    },
+    {
+     "when": {
+      "support": [
+       3,
+       null
+      ],
+      "hcp": [
+       7,
+       null
+      ],
+      "rho": "bid"
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "They overcalled: raise with 3-card support from 7 HCP",
+     "stats": {
+      "share": 0.0017,
+      "agree_call": 0.478,
+      "d_does": {
+       "support_min": 0.48,
+       "pass": 0.41,
+       "new_suit_min": 0.1,
+       "new_suit_jump": 0.01
+      },
+      "hcp_when_agree": [
+       7,
+       7
+      ]
+     }
+    },
+    {
+     "when": {
+      "level": [
+       2,
+       null
+      ],
+      "hcp": [
+       11,
+       null
+      ],
+      "new_len": [
+       null,
+       5
+      ]
+     },
+     "do": {
+      "type": "double"
+     },
+     "say": "They overcalled at the 2-level, you have 11+ but no fit and no long suit: double ('we have the points')",
+     "sayc": "In SAYC this double is negative: takeout, showing the unbid suit(s). D's double says 'we have the points'.",
+     "stats": {
+      "share": 0.0019,
+      "agree_call": 0.573,
+      "d_does": {
+       "double": 0.57,
+       "pass": 0.15,
+       "new_suit_min": 0.12,
+       "new_suit_jump": 0.05
+      },
+      "hcp_when_agree": [
+       11,
+       16
+      ]
+     }
+    },
+    {
+     "when": {
+      "hcp": [
+       12,
+       null
+      ],
+      "level": [
+       null,
+       1
+      ],
+      "support": [
+       null,
+       2
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": "min"
+     },
+     "say": "12 HCP and no fit: also 1NT",
+     "sayc": "1NT is 6-10 in SAYC; with 12 you bid a new suit. D differs.",
+     "stats": {
+      "share": 0.0017,
+      "agree_call": 0.553,
+      "d_does": {
+       "nt_min": 0.55,
+       "new_suit_jump": 0.14,
+       "new_suit_min": 0.12,
+       "pass": 0.11
+      },
+      "hcp_when_agree": [
+       12,
+       12
+      ]
+     }
+    },
+    {
+     "when": {
+      "support": [
+       null,
+       2
+      ],
+      "suit_margin": [
+       0,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "No fit: bid your own suit if it passes the suit test (HCP + 3 x length >= 18 + 3 x level)",
+     "sayc": "SAYC has no suit test: a new suit at the 1-level needs 6+ HCP, at the 2-level 10+ (5 cards for 2H over 1S), and it is forcing.",
+     "stats": {
+      "share": 0.0084,
+      "agree_call": 0.64,
+      "d_does": {
+       "new_suit_min": 0.66,
+       "pass": 0.13,
+       "new_suit_jump": 0.11,
+       "nt_min": 0.06
+      },
+      "hcp_when_agree": [
+       6,
+       11
+      ]
+     }
+    },
+    {
+     "when": {
+      "support": [
+       null,
+       1
+      ],
+      "rho": "pass",
+      "new_len": [
+       4,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "Singleton or void in partner's suit: bid your suit anyway, even with a weak hand",
+     "sayc": "In SAYC a hand with under 6 HCP passes, whatever its shape (with a long suit it may bid later).",
+     "stats": {
+      "share": 0.0009,
+      "agree_call": 0.634,
+      "d_does": {
+       "new_suit_min": 0.78,
+       "pass": 0.13,
+       "nt_min": 0.05,
+       "nt_game": 0.04
+      },
+      "hcp_when_agree": [
+       4,
+       8
+      ]
+     }
+    },
+    {
+     "when": {},
+     "do": {
+      "type": "pass"
+     },
+     "say": "Weak and nothing to show: pass",
+     "sayc": "Same in SAYC (0-5 HCP pass).",
+     "stats": {
+      "share": 0.0194,
+      "agree_call": 0.717,
+      "d_does": {
+       "pass": 0.72,
+       "new_suit_min": 0.18,
+       "support_min": 0.07,
+       "nt_min": 0.02
+      },
+      "hcp_when_agree": [
+       3,
+       9
+      ]
+     }
+    }
+   ],
+   "stats": {
+    "situation_share": 0.0973,
+    "coverage": 0.0973,
+    "agree_call": 0.7,
+    "agree_type": 0.785,
+    "d_sure_share": 0.905,
+    "agree_when_d_sure": 0.73,
+    "rule_is_d_second_choice": 0.568
+   }
+  },
+  {
+   "id": "R2",
+   "title": "Answering partner's 1NT opening (strong, any shape)",
+   "when": "Partner opened 1NT and this is your first turn.",
+   "think": "1NT is D's strong opening: 16-22 HCP (usually 18) with any shape, and it is forcing. Never pass it. Your job is to describe: your longest suit, and roughly how many points.",
+   "notes": "With a 4-card suit and 8-9 HCP D mostly still bids the suit (2-level), sometimes 2NT.",
+   "situation": {
+    "sit": "R_1NT"
+   },
+   "sayc": "In SAYC: 1NT is 15-17 and balanced, and responder may pass with 0-7. 2C is Stayman, 2D/2H are Jacoby transfers, 2NT invites (8-9), 3NT is 10-15. D differs: its 1NT is 16-22 any shape and forcing, and every answer is natural.",
+   "branches": [
+    {
+     "when": {
+      "rho": "pass",
+      "longest": [
+       null,
+       4
+      ],
+      "hcp": [
+       15,
+       null
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": 4
+     },
+     "say": "No 5-card suit and 15+: 4NT (slam is close)",
+     "sayc": "Over a 15-17 1NT, SAYC's 4NT is a natural slam invitation with about 16-17; 3NT covers 10-15.",
+     "stats": {
+      "share": 0.0001,
+      "agree_call": 0.778,
+      "d_does": {
+       "nt_game": 0.84,
+       "new_suit_jump": 0.13,
+       "new_suit_game": 0.02,
+       "nt_slam": 0.02
+      },
+      "hcp_when_agree": [
+       15,
+       18
+      ]
+     }
+    },
+    {
+     "when": {
+      "rho": "pass",
+      "longest": [
+       null,
+       4
+      ],
+      "hcp": [
+       13,
+       null
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": 3
+     },
+     "say": "No 5-card suit and 13-14: 3NT",
+     "sayc": "Same call in SAYC (3NT = 10-15), usually after Stayman when you hold a 4-card major.",
+     "stats": {
+      "share": 0.0001,
+      "agree_call": 0.397,
+      "d_does": {
+       "nt_game": 0.48,
+       "new_suit_jump": 0.35,
+       "nt_min": 0.14,
+       "new_suit_game": 0.03
+      },
+      "hcp_when_agree": [
+       13,
+       14
+      ]
+     }
+    },
+    {
+     "when": {
+      "rho": "pass",
+      "longest": [
+       null,
+       4
+      ],
+      "hcp": [
+       10,
+       null
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": "min"
+     },
+     "say": "No 5-card suit and 10-12: 2NT",
+     "sayc": "In SAYC 2NT invites with 8-9; with 10-12 you bid game. D differs (its 1NT is stronger and wider).",
+     "stats": {
+      "share": 0.0005,
+      "agree_call": 0.479,
+      "d_does": {
+       "nt_min": 0.48,
+       "new_suit_min": 0.32,
+       "new_suit_jump": 0.14,
+       "nt_game": 0.06
+      },
+      "hcp_when_agree": [
+       10,
+       12
+      ]
+     }
+    },
+    {
+     "when": {
+      "rho": "pass",
+      "longest": [
+       5,
+       5
+      ],
+      "hcp": [
+       10,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "jump"
+     },
+     "say": "A 5-card suit and 10+: jump in it (1NT-3H)",
+     "sayc": "In SAYC you would start with a Jacoby transfer (majors) and then bid game or 3NT. D bids naturally.",
+     "stats": {
+      "share": 0.001,
+      "agree_call": 0.462,
+      "d_does": {
+       "new_suit_jump": 0.53,
+       "new_suit_min": 0.27,
+       "nt_game": 0.07,
+       "new_suit_game": 0.06
+      },
+      "hcp_when_agree": [
+       10,
+       14
+      ]
+     }
+    },
+    {
+     "when": {
+      "rho": "pass",
+      "longest": [
+       6,
+       null
+      ],
+      "hcp": [
+       8,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "jump"
+     },
+     "say": "A 6+ card suit and 8+: jump in it",
+     "sayc": "In SAYC you transfer to a major and bid game; with a long minor 3NT is common.",
+     "stats": {
+      "share": 0.0008,
+      "agree_call": 0.534,
+      "d_does": {
+       "new_suit_jump": 0.55,
+       "new_suit_min": 0.33,
+       "new_suit_game": 0.1,
+       "nt_game": 0.01
+      },
+      "hcp_when_agree": [
+       9,
+       14
+      ]
+     }
+    },
+    {
+     "when": {
+      "rho": "pass"
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "Anything weaker (even 0 HCP): bid your longest suit at the 2-level. 2C/2D/2H/2S are natural",
+     "sayc": "In SAYC 2C is Stayman and 2D/2H are Jacoby transfers; a weak hand with a 5-card major transfers and passes, and a weak balanced hand passes 1NT. D may not pass.",
+     "stats": {
+      "share": 0.0059,
+      "agree_call": 0.811,
+      "d_does": {
+       "new_suit_min": 0.96,
+       "nt_min": 0.02,
+       "new_suit_jump": 0.01
+      },
+      "hcp_when_agree": [
+       3,
+       8
+      ]
+     }
+    },
+    {
+     "when": {
+      "hcp": [
+       8,
+       null
+      ],
+      "new_len": [
+       null,
+       4
+      ]
+     },
+     "do": {
+      "type": "double"
+     },
+     "say": "They bid over 1NT and you have 8+ without a long suit: double",
+     "sayc": "Similar in basic SAYC: after they overcall partner's 1NT, double is for penalty.",
+     "stats": {
+      "share": 0.0004,
+      "agree_call": 0.718,
+      "d_does": {
+       "double": 0.72,
+       "new_suit_min": 0.09,
+       "nt_game": 0.08,
+       "pass": 0.06
+      },
+      "hcp_when_agree": [
+       8,
+       12
+      ]
+     }
+    },
+    {
+     "when": {
+      "suit_margin": [
+       -3,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "They bid over 1NT: show a decent suit",
+     "stats": {
+      "share": 0.0011,
+      "agree_call": 0.585,
+      "d_does": {
+       "new_suit_min": 0.62,
+       "new_suit_jump": 0.13,
+       "double": 0.09,
+       "new_suit_game": 0.08
+      },
+      "hcp_when_agree": [
+       4,
+       11
+      ]
+     }
+    },
+    {
+     "when": {},
+     "do": {
+      "type": "pass"
+     },
+     "say": "They bid and you have nothing to add: pass",
+     "stats": {
+      "share": 0.0014,
+      "agree_call": 0.579,
+      "d_does": {
+       "pass": 0.58,
+       "new_suit_min": 0.36,
+       "double": 0.06,
+       "their_suit_min": 0.0
+      },
+      "hcp_when_agree": [
+       2,
+       7
+      ]
+     }
+    }
+   ],
+   "stats": {
+    "situation_share": 0.0113,
+    "coverage": 0.0113,
+    "agree_call": 0.687,
+    "agree_type": 0.869,
+    "d_sure_share": 0.898,
+    "agree_when_d_sure": 0.716,
+    "rule_is_d_second_choice": 0.568
+   }
+  },
+  {
+   "id": "O1",
+   "title": "Opener: partner raised my suit",
+   "when": "You opened one of a suit and partner raised it.",
+   "think": "A simple raise shows about 4-11 HCP (usually 8) and 3+ cards, often 4. A jump raise shows about 12. The fit is found; the only question is the level. Add your HCP to partner's and look at your trump length: extra trumps are extra tricks.",
+   "notes": "After a simple raise D rarely jumps straight to game; it bids once more and lets partner decide (about 15-25% of these hands go to game directly).",
+   "situation": {
+    "sit": "O_rebid",
+    "partner_raised_me": true
+   },
+   "sayc": "Same idea in SAYC: add your points to partner's. A single raise shows 6-10 (3+ for a major); pass with 12-15, invite with 16-18, bid game with 19+. A limit raise (10-12) is accepted with more than a minimum. D's openings and raises are lighter.",
+   "branches": [
+    {
+     "when": {
+      "partner_last_level": "jump",
+      "own_len": [
+       null,
+       4
+      ],
+      "hcp": [
+       11,
+       null
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": 3
+     },
+     "say": "After a jump raise, with only 4 trumps and 11+: 3NT",
+     "sayc": "A SAYC 1H/1S opening promises 5 cards, so you would bid 4 of the major; 3NT is a choice after a minor-suit raise.",
+     "stats": {
+      "share": 0.0015,
+      "agree_call": 0.475,
+      "d_does": {
+       "nt_game": 0.49,
+       "pass": 0.21,
+       "support_game": 0.13,
+       "new_suit_min": 0.11
+      },
+      "hcp_when_agree": [
+       11,
+       16
+      ]
+     }
+    },
+    {
+     "when": {
+      "partner_last_level": "jump",
+      "own_len": [
+       5,
+       null
+      ],
+      "hcp": [
+       10,
+       null
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "game"
+     },
+     "say": "After a jump raise, with 5+ trumps and 10+: bid game",
+     "sayc": "Same idea in SAYC, but openings start at about 12-13, so accept the limit raise with about 14+.",
+     "stats": {
+      "share": 0.002,
+      "agree_call": 0.553,
+      "d_does": {
+       "support_game": 0.55,
+       "pass": 0.18,
+       "support_min": 0.1,
+       "nt_game": 0.07
+      },
+      "hcp_when_agree": [
+       10,
+       15
+      ]
+     }
+    },
+    {
+     "when": {
+      "partner_last_level": "jump"
+     },
+     "do": {
+      "type": "pass"
+     },
+     "say": "After a jump raise with a minimum: pass",
+     "sayc": "Same in SAYC.",
+     "stats": {
+      "share": 0.0014,
+      "agree_call": 0.668,
+      "d_does": {
+       "pass": 0.67,
+       "support_game": 0.23,
+       "support_min": 0.04,
+       "double": 0.02
+      },
+      "hcp_when_agree": [
+       7,
+       10
+      ]
+     }
+    },
+    {
+     "when": {
+      "own_len": [
+       null,
+       4
+      ],
+      "hcp": [
+       15,
+       null
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": "min"
+     },
+     "say": "Only 4 trumps but 15+: bid notrump at the cheapest level (strong hand)",
+     "sayc": "In SAYC notrump here would be natural and balanced, not 'strong, any shape'. D differs.",
+     "stats": {
+      "share": 0.0022,
+      "agree_call": 0.437,
+      "d_does": {
+       "nt_min": 0.43,
+       "pass": 0.19,
+       "support_min": 0.16,
+       "new_suit_min": 0.09
+      },
+      "hcp_when_agree": [
+       15,
+       18
+      ]
+     }
+    },
+    {
+     "when": {
+      "own_len": [
+       6,
+       null
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "6+ trumps: bid your suit once more",
+     "sayc": "In SAYC 1H-2H-3H is an invitation (about 16-18 points); a minimum with 6 trumps usually passes.",
+     "stats": {
+      "share": 0.0028,
+      "agree_call": 0.664,
+      "d_does": {
+       "support_min": 0.61,
+       "support_game": 0.25,
+       "pass": 0.13,
+       "nt_min": 0.0
+      },
+      "hcp_when_agree": [
+       8,
+       15
+      ]
+     }
+    },
+    {
+     "when": {
+      "own_len": [
+       5,
+       null
+      ],
+      "hcp": [
+       12,
+       null
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "5 trumps and 12+: bid your suit once more (an invitation)",
+     "sayc": "Same idea in SAYC, but the invitation shows about 16-18 points.",
+     "stats": {
+      "share": 0.0047,
+      "agree_call": 0.594,
+      "d_does": {
+       "support_min": 0.57,
+       "pass": 0.18,
+       "support_game": 0.14,
+       "nt_min": 0.06
+      },
+      "hcp_when_agree": [
+       12,
+       16
+      ]
+     }
+    },
+    {
+     "when": {},
+     "do": {
+      "type": "pass"
+     },
+     "say": "Minimum: pass",
+     "sayc": "Same in SAYC (12-15 passes a single raise).",
+     "stats": {
+      "share": 0.0097,
+      "agree_call": 0.816,
+      "d_does": {
+       "pass": 0.82,
+       "support_min": 0.12,
+       "support_game": 0.02,
+       "new_suit_min": 0.02
+      },
+      "hcp_when_agree": [
+       8,
+       13
+      ]
+     }
+    }
+   ],
+   "stats": {
+    "situation_share": 0.0243,
+    "coverage": 0.0243,
+    "agree_call": 0.67,
+    "agree_type": 0.728,
+    "d_sure_share": 0.903,
+    "agree_when_d_sure": 0.697,
+    "rule_is_d_second_choice": 0.502
+   }
+  },
+  {
+   "id": "O2",
+   "title": "Opener: partner answered 1NT (strong, any shape)",
+   "when": "You opened one of a suit and partner answered 1NT (or 2NT over an overcall).",
+   "think": "Partner's notrump shows 12-18 HCP (usually 14), any shape: game is likely. It is forcing, so describe your hand. Your opening was light, so a minimum (8-12) is normal: show a second suit or rebid a long one. With 13+ say so with 2NT or a jump.",
+   "notes": "With 13-15 and a second 5-card suit D is split between a simple and a jump bid in the new suit (about 40/40). With 13-15 and no second suit D bids 2NT only about half the time; the rest are suit bids.",
+   "situation": {
+    "sit": "O_rebid",
+    "partner_last_type": "nt"
+   },
+   "sayc": "In SAYC: partner's 1NT answer is 6-10 and not forcing: pass with a balanced minimum, rebid a 6-card suit, or show a second suit; only extra strength (about 16+) invites game. D differs: its 1NT answer is 12-18 and forcing.",
+   "branches": [
+    {
+     "when": {
+      "rho": "bid",
+      "hcp": [
+       11,
+       null
+      ],
+      "own_len": [
+       null,
+       5
+      ]
+     },
+     "do": {
+      "type": "double"
+     },
+     "say": "They bid into our strength and you have 11+: double (they are outgunned)",
+     "stats": {
+      "share": 0.0019,
+      "agree_call": 0.486,
+      "d_does": {
+       "double": 0.49,
+       "new_suit_min": 0.22,
+       "pass": 0.09,
+       "nt_min": 0.08
+      },
+      "hcp_when_agree": [
+       11,
+       15
+      ]
+     }
+    },
+    {
+     "when": {
+      "rho": "bid",
+      "own_len": [
+       6,
+       null
+      ]
+     },
+     "do": {
+      "type": "rebid",
+      "level": "min"
+     },
+     "say": "They bid: rebid a 6-card suit",
+     "stats": {
+      "share": 0.0017,
+      "agree_call": 0.561,
+      "d_does": {
+       "rebid_min": 0.55,
+       "pass": 0.11,
+       "new_suit_min": 0.1,
+       "rebid_game": 0.07
+      },
+      "hcp_when_agree": [
+       6,
+       13
+      ]
+     }
+    },
+    {
+     "when": {
+      "rho": "bid",
+      "new_len": [
+       5,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "They bid: show a 5-card second suit",
+     "stats": {
+      "share": 0.0002,
+      "agree_call": 0.777,
+      "d_does": {
+       "new_suit_min": 0.78,
+       "pass": 0.12,
+       "rebid_min": 0.1,
+       "double": 0.0
+      },
+      "hcp_when_agree": [
+       7,
+       10
+      ]
+     }
+    },
+    {
+     "when": {
+      "rho": "bid"
+     },
+     "do": {
+      "type": "pass"
+     },
+     "say": "They bid and you are minimum: pass, partner will act",
+     "stats": {
+      "share": 0.0014,
+      "agree_call": 0.556,
+      "d_does": {
+       "pass": 0.56,
+       "new_suit_min": 0.21,
+       "double": 0.15,
+       "rebid_min": 0.07
+      },
+      "hcp_when_agree": [
+       8,
+       10
+      ]
+     }
+    },
+    {
+     "when": {
+      "own_len": [
+       6,
+       null
+      ],
+      "hcp": [
+       11,
+       null
+      ]
+     },
+     "do": {
+      "type": "rebid",
+      "level": "jump"
+     },
+     "say": "6-card suit and 11+: jump in it",
+     "sayc": "In SAYC a jump rebid (1H-1NT-3H) shows 16-18 and a good 6-card suit (invitational).",
+     "stats": {
+      "share": 0.0014,
+      "agree_call": 0.428,
+      "d_does": {
+       "rebid_jump": 0.43,
+       "rebid_min": 0.21,
+       "rebid_game": 0.12,
+       "new_suit_jump": 0.08
+      },
+      "hcp_when_agree": [
+       11,
+       15
+      ]
+     }
+    },
+    {
+     "when": {
+      "own_len": [
+       6,
+       null
+      ]
+     },
+     "do": {
+      "type": "rebid",
+      "level": "min"
+     },
+     "say": "6-card suit, minimum: rebid it",
+     "sayc": "Same in SAYC.",
+     "stats": {
+      "share": 0.0014,
+      "agree_call": 0.816,
+      "d_does": {
+       "rebid_min": 0.82,
+       "new_suit_min": 0.09,
+       "rebid_jump": 0.07,
+       "new_suit_jump": 0.01
+      },
+      "hcp_when_agree": [
+       7,
+       10
+      ]
+     }
+    },
+    {
+     "when": {
+      "hcp": [
+       16,
+       null
+      ],
+      "new_len": [
+       null,
+       4
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": 3
+     },
+     "say": "16+ without a 5-card side suit: 3NT",
+     "stats": {
+      "share": 0.0009,
+      "agree_call": 0.442,
+      "d_does": {
+       "nt_game": 0.54,
+       "new_suit_jump": 0.25,
+       "nt_min": 0.1,
+       "new_suit_game": 0.05
+      },
+      "hcp_when_agree": [
+       16,
+       19
+      ]
+     }
+    },
+    {
+     "when": {
+      "hcp": [
+       13,
+       null
+      ],
+      "new_len": [
+       5,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "jump"
+     },
+     "say": "13+ and a 5-card second suit: jump in it",
+     "stats": {
+      "share": 0.0006,
+      "agree_call": 0.474,
+      "d_does": {
+       "new_suit_min": 0.42,
+       "new_suit_jump": 0.39,
+       "new_suit_game": 0.1,
+       "nt_game": 0.04
+      },
+      "hcp_when_agree": [
+       13,
+       19
+      ]
+     }
+    },
+    {
+     "when": {
+      "hcp": [
+       13,
+       null
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": "min"
+     },
+     "say": "13-15: 2NT",
+     "sayc": "In SAYC 2NT here invites game with about 18-19 balanced; 13-15 passes 1NT or rebids naturally.",
+     "stats": {
+      "share": 0.0028,
+      "agree_call": 0.469,
+      "d_does": {
+       "nt_min": 0.47,
+       "new_suit_jump": 0.24,
+       "new_suit_min": 0.14,
+       "nt_game": 0.09
+      },
+      "hcp_when_agree": [
+       13,
+       15
+      ]
+     }
+    },
+    {
+     "when": {
+      "new_len": [
+       4,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "Minimum: show your second suit",
+     "sayc": "Same in SAYC, as long as the second suit is lower-ranking than your first (not a reverse).",
+     "stats": {
+      "share": 0.0046,
+      "agree_call": 0.809,
+      "d_does": {
+       "new_suit_min": 0.83,
+       "rebid_min": 0.08,
+       "new_suit_jump": 0.04,
+       "nt_min": 0.04
+      },
+      "hcp_when_agree": [
+       8,
+       12
+      ]
+     }
+    },
+    {
+     "when": {},
+     "do": {
+      "type": "rebid",
+      "level": "min"
+     },
+     "say": "Minimum with one suit: rebid it",
+     "sayc": "In SAYC a balanced minimum passes 1NT; rebidding the suit shows 6 cards.",
+     "stats": {
+      "share": 0.0024,
+      "agree_call": 0.533,
+      "d_does": {
+       "rebid_min": 0.53,
+       "new_suit_min": 0.23,
+       "nt_min": 0.16,
+       "their_suit_min": 0.04
+      },
+      "hcp_when_agree": [
+       8,
+       12
+      ]
+     }
+    }
+   ],
+   "stats": {
+    "situation_share": 0.0194,
+    "coverage": 0.0194,
+    "agree_call": 0.599,
+    "agree_type": 0.691,
+    "d_sure_share": 0.877,
+    "agree_when_d_sure": 0.629,
+    "rule_is_d_second_choice": 0.464
+   }
+  },
+  {
+   "id": "O3",
+   "title": "Opener: partner answered in a new suit",
+   "when": "You opened one of a suit and partner bid a new suit (or doubled).",
+   "think": "Partner has about 5-12 HCP and 4+ cards in the new suit (5+ if it was at the 2-level). A new suit is NOT forcing in D's style: with a minimum and nothing to add you may pass. First look for a fit with partner's suit, then show extra strength or a second suit.",
+   "notes": "With 17+ and a 4-card side suit D is split between the new suit (~40%) and notrump (~40%).",
+   "situation": {
+    "sit": "O_rebid",
+    "partner_raised_me": false
+   },
+   "sayc": "In SAYC: a new suit by responder is forcing for one round: opener must bid again even with a minimum (raise with 4-card support, 1NT with 12-14 balanced, a second suit, or rebid a 6-card suit). D differs: opener may pass.",
+   "branches": [
+    {
+     "when": {
+      "support": [
+       4,
+       null
+      ],
+      "any": [
+       {
+        "hcp": [
+         11,
+         null
+        ]
+       },
+       {
+        "rho": "bid"
+       }
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "4+ cards in partner's suit: raise it once",
+     "sayc": "Same in SAYC with a minimum (12-15); with 16-18 SAYC jump-raises.",
+     "stats": {
+      "share": 0.0046,
+      "agree_call": 0.533,
+      "d_does": {
+       "support_min": 0.5,
+       "support_game": 0.18,
+       "support_jump": 0.07,
+       "new_suit_min": 0.07
+      },
+      "hcp_when_agree": [
+       9,
+       20
+      ]
+     }
+    },
+    {
+     "when": {
+      "support": [
+       3,
+       null
+      ],
+      "hcp": [
+       11,
+       15
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "3-card support and 11-15: raise it once",
+     "sayc": "SAYC usually raises a 1-level major response only with 4 cards; with 3 it rebids 1NT or its own suit.",
+     "stats": {
+      "share": 0.0052,
+      "agree_call": 0.547,
+      "d_does": {
+       "support_min": 0.51,
+       "pass": 0.3,
+       "support_game": 0.05,
+       "nt_min": 0.05
+      },
+      "hcp_when_agree": [
+       11,
+       15
+      ]
+     }
+    },
+    {
+     "when": {
+      "rho": "pass",
+      "hcp": [
+       15,
+       16
+      ],
+      "new_len": [
+       null,
+       4
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": "min"
+     },
+     "say": "15-16, no fit: notrump at the cheapest level",
+     "sayc": "In SAYC a 1NT rebid is 12-14 balanced (15-17 balanced would have opened 1NT); 18-19 jumps to 2NT. D differs.",
+     "stats": {
+      "share": 0.0014,
+      "agree_call": 0.582,
+      "d_does": {
+       "nt_min": 0.53,
+       "pass": 0.15,
+       "new_suit_min": 0.11,
+       "nt_game": 0.06
+      },
+      "hcp_when_agree": [
+       15,
+       16
+      ]
+     }
+    },
+    {
+     "when": {
+      "rho": "pass",
+      "new_len": [
+       5,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "A 5-card second suit: bid it (any strength)",
+     "sayc": "Similar in SAYC, but a second suit higher than your first at the 2-level (a reverse) needs about 17+.",
+     "stats": {
+      "share": 0.0052,
+      "agree_call": 0.6,
+      "d_does": {
+       "new_suit_min": 0.66,
+       "new_suit_jump": 0.08,
+       "nt_min": 0.07,
+       "new_suit_game": 0.05
+      },
+      "hcp_when_agree": [
+       13,
+       20
+      ]
+     }
+    },
+    {
+     "when": {
+      "hcp": [
+       17,
+       null
+      ],
+      "new_len": [
+       4,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "17+ with a second suit: bid it",
+     "stats": {
+      "share": 0.0032,
+      "agree_call": 0.334,
+      "d_does": {
+       "new_suit_min": 0.37,
+       "nt_min": 0.29,
+       "nt_game": 0.1,
+       "pass": 0.06
+      },
+      "hcp_when_agree": [
+       17,
+       21
+      ]
+     }
+    },
+    {
+     "when": {
+      "rho": "pass",
+      "hcp": [
+       17,
+       null
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": "min"
+     },
+     "say": "17+ without a second suit: notrump",
+     "sayc": "In SAYC 18-19 balanced jumps to 2NT here.",
+     "stats": {
+      "share": 0.0005,
+      "agree_call": 0.762,
+      "d_does": {
+       "nt_min": 0.71,
+       "nt_game": 0.09,
+       "support_min": 0.08,
+       "pass": 0.07
+      },
+      "hcp_when_agree": [
+       17,
+       19
+      ]
+     }
+    },
+    {
+     "when": {
+      "own_len": [
+       6,
+       null
+      ],
+      "hcp": [
+       null,
+       14
+      ]
+     },
+     "do": {
+      "type": "rebid",
+      "level": "min"
+     },
+     "say": "6-card suit: rebid it",
+     "sayc": "Same in SAYC (12-15; a jump rebid shows 16-18).",
+     "stats": {
+      "share": 0.005,
+      "agree_call": 0.516,
+      "d_does": {
+       "rebid_min": 0.49,
+       "pass": 0.34,
+       "new_suit_min": 0.04,
+       "rebid_game": 0.04
+      },
+      "hcp_when_agree": [
+       7,
+       13
+      ]
+     }
+    },
+    {
+     "when": {},
+     "do": {
+      "type": "pass"
+     },
+     "say": "Minimum, no fit, nothing new: pass (partner's suit is a fine spot)",
+     "sayc": "Not in SAYC: a new-suit response is forcing, so opener rebids 1NT, the own suit, or a cheap second suit. D differs.",
+     "stats": {
+      "share": 0.0111,
+      "agree_call": 0.626,
+      "d_does": {
+       "pass": 0.63,
+       "new_suit_min": 0.12,
+       "nt_min": 0.07,
+       "support_min": 0.06
+      },
+      "hcp_when_agree": [
+       8,
+       14
+      ]
+     }
+    }
+   ],
+   "stats": {
+    "situation_share": 0.0362,
+    "coverage": 0.0362,
+    "agree_call": 0.558,
+    "agree_type": 0.637,
+    "d_sure_share": 0.903,
+    "agree_when_d_sure": 0.577,
+    "rule_is_d_second_choice": 0.411
+   }
+  },
+  {
+   "id": "O4",
+   "title": "Opener: partner passed and the opponents compete",
+   "when": "You opened, partner passed, and the opponents are bidding.",
+   "think": "Partner's pass says 0-9 HCP and no fit worth showing. Do not fight for the contract on your own unless your hand is long or strong.",
+   "notes": "With a 5-card suit and 12-17 D competes about one time in three.",
+   "situation": {
+    "sit": "O_alone"
+   },
+   "sayc": "Similar in SAYC: after partner passes, opener competes only with extra length or strength. With shortness in their suit a SAYC opener also reopens with a takeout double, because partner may be waiting to pass it for penalty.",
+   "branches": [
+    {
+     "when": {
+      "level": [
+       null,
+       1
+      ],
+      "hcp": [
+       16,
+       null
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": "min"
+     },
+     "say": "16+ and 1NT is still available: 1NT shows the strong hand",
+     "sayc": "In SAYC 1NT here is balanced with a stopper in their suit; a strong unbalanced hand doubles or bids a second suit.",
+     "stats": {
+      "share": 0.001,
+      "agree_call": 0.559,
+      "d_does": {
+       "nt_min": 0.56,
+       "pass": 0.17,
+       "new_suit_min": 0.1,
+       "rebid_min": 0.08
+      },
+      "hcp_when_agree": [
+       16,
+       18
+      ]
+     }
+    },
+    {
+     "when": {
+      "own_len": [
+       6,
+       null
+      ],
+      "level": [
+       null,
+       2
+      ]
+     },
+     "do": {
+      "type": "rebid",
+      "level": "min"
+     },
+     "say": "A 6+ card suit: rebid it (at the 2-level)",
+     "sayc": "Same in SAYC.",
+     "stats": {
+      "share": 0.0033,
+      "agree_call": 0.615,
+      "d_does": {
+       "rebid_min": 0.61,
+       "pass": 0.25,
+       "rebid_jump": 0.07,
+       "new_suit_min": 0.03
+      },
+      "hcp_when_agree": [
+       8,
+       14
+      ]
+     }
+    },
+    {
+     "when": {
+      "own_len": [
+       7,
+       null
+      ]
+     },
+     "do": {
+      "type": "rebid",
+      "level": "min"
+     },
+     "say": "A 7-card suit: rebid it even at the 3-level",
+     "stats": {
+      "share": 0.0002,
+      "agree_call": 0.711,
+      "d_does": {
+       "rebid_min": 0.64,
+       "pass": 0.22,
+       "rebid_game": 0.12,
+       "new_suit_min": 0.01
+      },
+      "hcp_when_agree": [
+       6,
+       14
+      ]
+     }
+    },
+    {
+     "when": {
+      "hcp": [
+       17,
+       null
+      ],
+      "new_len": [
+       4,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "17+ and a second suit: bid it",
+     "stats": {
+      "share": 0.0009,
+      "agree_call": 0.396,
+      "d_does": {
+       "new_suit_min": 0.44,
+       "pass": 0.19,
+       "double": 0.14,
+       "new_suit_game": 0.08
+      },
+      "hcp_when_agree": [
+       17,
+       21
+      ]
+     }
+    },
+    {
+     "when": {},
+     "do": {
+      "type": "pass"
+     },
+     "say": "Otherwise pass",
+     "sayc": "SAYC opener more often reopens with a takeout double when short in their suit.",
+     "stats": {
+      "share": 0.0135,
+      "agree_call": 0.73,
+      "d_does": {
+       "pass": 0.73,
+       "new_suit_min": 0.12,
+       "rebid_min": 0.1,
+       "double": 0.02
+      },
+      "hcp_when_agree": [
+       8,
+       14
+      ]
+     }
+    }
+   ],
+   "stats": {
+    "situation_share": 0.019,
+    "coverage": 0.019,
+    "agree_call": 0.684,
+    "agree_type": 0.709,
+    "d_sure_share": 0.897,
+    "agree_when_d_sure": 0.717,
+    "rule_is_d_second_choice": 0.486
+   }
+  },
+  {
+   "id": "D1",
+   "title": "They opened: overcall, notrump, or pass",
+   "when": "An opponent opened and this is your first chance to bid (partner has passed or not yet spoken).",
+   "think": "Overcall whenever you have a good suit: that is D's main weapon, it takes away the opponents' room and tells partner what to lead. The test is the suit test: HCP + 3 x length of your suit must reach 18 + 3 x the level you bid at (21 at the 1-level, 24 at the 2-level, 27 at the 3-level). A strong hand bids notrump instead (strong, any shape), not double: D almost never makes a takeout double.",
+   "notes": "Examples of the suit test at the 1-level: a 4-card suit needs 9 HCP, a 5-card suit 6, a 6-card suit 3. At the 2-level: 5-card 9 HCP, 6-card 6 HCP. D sometimes jumps with a 6-7 card suit and 10-15 HCP; no rule here.",
+   "situation": {
+    "sit": [
+     "D_direct",
+     "D_lho"
+    ]
+   },
+   "sayc": "In SAYC: an overcall shows 8-16 HCP and a good 5+ card suit (a 2-level overcall wants a better suit and more points); jump overcalls are weak. A 1NT overcall is 15-18, balanced, with a stopper in their suit. Other strong hands, and opening hands short in their suit, make a takeout double. D differs: it overcalls 4-card suits and long suits with few points, and bids notrump instead of doubling.",
+   "branches": [
+    {
+     "when": {
+      "hcp": [
+       18,
+       null
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": "min"
+     },
+     "say": "18+: notrump at the cheapest level (strong, any shape)",
+     "sayc": "SAYC's 1NT overcall is 15-18, balanced, with a stopper; stronger or unbalanced hands double first and bid again. D differs.",
+     "stats": {
+      "share": 0.0047,
+      "agree_call": 0.712,
+      "d_does": {
+       "nt_min": 0.71,
+       "new_suit_min": 0.19,
+       "new_suit_jump": 0.06,
+       "double": 0.02
+      },
+      "hcp_when_agree": [
+       18,
+       22
+      ]
+     }
+    },
+    {
+     "when": {
+      "hcp": [
+       15,
+       null
+      ],
+      "any": [
+       {
+        "new_len": [
+         null,
+         3
+        ]
+       },
+       {
+        "new_len": [
+         4,
+         4
+        ],
+        "new_level": [
+         2,
+         null
+        ]
+       }
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": "min"
+     },
+     "say": "15-17 without a suit to show at the 1-level or a 5-card suit: notrump",
+     "sayc": "Same in SAYC if balanced with a stopper in their suit; otherwise a takeout double (short in their suit).",
+     "stats": {
+      "share": 0.0034,
+      "agree_call": 0.577,
+      "d_does": {
+       "nt_min": 0.58,
+       "pass": 0.21,
+       "new_suit_min": 0.13,
+       "double": 0.04
+      },
+      "hcp_when_agree": [
+       15,
+       17
+      ]
+     }
+    },
+    {
+     "when": {
+      "sit": "D_direct",
+      "suit_margin": [
+       0,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "Your suit passes the suit test: bid it (cheapest level)",
+     "sayc": "SAYC overcalls need about 8-16 HCP and a good 5+ card suit; 4-card overcalls and very light overcalls of long suits are not standard (a long suit with few points makes a weak jump overcall).",
+     "stats": {
+      "share": 0.0635,
+      "agree_call": 0.756,
+      "d_does": {
+       "new_suit_min": 0.8,
+       "pass": 0.12,
+       "nt_min": 0.04,
+       "new_suit_jump": 0.03
+      },
+      "hcp_when_agree": [
+       7,
+       15
+      ]
+     }
+    },
+    {
+     "when": {
+      "sit": "D_lho",
+      "suit_margin": [
+       2,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "LHO opened and partner passed: bid your suit only if it passes the suit test by 2 more",
+     "stats": {
+      "share": 0.0093,
+      "agree_call": 0.735,
+      "d_does": {
+       "new_suit_min": 0.76,
+       "pass": 0.11,
+       "nt_min": 0.06,
+       "new_suit_jump": 0.06
+      },
+      "hcp_when_agree": [
+       9,
+       15
+      ]
+     }
+    },
+    {
+     "when": {},
+     "do": {
+      "type": "pass"
+     },
+     "say": "Otherwise pass",
+     "sayc": "Same in SAYC for weak hands; with opening values and shortness in their suit SAYC makes a takeout double.",
+     "stats": {
+      "share": 0.0692,
+      "agree_call": 0.852,
+      "d_does": {
+       "pass": 0.85,
+       "new_suit_min": 0.14,
+       "their_suit_min": 0.01,
+       "nt_min": 0.0
+      },
+      "hcp_when_agree": [
+       3,
+       10
+      ]
+     }
+    }
+   ],
+   "stats": {
+    "situation_share": 0.15,
+    "coverage": 0.15,
+    "agree_call": 0.794,
+    "agree_type": 0.833,
+    "d_sure_share": 0.929,
+    "agree_when_d_sure": 0.82,
+    "rule_is_d_second_choice": 0.612
+   }
+  },
+  {
+   "id": "D3",
+   "title": "Partner bid over their opening: support, bid, or pass",
+   "when": "The opponents opened, partner has overcalled (or bid notrump), and you have not bid yet.",
+   "think": "Partner's overcall shows a real suit (usually 5+) and about 7-15 HCP. With support, raise: the more trumps you have, the higher you may go, even with a weak hand. Without support, only bid your own suit if it is good, or notrump with 12+. If partner bid notrump, partner is strong (14-20, any shape): answer as you would to a 1NT opening.",
+   "notes": "With 3-card support and the opponents silent D often passes: 62% of the time with 7-9 HCP, 34% with 10-12 (then it raises or bids notrump). With 4+ support and 13+ D bids game about 40% of the time; the rest are cheaper raises or notrump.",
+   "situation": {
+    "sit": "D_advance"
+   },
+   "sayc": "Same idea in SAYC: raise partner's overcall with support, and a new suit is not forcing. A strong raise starts with a cue-bid of their suit. Notrump shows a stopper in their suit. A 1NT overcall (15-18 balanced) is answered much like a 1NT opening.",
+   "branches": [
+    {
+     "when": {
+      "partner_last_type": "nt",
+      "rho": "pass",
+      "hcp": [
+       10,
+       null
+      ],
+      "longest": [
+       5,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "jump"
+     },
+     "say": "Partner's notrump, 10+ and a 5-card suit: jump in your suit",
+     "stats": {
+      "share": 0.0004,
+      "agree_call": 0.497,
+      "d_does": {
+       "new_suit_jump": 0.52,
+       "new_suit_game": 0.16,
+       "nt_min": 0.08,
+       "nt_game": 0.07
+      },
+      "hcp_when_agree": [
+       10,
+       13
+      ]
+     }
+    },
+    {
+     "when": {
+      "partner_last_type": "nt",
+      "rho": "pass",
+      "hcp": [
+       9,
+       null
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": "min"
+     },
+     "say": "Partner's notrump, 9+ and no long suit: raise notrump",
+     "stats": {
+      "share": 0.0008,
+      "agree_call": 0.407,
+      "d_does": {
+       "nt_min": 0.41,
+       "new_suit_jump": 0.23,
+       "new_suit_min": 0.12,
+       "pass": 0.11
+      },
+      "hcp_when_agree": [
+       9,
+       11
+      ]
+     }
+    },
+    {
+     "when": {
+      "partner_last_type": "nt",
+      "rho": "pass"
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "Partner's notrump, weaker: bid your longest suit",
+     "sayc": "In SAYC a weak hand may pass partner's 1NT overcall (15-18 balanced). D's notrump is forcing.",
+     "stats": {
+      "share": 0.0041,
+      "agree_call": 0.652,
+      "d_does": {
+       "new_suit_min": 0.72,
+       "new_suit_jump": 0.08,
+       "their_suit_min": 0.07,
+       "pass": 0.07
+      },
+      "hcp_when_agree": [
+       2,
+       7
+      ]
+     }
+    },
+    {
+     "when": {
+      "partner_last_type": "nt",
+      "hcp": [
+       7,
+       null
+      ],
+      "new_len": [
+       null,
+       4
+      ]
+     },
+     "do": {
+      "type": "double"
+     },
+     "say": "Partner's notrump and they bid again: double with 7+",
+     "stats": {
+      "share": 0.0005,
+      "agree_call": 0.502,
+      "d_does": {
+       "double": 0.5,
+       "pass": 0.17,
+       "new_suit_min": 0.13,
+       "nt_min": 0.13
+      },
+      "hcp_when_agree": [
+       7,
+       11
+      ]
+     }
+    },
+    {
+     "when": {
+      "partner_last_type": "nt",
+      "new_len": [
+       5,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "Partner's notrump and they bid again: show a 5-card suit",
+     "stats": {
+      "share": 0.002,
+      "agree_call": 0.553,
+      "d_does": {
+       "new_suit_min": 0.61,
+       "pass": 0.17,
+       "new_suit_jump": 0.09,
+       "new_suit_game": 0.07
+      },
+      "hcp_when_agree": [
+       2,
+       9
+      ]
+     }
+    },
+    {
+     "when": {
+      "support": [
+       4,
+       null
+      ],
+      "hcp": [
+       13,
+       null
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "game"
+     },
+     "say": "4+ support and 13+: bid game",
+     "sayc": "In SAYC a strong raise usually starts with a cue-bid of their suit.",
+     "stats": {
+      "share": 0.0019,
+      "agree_call": 0.435,
+      "d_does": {
+       "support_game": 0.44,
+       "support_min": 0.2,
+       "nt_min": 0.16,
+       "support_jump": 0.13
+      },
+      "hcp_when_agree": [
+       13,
+       17
+      ]
+     }
+    },
+    {
+     "when": {
+      "support": [
+       4,
+       null
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "4+ support: raise once, whatever your strength",
+     "sayc": "Similar in SAYC: raise with 3+ support and about 6-10; a very weak hand raises only with a long fit.",
+     "stats": {
+      "share": 0.0174,
+      "agree_call": 0.677,
+      "d_does": {
+       "support_min": 0.65,
+       "pass": 0.14,
+       "support_game": 0.11,
+       "support_jump": 0.08
+      },
+      "hcp_when_agree": [
+       3,
+       10
+      ]
+     }
+    },
+    {
+     "when": {
+      "support": [
+       3,
+       null
+      ],
+      "hcp": [
+       6,
+       null
+      ],
+      "rho": "bid"
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "3-card support, 6+, and they bid again: raise",
+     "stats": {
+      "share": 0.0136,
+      "agree_call": 0.462,
+      "d_does": {
+       "support_min": 0.45,
+       "pass": 0.34,
+       "new_suit_min": 0.06,
+       "support_game": 0.04
+      },
+      "hcp_when_agree": [
+       6,
+       12
+      ]
+     }
+    },
+    {
+     "when": {
+      "rho": "pass",
+      "hcp": [
+       12,
+       null
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": "min"
+     },
+     "say": "12+ without a fit: notrump (strong)",
+     "sayc": "In SAYC notrump here is natural with a stopper in their suit, and not forcing. D's notrump is strong and forcing.",
+     "stats": {
+      "share": 0.0035,
+      "agree_call": 0.508,
+      "d_does": {
+       "nt_min": 0.49,
+       "pass": 0.2,
+       "new_suit_min": 0.1,
+       "support_min": 0.06
+      },
+      "hcp_when_agree": [
+       12,
+       17
+      ]
+     }
+    },
+    {
+     "when": {
+      "support": [
+       null,
+       1
+      ],
+      "suit_margin": [
+       -2,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "Short in partner's suit: bid your own suit if it nearly passes the suit test",
+     "stats": {
+      "share": 0.0038,
+      "agree_call": 0.628,
+      "d_does": {
+       "new_suit_min": 0.65,
+       "pass": 0.17,
+       "new_suit_jump": 0.06,
+       "new_suit_game": 0.04
+      },
+      "hcp_when_agree": [
+       5,
+       12
+      ]
+     }
+    },
+    {
+     "when": {
+      "support": [
+       2,
+       2
+      ],
+      "suit_margin": [
+       0,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "Doubleton in partner's suit: bid your suit if it passes the suit test",
+     "stats": {
+      "share": 0.0038,
+      "agree_call": 0.576,
+      "d_does": {
+       "new_suit_min": 0.58,
+       "pass": 0.13,
+       "nt_min": 0.11,
+       "new_suit_jump": 0.06
+      },
+      "hcp_when_agree": [
+       6,
+       12
+      ]
+     }
+    },
+    {
+     "when": {},
+     "do": {
+      "type": "pass"
+     },
+     "say": "Otherwise pass",
+     "sayc": "Same in SAYC.",
+     "stats": {
+      "share": 0.0396,
+      "agree_call": 0.774,
+      "d_does": {
+       "pass": 0.77,
+       "new_suit_min": 0.11,
+       "support_min": 0.06,
+       "nt_min": 0.02
+      },
+      "hcp_when_agree": [
+       3,
+       9
+      ]
+     }
+    }
+   ],
+   "stats": {
+    "situation_share": 0.0914,
+    "coverage": 0.0914,
+    "agree_call": 0.661,
+    "agree_type": 0.732,
+    "d_sure_share": 0.919,
+    "agree_when_d_sure": 0.685,
+    "rule_is_d_second_choice": 0.504
+   }
+  },
+  {
+   "id": "D4",
+   "title": "Partner and I have both passed: stay out",
+   "when": "They opened; you and partner have only passed so far.",
+   "think": "You passed once already, so your hand did not pass the suit test, and partner's did not either. D does not come in late ('balance'): keep passing.",
+   "notes": "About 3% of the time D bids a long suit late; no simple rule predicts it.",
+   "situation": {
+    "sit": "D_silent"
+   },
+   "sayc": "SAYC does balance: after 1X-P-P (or when they stop low) the last player may overcall or double with a few points less than usual. D does not.",
+   "branches": [
+    {
+     "when": {},
+     "do": {
+      "type": "pass"
+     },
+     "say": "Pass",
+     "stats": {
+      "share": 0.0441,
+      "agree_call": 0.972,
+      "d_does": {
+       "pass": 0.97,
+       "new_suit_min": 0.02,
+       "nt_min": 0.0,
+       "their_suit_min": 0.0
+      },
+      "hcp_when_agree": [
+       4,
+       11
+      ]
+     }
+    }
+   ],
+   "stats": {
+    "situation_share": 0.0441,
+    "coverage": 0.0441,
+    "agree_call": 0.972,
+    "agree_type": 0.972,
+    "d_sure_share": 0.99,
+    "agree_when_d_sure": 0.976,
+    "rule_is_d_second_choice": 0.837
+   }
+  },
+  {
+   "id": "C1",
+   "title": "They outbid us below game: compete or pass",
+   "when": "Any later turn: the opponents hold the contract below game.",
+   "think": "Compete only with a fit. Count the cards you and partner hold together in the suit (partner promised 4 for a suit bid once, 5 for a suit bid twice, 3 for a raise of yours). 8+ cards together, full values for what you have shown, and a short suit: bid one more. No fit: let them play, unless you have a very long suit.",
+   "notes": "'Full values' = at least the HCP your earlier bids promised (see the table of what calls show). D doubles them only rarely here (about 2%).",
+   "situation": {
+    "owner": "them"
+   },
+   "sayc": "Similar in SAYC: compete with a known 8+ card fit, usually one level at a time, and let them play without one. A double here is more often for takeout than in D's style.",
+   "branches": [
+    {
+     "when": {
+      "fit_cards": [
+       8,
+       null
+      ],
+      "shortest": [
+       null,
+       1
+      ],
+      "extra": [
+       -1,
+       null
+      ],
+      "level": [
+       null,
+       3
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "8+ card fit, a singleton or void, and full values: bid one more",
+     "stats": {
+      "share": 0.0057,
+      "agree_call": 0.51,
+      "d_does": {
+       "support_min": 0.45,
+       "support_game": 0.23,
+       "pass": 0.22,
+       "new_suit_min": 0.03
+      },
+      "hcp_when_agree": [
+       7,
+       15
+      ]
+     }
+    },
+    {
+     "when": {
+      "fit_cards": [
+       8,
+       null
+      ],
+      "extra": [
+       0,
+       null
+      ],
+      "level": [
+       null,
+       2
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "8+ card fit and full values, still at the 2-level: bid one more",
+     "stats": {
+      "share": 0.003,
+      "agree_call": 0.56,
+      "d_does": {
+       "support_min": 0.57,
+       "pass": 0.31,
+       "support_game": 0.06,
+       "nt_min": 0.02
+      },
+      "hcp_when_agree": [
+       7,
+       17
+      ]
+     }
+    },
+    {
+     "when": {
+      "fit_cards": [
+       10,
+       null
+      ],
+      "level": [
+       null,
+       3
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "10-card fit: bid one more",
+     "stats": {
+      "share": 0.0007,
+      "agree_call": 0.703,
+      "d_does": {
+       "support_min": 0.57,
+       "support_game": 0.24,
+       "pass": 0.18,
+       "support_slam": 0.01
+      },
+      "hcp_when_agree": [
+       4,
+       10
+      ]
+     }
+    },
+    {
+     "when": {
+      "own_len": [
+       7,
+       null
+      ],
+      "level": [
+       null,
+       2
+      ]
+     },
+     "do": {
+      "type": "rebid",
+      "level": "min"
+     },
+     "say": "A 7-card suit: rebid it",
+     "stats": {
+      "share": 0.0013,
+      "agree_call": 0.71,
+      "d_does": {
+       "rebid_min": 0.71,
+       "pass": 0.19,
+       "rebid_jump": 0.05,
+       "rebid_game": 0.02
+      },
+      "hcp_when_agree": [
+       5,
+       13
+      ]
+     }
+    },
+    {
+     "when": {
+      "total": [
+       23,
+       null
+      ],
+      "new_len": [
+       5,
+       null
+      ],
+      "level": [
+       null,
+       2
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "23+ together and a new 5-card suit: bid it",
+     "stats": {
+      "share": 0.0027,
+      "agree_call": 0.384,
+      "d_does": {
+       "new_suit_min": 0.41,
+       "pass": 0.31,
+       "new_suit_jump": 0.08,
+       "support_min": 0.06
+      },
+      "hcp_when_agree": [
+       11,
+       20
+      ]
+     }
+    },
+    {
+     "when": {},
+     "do": {
+      "type": "pass"
+     },
+     "say": "Otherwise pass",
+     "stats": {
+      "share": 0.1041,
+      "agree_call": 0.757,
+      "d_does": {
+       "pass": 0.76,
+       "support_min": 0.07,
+       "rebid_min": 0.06,
+       "support_game": 0.04
+      },
+      "hcp_when_agree": [
+       5,
+       14
+      ]
+     }
+    }
+   ],
+   "stats": {
+    "situation_share": 0.1174,
+    "coverage": 0.1174,
+    "agree_call": 0.731,
+    "agree_type": 0.748,
+    "d_sure_share": 0.925,
+    "agree_when_d_sure": 0.756,
+    "rule_is_d_second_choice": 0.486
+   }
+  },
+  {
+   "id": "P1",
+   "title": "Partner raised my suit (later rounds): game or not",
+   "when": "Our contract below game, and partner's last bid supported a suit you bid.",
+   "think": "The fit is agreed; decide the level. A raise to the 3-level without competition is an invitation: D accepts almost always. In a competitive auction go to game with extra values and shape.",
+   "notes": "In a 3-level fight with 2-6 extra points D is split between game, 3NT and pass: judgment.",
+   "situation": {
+    "owner": "us",
+    "partner_raised_me": true
+   },
+   "sayc": "Same idea in SAYC: a 3-level raise without competition invites game. SAYC accepts only with a non-minimum; D accepts almost always.",
+   "branches": [
+    {
+     "when": {
+      "level": [
+       3,
+       null
+      ],
+      "their_len": [
+       null,
+       0
+      ],
+      "balanced": false
+     },
+     "do": {
+      "type": "support",
+      "level": "game"
+     },
+     "say": "Partner invited at the 3-level (no competition): bid game",
+     "stats": {
+      "share": 0.0031,
+      "agree_call": 0.662,
+      "d_does": {
+       "support_game": 0.67,
+       "pass": 0.1,
+       "nt_game": 0.07,
+       "new_suit_min": 0.05
+      },
+      "hcp_when_agree": [
+       7,
+       17
+      ]
+     }
+    },
+    {
+     "when": {
+      "level": [
+       3,
+       null
+      ],
+      "their_len": [
+       null,
+       0
+      ],
+      "balanced": true
+     },
+     "do": {
+      "type": "nt",
+      "level": 3
+     },
+     "say": "... with a balanced hand: 3NT",
+     "stats": {
+      "share": 0.0026,
+      "agree_call": 0.484,
+      "d_does": {
+       "nt_game": 0.49,
+       "support_game": 0.36,
+       "new_suit_min": 0.06,
+       "pass": 0.05
+      },
+      "hcp_when_agree": [
+       8,
+       17
+      ]
+     }
+    },
+    {
+     "when": {
+      "level": [
+       3,
+       null
+      ],
+      "total": [
+       22,
+       null
+      ],
+      "balanced": false
+     },
+     "do": {
+      "type": "support",
+      "level": "game"
+     },
+     "say": "They compete at the 3-level, 22+ together and some shape: bid game",
+     "stats": {
+      "share": 0.0046,
+      "agree_call": 0.58,
+      "d_does": {
+       "support_game": 0.59,
+       "pass": 0.24,
+       "nt_game": 0.05,
+       "support_min": 0.05
+      },
+      "hcp_when_agree": [
+       10,
+       17
+      ]
+     }
+    },
+    {
+     "when": {
+      "level": [
+       null,
+       2
+      ],
+      "total": [
+       23,
+       null
+      ],
+      "own_len": [
+       5,
+       null
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "23+ together and 5+ trumps: bid one more",
+     "stats": {
+      "share": 0.0013,
+      "agree_call": 0.602,
+      "d_does": {
+       "support_min": 0.62,
+       "pass": 0.16,
+       "support_game": 0.1,
+       "nt_game": 0.08
+      },
+      "hcp_when_agree": [
+       10,
+       17
+      ]
+     }
+    },
+    {
+     "when": {},
+     "do": {
+      "type": "pass"
+     },
+     "say": "Otherwise pass",
+     "stats": {
+      "share": 0.0277,
+      "agree_call": 0.573,
+      "d_does": {
+       "pass": 0.57,
+       "support_game": 0.18,
+       "nt_game": 0.09,
+       "support_min": 0.09
+      },
+      "hcp_when_agree": [
+       5,
+       14
+      ]
+     }
+    }
+   ],
+   "stats": {
+    "situation_share": 0.0394,
+    "coverage": 0.0394,
+    "agree_call": 0.576,
+    "agree_type": 0.597,
+    "d_sure_share": 0.925,
+    "agree_when_d_sure": 0.595,
+    "rule_is_d_second_choice": 0.467
+   }
+  },
+  {
+   "id": "P2",
+   "title": "Partner bid notrump (strong, any shape) in a later round",
+   "when": "Our contract below game, and partner's last bid was notrump.",
+   "think": "Partner's notrump is strong and forcing, just like the 1NT opening. Do not pass below game: show a fit, 3NT with a balanced hand, or keep describing your shape.",
+   "notes": "",
+   "situation": {
+    "owner": "us",
+    "partner_last_type": "nt"
+   },
+   "sayc": "In SAYC notrump rebids are natural, balanced and limited (1NT rebid 12-14, jump to 2NT 18-19) and partner may pass below game. D's notrump is strong, any shape and forcing.",
+   "branches": [
+    {
+     "when": {
+      "fit_cards": [
+       8,
+       null
+      ],
+      "balanced": false
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "8-card fit and an unbalanced hand: show the fit",
+     "stats": {
+      "share": 0.0005,
+      "agree_call": 0.622,
+      "d_does": {
+       "support_min": 0.63,
+       "support_slam": 0.09,
+       "support_game": 0.06,
+       "new_suit_min": 0.06
+      },
+      "hcp_when_agree": [
+       7,
+       18
+      ]
+     }
+    },
+    {
+     "when": {
+      "balanced": true,
+      "level": [
+       2,
+       null
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": 3
+     },
+     "say": "Balanced: 3NT",
+     "stats": {
+      "share": 0.0051,
+      "agree_call": 0.741,
+      "d_does": {
+       "nt_game": 0.76,
+       "support_min": 0.09,
+       "pass": 0.07,
+       "new_suit_min": 0.05
+      },
+      "hcp_when_agree": [
+       8,
+       18
+      ]
+     }
+    },
+    {
+     "when": {
+      "own_len": [
+       6,
+       null
+      ]
+     },
+     "do": {
+      "type": "rebid",
+      "level": "min"
+     },
+     "say": "A 6-card suit: rebid it",
+     "stats": {
+      "share": 0.0026,
+      "agree_call": 0.626,
+      "d_does": {
+       "rebid_min": 0.63,
+       "nt_game": 0.15,
+       "rebid_jump": 0.07,
+       "new_suit_min": 0.06
+      },
+      "hcp_when_agree": [
+       5,
+       16
+      ]
+     }
+    },
+    {
+     "when": {
+      "new_len": [
+       4,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "Another 4-card suit: show it",
+     "stats": {
+      "share": 0.0053,
+      "agree_call": 0.461,
+      "d_does": {
+       "new_suit_min": 0.49,
+       "nt_game": 0.16,
+       "nt_min": 0.09,
+       "rebid_min": 0.08
+      },
+      "hcp_when_agree": [
+       5,
+       17
+      ]
+     }
+    },
+    {
+     "when": {
+      "own_len": [
+       5,
+       null
+      ]
+     },
+     "do": {
+      "type": "rebid",
+      "level": "min"
+     },
+     "say": "A 5-card suit: rebid it",
+     "stats": {
+      "share": 0.0019,
+      "agree_call": 0.328,
+      "d_does": {
+       "rebid_min": 0.36,
+       "nt_game": 0.27,
+       "nt_min": 0.09,
+       "pass": 0.09
+      },
+      "hcp_when_agree": [
+       6,
+       12
+      ]
+     }
+    },
+    {
+     "when": {},
+     "do": {
+      "type": "nt",
+      "level": "min"
+     },
+     "say": "Otherwise: notrump at the cheapest level",
+     "stats": {
+      "share": 0.0007,
+      "agree_call": 0.379,
+      "d_does": {
+       "nt_min": 0.34,
+       "pass": 0.21,
+       "their_suit_min": 0.18,
+       "support_min": 0.11
+      },
+      "hcp_when_agree": [
+       8,
+       14
+      ]
+     }
+    }
+   ],
+   "stats": {
+    "situation_share": 0.016,
+    "coverage": 0.016,
+    "agree_call": 0.564,
+    "agree_type": 0.636,
+    "d_sure_share": 0.905,
+    "agree_when_d_sure": 0.586,
+    "rule_is_d_second_choice": 0.429
+   }
+  },
+  {
+   "id": "P3",
+   "title": "Our auction, below game: place the contract",
+   "when": "Any other later turn with our side holding the contract below game.",
+   "think": "Add your HCP to what partner has shown (table below): 25+ together is game. Play in an 8-card fit if there is one, otherwise in notrump. D stops low readily: with nothing more to say, pass.",
+   "notes": "This is the weakest rule (about 45% agreement): later-round decisions depend on the exact auction in ways no short rule captures. D's other choices here are spread over 3NT, preference bids, and new suits.",
+   "situation": {
+    "owner": "us"
+   },
+   "sayc": "Same idea in SAYC: about 25-26 points together for game, an 8-card major fit first, otherwise notrump.",
+   "branches": [
+    {
+     "when": {
+      "level": [
+       3,
+       null
+      ],
+      "fit_cards": [
+       8,
+       null
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "game"
+     },
+     "say": "At the 3-level with an 8-card fit: bid game",
+     "stats": {
+      "share": 0.008,
+      "agree_call": 0.406,
+      "d_does": {
+       "support_game": 0.44,
+       "pass": 0.16,
+       "nt_game": 0.15,
+       "support_min": 0.13
+      },
+      "hcp_when_agree": [
+       7,
+       19
+      ]
+     }
+    },
+    {
+     "when": {
+      "level": [
+       3,
+       null
+      ],
+      "total": [
+       23,
+       null
+      ]
+     },
+     "do": {
+      "type": "nt",
+      "level": 3
+     },
+     "say": "At the 3-level without a fit, 23+ together: 3NT",
+     "stats": {
+      "share": 0.0123,
+      "agree_call": 0.427,
+      "d_does": {
+       "nt_game": 0.47,
+       "new_suit_min": 0.13,
+       "support_game": 0.11,
+       "pass": 0.1
+      },
+      "hcp_when_agree": [
+       11,
+       19
+      ]
+     }
+    },
+    {
+     "when": {
+      "level": [
+       null,
+       2
+      ],
+      "fit_cards": [
+       8,
+       null
+      ],
+      "total": [
+       26,
+       null
+      ]
+     },
+     "do": {
+      "type": "support",
+      "level": "min"
+     },
+     "say": "A fit and 26+ together: show the fit",
+     "stats": {
+      "share": 0.0033,
+      "agree_call": 0.385,
+      "d_does": {
+       "support_min": 0.44,
+       "nt_min": 0.14,
+       "support_game": 0.12,
+       "support_jump": 0.09
+      },
+      "hcp_when_agree": [
+       13,
+       20
+      ]
+     }
+    },
+    {
+     "when": {
+      "level": [
+       null,
+       2
+      ],
+      "new_len": [
+       5,
+       null
+      ]
+     },
+     "do": {
+      "type": "new_suit",
+      "level": "min"
+     },
+     "say": "A 5-card suit not shown yet: bid it",
+     "stats": {
+      "share": 0.0072,
+      "agree_call": 0.385,
+      "d_does": {
+       "new_suit_min": 0.42,
+       "pass": 0.25,
+       "nt_min": 0.11,
+       "support_min": 0.09
+      },
+      "hcp_when_agree": [
+       10,
+       19
+      ]
+     }
+    },
+    {
+     "when": {},
+     "do": {
+      "type": "pass"
+     },
+     "say": "Nothing more to say: pass",
+     "stats": {
+      "share": 0.0351,
+      "agree_call": 0.514,
+      "d_does": {
+       "pass": 0.51,
+       "nt_min": 0.1,
+       "support_min": 0.1,
+       "rebid_min": 0.08
+      },
+      "hcp_when_agree": [
+       4,
+       15
+      ]
+     }
+    }
+   ],
+   "stats": {
+    "situation_share": 0.0658,
+    "coverage": 0.0658,
+    "agree_call": 0.464,
+    "agree_type": 0.529,
+    "d_sure_share": 0.915,
+    "agree_when_d_sure": 0.481,
+    "rule_is_d_second_choice": 0.29
+   }
+  }
+ ],
+ "core_ideas": [
+  {
+   "id": "count",
+   "name": "Count HCP; about 25 together is game",
+   "sayc": "Same idea in SAYC: about 25-26 points together for game (HCP plus shape), but about 33 for a small slam, checked with Blackwood first. D bids slam lighter (29-30 with a fit)."
+  },
+  {
+   "id": "nt_strong",
+   "name": "1NT means strong hand, any shape",
+   "sayc": "1NT is balanced and limited in SAYC: an opening shows 15-17 (strong unbalanced hands open one of a suit or 2C), a response 6-10 and not forcing, an overcall 15-18 with a stopper in their suit. D differs completely."
+  },
+  {
+   "id": "natural",
+   "name": "Every suit bid is natural",
+   "sayc": "Mostly natural too, but SAYC adds artificial calls D does not use: the strong 2C opening, Stayman and Jacoby transfers over 1NT, Blackwood, takeout and negative doubles, and cue-bids of the opponents' suit (which show strength, not length). 1C/1D may be a 3-card suit."
+  },
+  {
+   "id": "fit",
+   "name": "A fit is 8+ cards together",
+   "sayc": "Same in SAYC. The promises differ a little: 1H/1S openings show 5+, 1C/1D can be 3, a new suit by responder shows 4+."
+  },
+  {
+   "id": "suit_test",
+   "name": "The suit test",
+   "sayc": "SAYC has no single formula: an overcall shows about 8-16 HCP and a good 5+ card suit; a response in a new suit needs 6+ HCP at the 1-level and 10+ at the 2-level. D overcalls 4-card suits (9+ HCP) and long suits with very few points."
+  },
+  {
+   "id": "which_suit",
+   "name": "Which suit to bid",
+   "sayc": "Largely the same in SAYC: longest suit first, with two 5-card suits the higher, 4-card suits up the line at the 1-level. With 10+ a SAYC responder bids a longer suit first, even at the 2-level."
+  }
+ ],
+ "habits": [
+  {
+   "id": "not_forcing",
+   "name": "A new suit is not forcing",
+   "sayc": "The reverse in SAYC: a new suit by responder is forcing for one round (a jump shift forces to game), while notrump bids are natural, balanced and limited. 2-over-1 is forcing for one round, not to game. D differs."
+  },
+  {
+   "id": "doubles_rare",
+   "name": "Doubles are rare",
+   "sayc": "SAYC doubles a lot: a takeout double of their opening (opening values, short in their suit, or any strong hand), negative doubles after they overcall. Low-level penalty doubles are rare in both. D differs."
+  },
+  {
+   "id": "no_balance",
+   "name": "D stops low and does not balance",
+   "sayc": "SAYC balances: after 1X-P-P, or when they stop at a low level, the last player may double or overcall with a few points less than usual. D differs."
+  }
+ ],
+ "sayc_differences": [
+  "**1NT.** SAYC: 15-17 balanced opening, 6-10 non-forcing response, 15-18 overcall with a stopper. D: 'strong hand, any shape' (opening 16-22, response 12-18, overcall 14-20) and forcing.",
+  "**What is forcing.** SAYC: a new suit by responder is forcing, notrump bids are limited. D: the other way round; a new suit may be passed, notrump may not.",
+  "**Doubles.** SAYC uses takeout and negative doubles all the time. D almost never doubles (1.5% of calls) and a strong hand over their opening bids notrump.",
+  "**Conventions.** SAYC has a strong 2C, weak twos, Stayman, Jacoby transfers, Blackwood and cue-bids. D bids naturally and has no asking bids, even for slam.",
+  "**Strength.** SAYC opens with about 12+ and overcalls with 8-16 and a good 5-card suit, and balances. D opens with 8-16, overcalls by the suit test (4-card suits, very light long suits) and does not balance."
+ ],
+ "call_meanings": {
+  "D_advance|double": {
+   "n": 2607,
+   "lo": 7,
+   "mid": 11,
+   "hi": 15,
+   "label": "Advancer (partner overcalled): double"
+  },
+  "D_advance|new_suit_game": {
+   "n": 1518,
+   "lo": 6,
+   "mid": 11,
+   "hi": 16,
+   "label": "Advancer (partner overcalled): new suit at game level"
+  },
+  "D_advance|new_suit_jump": {
+   "n": 3227,
+   "lo": 7,
+   "mid": 10,
+   "hi": 14,
+   "label": "Advancer (partner overcalled): jump in a new suit"
+  },
+  "D_advance|new_suit_min": {
+   "n": 27099,
+   "lo": 3,
+   "mid": 7,
+   "hi": 11,
+   "label": "Advancer (partner overcalled): new suit"
+  },
+  "D_advance|nt_game": {
+   "n": 1579,
+   "lo": 7,
+   "mid": 12,
+   "hi": 18,
+   "label": "Advancer (partner overcalled): notrump game or higher"
+  },
+  "D_advance|nt_min": {
+   "n": 8623,
+   "lo": 9,
+   "mid": 13,
+   "hi": 16,
+   "label": "Advancer (partner overcalled): notrump, cheapest level"
+  },
+  "D_advance|pass": {
+   "n": 108465,
+   "lo": 2,
+   "mid": 6,
+   "hi": 10,
+   "label": "Advancer (partner overcalled): pass"
+  },
+  "D_advance|support_game": {
+   "n": 8957,
+   "lo": 5,
+   "mid": 9,
+   "hi": 15,
+   "label": "Advancer (partner overcalled): raise to game"
+  },
+  "D_advance|support_jump": {
+   "n": 3866,
+   "lo": 6,
+   "mid": 11,
+   "hi": 14,
+   "label": "Advancer (partner overcalled): jump raise"
+  },
+  "D_advance|support_min": {
+   "n": 37253,
+   "lo": 4,
+   "mid": 8,
+   "hi": 11,
+   "label": "Advancer (partner overcalled): simple raise"
+  },
+  "D_advance|support_slam": {
+   "n": 378,
+   "lo": 6,
+   "mid": 13,
+   "hi": 17,
+   "label": "Advancer (partner overcalled): raise to slam"
+  },
+  "D_advance|their_suit_min": {
+   "n": 1395,
+   "lo": 3,
+   "mid": 6,
+   "hi": 10,
+   "label": "Advancer (partner overcalled): their suit (natural)"
+  },
+  "D_direct|double": {
+   "n": 309,
+   "lo": 13,
+   "mid": 15,
+   "hi": 17,
+   "label": "Overcall (right-hand opponent opened): double"
+  },
+  "D_direct|new_suit_game": {
+   "n": 564,
+   "lo": 11,
+   "mid": 15,
+   "hi": 18,
+   "label": "Overcall (right-hand opponent opened): new suit at game level"
+  },
+  "D_direct|new_suit_jump": {
+   "n": 3854,
+   "lo": 9,
+   "mid": 14,
+   "hi": 17,
+   "label": "Overcall (right-hand opponent opened): jump in a new suit"
+  },
+  "D_direct|new_suit_min": {
+   "n": 104989,
+   "lo": 7,
+   "mid": 11,
+   "hi": 15,
+   "label": "Overcall (right-hand opponent opened): new suit"
+  },
+  "D_direct|nt_min": {
+   "n": 11831,
+   "lo": 14,
+   "mid": 17,
+   "hi": 20,
+   "label": "Overcall (right-hand opponent opened): notrump, cheapest level"
+  },
+  "D_direct|pass": {
+   "n": 77382,
+   "lo": 3,
+   "mid": 7,
+   "hi": 11,
+   "label": "Overcall (right-hand opponent opened): pass"
+  },
+  "D_direct|their_suit_min": {
+   "n": 1020,
+   "lo": 9,
+   "mid": 12,
+   "hi": 15,
+   "label": "Overcall (right-hand opponent opened): their suit (natural)"
+  },
+  "D_later|double": {
+   "n": 6065,
+   "lo": 7,
+   "mid": 13,
+   "hi": 17,
+   "label": "Defender's later bid: double"
+  },
+  "D_later|new_suit_game": {
+   "n": 1928,
+   "lo": 8,
+   "mid": 15,
+   "hi": 20,
+   "label": "Defender's later bid: new suit at game level"
+  },
+  "D_later|new_suit_jump": {
+   "n": 862,
+   "lo": 12,
+   "mid": 16,
+   "hi": 20,
+   "label": "Defender's later bid: jump in a new suit"
+  },
+  "D_later|new_suit_min": {
+   "n": 13436,
+   "lo": 7,
+   "mid": 13,
+   "hi": 19,
+   "label": "Defender's later bid: new suit"
+  },
+  "D_later|new_suit_slam": {
+   "n": 182,
+   "lo": 10,
+   "mid": 17,
+   "hi": 21,
+   "label": "Defender's later bid: new suit at slam level"
+  },
+  "D_later|nt_game": {
+   "n": 8551,
+   "lo": 8,
+   "mid": 13,
+   "hi": 18,
+   "label": "Defender's later bid: notrump game or higher"
+  },
+  "D_later|nt_min": {
+   "n": 2798,
+   "lo": 7,
+   "mid": 15,
+   "hi": 19,
+   "label": "Defender's later bid: notrump, cheapest level"
+  },
+  "D_later|pass": {
+   "n": 236862,
+   "lo": 5,
+   "mid": 10,
+   "hi": 15,
+   "label": "Defender's later bid: pass"
+  },
+  "D_later|rebid_game": {
+   "n": 4400,
+   "lo": 6,
+   "mid": 11,
+   "hi": 16,
+   "label": "Defender's later bid: own suit at game level"
+  },
+  "D_later|rebid_jump": {
+   "n": 367,
+   "lo": 9,
+   "mid": 12,
+   "hi": 16,
+   "label": "Defender's later bid: jump rebid of own suit"
+  },
+  "D_later|rebid_min": {
+   "n": 13473,
+   "lo": 6,
+   "mid": 11,
+   "hi": 15,
+   "label": "Defender's later bid: rebid own suit"
+  },
+  "D_later|rebid_slam": {
+   "n": 224,
+   "lo": 7,
+   "mid": 12,
+   "hi": 18,
+   "label": "Defender's later bid: own suit at slam level"
+  },
+  "D_later|redouble": {
+   "n": 318,
+   "lo": 8,
+   "mid": 13,
+   "hi": 16,
+   "label": "Defender's later bid: redouble"
+  },
+  "D_later|support_game": {
+   "n": 22764,
+   "lo": 6,
+   "mid": 11,
+   "hi": 17,
+   "label": "Defender's later bid: raise to game"
+  },
+  "D_later|support_jump": {
+   "n": 253,
+   "lo": 11,
+   "mid": 15,
+   "hi": 18,
+   "label": "Defender's later bid: jump raise"
+  },
+  "D_later|support_min": {
+   "n": 16005,
+   "lo": 7,
+   "mid": 12,
+   "hi": 17,
+   "label": "Defender's later bid: simple raise"
+  },
+  "D_later|support_slam": {
+   "n": 1876,
+   "lo": 8,
+   "mid": 14,
+   "hi": 20,
+   "label": "Defender's later bid: raise to slam"
+  },
+  "D_later|their_suit_min": {
+   "n": 1206,
+   "lo": 6,
+   "mid": 12,
+   "hi": 18,
+   "label": "Defender's later bid: their suit (natural)"
+  },
+  "D_lho|double": {
+   "n": 230,
+   "lo": 16,
+   "mid": 18,
+   "hi": 21,
+   "label": "Overcall (left-hand opponent opened, partner passed): double"
+  },
+  "D_lho|new_suit_game": {
+   "n": 527,
+   "lo": 9,
+   "mid": 14,
+   "hi": 19,
+   "label": "Overcall (left-hand opponent opened, partner passed): new suit at game level"
+  },
+  "D_lho|new_suit_jump": {
+   "n": 1000,
+   "lo": 11,
+   "mid": 15,
+   "hi": 18,
+   "label": "Overcall (left-hand opponent opened, partner passed): jump in a new suit"
+  },
+  "D_lho|new_suit_min": {
+   "n": 21902,
+   "lo": 6,
+   "mid": 11,
+   "hi": 15,
+   "label": "Overcall (left-hand opponent opened, partner passed): new suit"
+  },
+  "D_lho|nt_min": {
+   "n": 3854,
+   "lo": 13,
+   "mid": 17,
+   "hi": 20,
+   "label": "Overcall (left-hand opponent opened, partner passed): notrump, cheapest level"
+  },
+  "D_lho|pass": {
+   "n": 49456,
+   "lo": 4,
+   "mid": 7,
+   "hi": 12,
+   "label": "Overcall (left-hand opponent opened, partner passed): pass"
+  },
+  "D_lho|their_suit_min": {
+   "n": 383,
+   "lo": 9,
+   "mid": 13,
+   "hi": 16,
+   "label": "Overcall (left-hand opponent opened, partner passed): their suit (natural)"
+  },
+  "D_silent|double": {
+   "n": 106,
+   "lo": 13,
+   "mid": 16,
+   "hi": 18,
+   "label": "Defender, both of us passed so far: double"
+  },
+  "D_silent|new_suit_min": {
+   "n": 1531,
+   "lo": 5,
+   "mid": 9,
+   "hi": 13,
+   "label": "Defender, both of us passed so far: new suit"
+  },
+  "D_silent|nt_min": {
+   "n": 338,
+   "lo": 11,
+   "mid": 12,
+   "hi": 15,
+   "label": "Defender, both of us passed so far: notrump, cheapest level"
+  },
+  "D_silent|pass": {
+   "n": 163889,
+   "lo": 3,
+   "mid": 7,
+   "hi": 11,
+   "label": "Defender, both of us passed so far: pass"
+  },
+  "D_silent|their_suit_min": {
+   "n": 268,
+   "lo": 7,
+   "mid": 11,
+   "hi": 14,
+   "label": "Defender, both of us passed so far: their suit (natural)"
+  },
+  "O_alone|double": {
+   "n": 892,
+   "lo": 15,
+   "mid": 16,
+   "hi": 20,
+   "label": "Opener's second bid, partner passed: double"
+  },
+  "O_alone|new_suit_game": {
+   "n": 318,
+   "lo": 13,
+   "mid": 18,
+   "hi": 21,
+   "label": "Opener's second bid, partner passed: new suit at game level"
+  },
+  "O_alone|new_suit_jump": {
+   "n": 416,
+   "lo": 12,
+   "mid": 15,
+   "hi": 19,
+   "label": "Opener's second bid, partner passed: jump in a new suit"
+  },
+  "O_alone|new_suit_min": {
+   "n": 4055,
+   "lo": 10,
+   "mid": 14,
+   "hi": 18,
+   "label": "Opener's second bid, partner passed: new suit"
+  },
+  "O_alone|nt_min": {
+   "n": 1497,
+   "lo": 15,
+   "mid": 16,
+   "hi": 18,
+   "label": "Opener's second bid, partner passed: notrump, cheapest level"
+  },
+  "O_alone|pass": {
+   "n": 22492,
+   "lo": 8,
+   "mid": 11,
+   "hi": 15,
+   "label": "Opener's second bid, partner passed: pass"
+  },
+  "O_alone|rebid_game": {
+   "n": 439,
+   "lo": 7,
+   "mid": 11,
+   "hi": 15,
+   "label": "Opener's second bid, partner passed: own suit at game level"
+  },
+  "O_alone|rebid_jump": {
+   "n": 462,
+   "lo": 11,
+   "mid": 14,
+   "hi": 17,
+   "label": "Opener's second bid, partner passed: jump rebid of own suit"
+  },
+  "O_alone|rebid_min": {
+   "n": 6931,
+   "lo": 8,
+   "mid": 12,
+   "hi": 15,
+   "label": "Opener's second bid, partner passed: rebid own suit"
+  },
+  "O_rebid|double": {
+   "n": 4737,
+   "lo": 10,
+   "mid": 13,
+   "hi": 17,
+   "label": "Opener's second bid: double"
+  },
+  "O_rebid|new_suit_game": {
+   "n": 1651,
+   "lo": 12,
+   "mid": 17,
+   "hi": 21,
+   "label": "Opener's second bid: new suit at game level"
+  },
+  "O_rebid|new_suit_jump": {
+   "n": 4103,
+   "lo": 12,
+   "mid": 14,
+   "hi": 20,
+   "label": "Opener's second bid: jump in a new suit"
+  },
+  "O_rebid|new_suit_min": {
+   "n": 25437,
+   "lo": 9,
+   "mid": 13,
+   "hi": 19,
+   "label": "Opener's second bid: new suit"
+  },
+  "O_rebid|new_suit_slam": {
+   "n": 231,
+   "lo": 14,
+   "mid": 18,
+   "hi": 21,
+   "label": "Opener's second bid: new suit at slam level"
+  },
+  "O_rebid|nt_game": {
+   "n": 5559,
+   "lo": 12,
+   "mid": 16,
+   "hi": 21,
+   "label": "Opener's second bid: notrump game or higher"
+  },
+  "O_rebid|nt_min": {
+   "n": 13648,
+   "lo": 12,
+   "mid": 15,
+   "hi": 19,
+   "label": "Opener's second bid: notrump, cheapest level"
+  },
+  "O_rebid|pass": {
+   "n": 52377,
+   "lo": 8,
+   "mid": 11,
+   "hi": 14,
+   "label": "Opener's second bid: pass"
+  },
+  "O_rebid|rebid_game": {
+   "n": 1553,
+   "lo": 8,
+   "mid": 13,
+   "hi": 15,
+   "label": "Opener's second bid: own suit at game level"
+  },
+  "O_rebid|rebid_jump": {
+   "n": 1842,
+   "lo": 10,
+   "mid": 13,
+   "hi": 15,
+   "label": "Opener's second bid: jump rebid of own suit"
+  },
+  "O_rebid|rebid_min": {
+   "n": 13703,
+   "lo": 7,
+   "mid": 10,
+   "hi": 13,
+   "label": "Opener's second bid: rebid own suit"
+  },
+  "O_rebid|support_game": {
+   "n": 11230,
+   "lo": 9,
+   "mid": 13,
+   "hi": 17,
+   "label": "Opener's second bid: raise to game"
+  },
+  "O_rebid|support_jump": {
+   "n": 1000,
+   "lo": 12,
+   "mid": 15,
+   "hi": 18,
+   "label": "Opener's second bid: jump raise"
+  },
+  "O_rebid|support_min": {
+   "n": 21977,
+   "lo": 9,
+   "mid": 13,
+   "hi": 17,
+   "label": "Opener's second bid: simple raise"
+  },
+  "O_rebid|support_slam": {
+   "n": 1273,
+   "lo": 11,
+   "mid": 16,
+   "hi": 21,
+   "label": "Opener's second bid: raise to slam"
+  },
+  "O_rebid|their_suit_min": {
+   "n": 312,
+   "lo": 10,
+   "mid": 11,
+   "hi": 15,
+   "label": "Opener's second bid: their suit (natural)"
+  },
+  "R_1NT|double": {
+   "n": 943,
+   "lo": 7,
+   "mid": 9,
+   "hi": 12,
+   "label": "Responder's first bid (partner opened 1NT): double"
+  },
+  "R_1NT|new_suit_game": {
+   "n": 480,
+   "lo": 10,
+   "mid": 12,
+   "hi": 14,
+   "label": "Responder's first bid (partner opened 1NT): new suit at game level"
+  },
+  "R_1NT|new_suit_jump": {
+   "n": 2320,
+   "lo": 8,
+   "mid": 11,
+   "hi": 14,
+   "label": "Responder's first bid (partner opened 1NT): jump in a new suit"
+  },
+  "R_1NT|new_suit_min": {
+   "n": 13732,
+   "lo": 3,
+   "mid": 6,
+   "hi": 9,
+   "label": "Responder's first bid (partner opened 1NT): new suit"
+  },
+  "R_1NT|nt_game": {
+   "n": 517,
+   "lo": 12,
+   "mid": 14,
+   "hi": 17,
+   "label": "Responder's first bid (partner opened 1NT): notrump game or higher"
+  },
+  "R_1NT|nt_min": {
+   "n": 904,
+   "lo": 8,
+   "mid": 10,
+   "hi": 12,
+   "label": "Responder's first bid (partner opened 1NT): notrump, cheapest level"
+  },
+  "R_1NT|pass": {
+   "n": 1644,
+   "lo": 2,
+   "mid": 5,
+   "hi": 7,
+   "label": "Responder's first bid (partner opened 1NT): pass"
+  },
+  "R_1suit|double": {
+   "n": 3397,
+   "lo": 11,
+   "mid": 13,
+   "hi": 16,
+   "label": "Responder's first bid (partner opened a suit): double"
+  },
+  "R_1suit|new_suit_game": {
+   "n": 1051,
+   "lo": 10,
+   "mid": 13,
+   "hi": 17,
+   "label": "Responder's first bid (partner opened a suit): new suit at game level"
+  },
+  "R_1suit|new_suit_jump": {
+   "n": 3897,
+   "lo": 9,
+   "mid": 11,
+   "hi": 14,
+   "label": "Responder's first bid (partner opened a suit): jump in a new suit"
+  },
+  "R_1suit|new_suit_min": {
+   "n": 43286,
+   "lo": 5,
+   "mid": 8,
+   "hi": 12,
+   "label": "Responder's first bid (partner opened a suit): new suit"
+  },
+  "R_1suit|nt_game": {
+   "n": 588,
+   "lo": 9,
+   "mid": 16,
+   "hi": 21,
+   "label": "Responder's first bid (partner opened a suit): notrump game or higher"
+  },
+  "R_1suit|nt_min": {
+   "n": 34852,
+   "lo": 12,
+   "mid": 14,
+   "hi": 18,
+   "label": "Responder's first bid (partner opened a suit): notrump, cheapest level"
+  },
+  "R_1suit|pass": {
+   "n": 37534,
+   "lo": 3,
+   "mid": 6,
+   "hi": 10,
+   "label": "Responder's first bid (partner opened a suit): pass"
+  },
+  "R_1suit|support_game": {
+   "n": 5693,
+   "lo": 8,
+   "mid": 13,
+   "hi": 16,
+   "label": "Responder's first bid (partner opened a suit): raise to game"
+  },
+  "R_1suit|support_jump": {
+   "n": 10245,
+   "lo": 8,
+   "mid": 12,
+   "hi": 14,
+   "label": "Responder's first bid (partner opened a suit): jump raise"
+  },
+  "R_1suit|support_min": {
+   "n": 38148,
+   "lo": 4,
+   "mid": 8,
+   "hi": 11,
+   "label": "Responder's first bid (partner opened a suit): simple raise"
+  },
+  "R_1suit|support_slam": {
+   "n": 417,
+   "lo": 11,
+   "mid": 15,
+   "hi": 19,
+   "label": "Responder's first bid (partner opened a suit): raise to slam"
+  },
+  "R_1suit|their_suit_min": {
+   "n": 215,
+   "lo": 5,
+   "mid": 9,
+   "hi": 12,
+   "label": "Responder's first bid (partner opened a suit): their suit (natural)"
+  },
+  "R_rebid|double": {
+   "n": 3764,
+   "lo": 8,
+   "mid": 11,
+   "hi": 15,
+   "label": "Responder's second bid: double"
+  },
+  "R_rebid|new_suit_game": {
+   "n": 2167,
+   "lo": 9,
+   "mid": 13,
+   "hi": 17,
+   "label": "Responder's second bid: new suit at game level"
+  },
+  "R_rebid|new_suit_jump": {
+   "n": 1529,
+   "lo": 10,
+   "mid": 15,
+   "hi": 19,
+   "label": "Responder's second bid: jump in a new suit"
+  },
+  "R_rebid|new_suit_min": {
+   "n": 13682,
+   "lo": 5,
+   "mid": 12,
+   "hi": 16,
+   "label": "Responder's second bid: new suit"
+  },
+  "R_rebid|new_suit_slam": {
+   "n": 422,
+   "lo": 12,
+   "mid": 16,
+   "hi": 19,
+   "label": "Responder's second bid: new suit at slam level"
+  },
+  "R_rebid|nt_game": {
+   "n": 11901,
+   "lo": 7,
+   "mid": 12,
+   "hi": 17,
+   "label": "Responder's second bid: notrump game or higher"
+  },
+  "R_rebid|nt_min": {
+   "n": 6807,
+   "lo": 7,
+   "mid": 12,
+   "hi": 17,
+   "label": "Responder's second bid: notrump, cheapest level"
+  },
+  "R_rebid|nt_slam": {
+   "n": 111,
+   "lo": 14,
+   "mid": 16,
+   "hi": 21,
+   "label": "Responder's second bid: notrump slam"
+  },
+  "R_rebid|pass": {
+   "n": 90243,
+   "lo": 3,
+   "mid": 8,
+   "hi": 12,
+   "label": "Responder's second bid: pass"
+  },
+  "R_rebid|rebid_game": {
+   "n": 2010,
+   "lo": 6,
+   "mid": 10,
+   "hi": 13,
+   "label": "Responder's second bid: own suit at game level"
+  },
+  "R_rebid|rebid_jump": {
+   "n": 426,
+   "lo": 8,
+   "mid": 10,
+   "hi": 12,
+   "label": "Responder's second bid: jump rebid of own suit"
+  },
+  "R_rebid|rebid_min": {
+   "n": 5835,
+   "lo": 4,
+   "mid": 8,
+   "hi": 11,
+   "label": "Responder's second bid: rebid own suit"
+  },
+  "R_rebid|support_game": {
+   "n": 16103,
+   "lo": 6,
+   "mid": 10,
+   "hi": 15,
+   "label": "Responder's second bid: raise to game"
+  },
+  "R_rebid|support_jump": {
+   "n": 1063,
+   "lo": 10,
+   "mid": 15,
+   "hi": 18,
+   "label": "Responder's second bid: jump raise"
+  },
+  "R_rebid|support_min": {
+   "n": 20606,
+   "lo": 5,
+   "mid": 9,
+   "hi": 15,
+   "label": "Responder's second bid: simple raise"
+  },
+  "R_rebid|support_slam": {
+   "n": 3232,
+   "lo": 8,
+   "mid": 14,
+   "hi": 19,
+   "label": "Responder's second bid: raise to slam"
+  },
+  "R_rebid|their_suit_min": {
+   "n": 503,
+   "lo": 6,
+   "mid": 11,
+   "hi": 15,
+   "label": "Responder's second bid: their suit (natural)"
+  },
+  "WE_later|double": {
+   "n": 4251,
+   "lo": 8,
+   "mid": 12,
+   "hi": 17,
+   "label": "Our side, later bid: double"
+  },
+  "WE_later|new_suit_game": {
+   "n": 2227,
+   "lo": 10,
+   "mid": 15,
+   "hi": 20,
+   "label": "Our side, later bid: new suit at game level"
+  },
+  "WE_later|new_suit_min": {
+   "n": 4350,
+   "lo": 8,
+   "mid": 13,
+   "hi": 18,
+   "label": "Our side, later bid: new suit"
+  },
+  "WE_later|new_suit_slam": {
+   "n": 826,
+   "lo": 11,
+   "mid": 17,
+   "hi": 21,
+   "label": "Our side, later bid: new suit at slam level"
+  },
+  "WE_later|nt_game": {
+   "n": 19772,
+   "lo": 9,
+   "mid": 13,
+   "hi": 19,
+   "label": "Our side, later bid: notrump game or higher"
+  },
+  "WE_later|nt_min": {
+   "n": 3003,
+   "lo": 9,
+   "mid": 11,
+   "hi": 17,
+   "label": "Our side, later bid: notrump, cheapest level"
+  },
+  "WE_later|nt_slam": {
+   "n": 1152,
+   "lo": 12,
+   "mid": 18,
+   "hi": 22,
+   "label": "Our side, later bid: notrump slam"
+  },
+  "WE_later|pass": {
+   "n": 185491,
+   "lo": 6,
+   "mid": 11,
+   "hi": 16,
+   "label": "Our side, later bid: pass"
+  },
+  "WE_later|rebid_game": {
+   "n": 5996,
+   "lo": 7,
+   "mid": 13,
+   "hi": 18,
+   "label": "Our side, later bid: own suit at game level"
+  },
+  "WE_later|rebid_min": {
+   "n": 6228,
+   "lo": 7,
+   "mid": 11,
+   "hi": 17,
+   "label": "Our side, later bid: rebid own suit"
+  },
+  "WE_later|rebid_slam": {
+   "n": 1456,
+   "lo": 9,
+   "mid": 14,
+   "hi": 19,
+   "label": "Our side, later bid: own suit at slam level"
+  },
+  "WE_later|redouble": {
+   "n": 251,
+   "lo": 8,
+   "mid": 12,
+   "hi": 16,
+   "label": "Our side, later bid: redouble"
+  },
+  "WE_later|support_game": {
+   "n": 21498,
+   "lo": 8,
+   "mid": 13,
+   "hi": 18,
+   "label": "Our side, later bid: raise to game"
+  },
+  "WE_later|support_min": {
+   "n": 8781,
+   "lo": 8,
+   "mid": 12,
+   "hi": 17,
+   "label": "Our side, later bid: simple raise"
+  },
+  "WE_later|support_slam": {
+   "n": 6410,
+   "lo": 10,
+   "mid": 15,
+   "hi": 20,
+   "label": "Our side, later bid: raise to slam"
+  },
+  "WE_later|their_suit_min": {
+   "n": 328,
+   "lo": 8,
+   "mid": 11,
+   "hi": 16,
+   "label": "Our side, later bid: their suit (natural)"
+  },
+  "open|open_high": {
+   "n": 2186,
+   "lo": 10,
+   "mid": 14,
+   "hi": 17,
+   "label": "opening at the 2-level or higher (rare, strong long suit)"
+  },
+  "open|open_nt": {
+   "n": 20585,
+   "lo": 16,
+   "mid": 18,
+   "hi": 22,
+   "label": "1NT opening (strong, any shape)"
+  },
+  "open|open_suit1": {
+   "n": 177201,
+   "lo": 8,
+   "mid": 12,
+   "hi": 16,
+   "label": "opening one of a suit"
+  },
+  "open|pass": {
+   "n": 83164,
+   "lo": 3,
+   "mid": 6,
+   "hi": 9,
+   "label": "pass before anyone opened"
+  }
+ }
+}

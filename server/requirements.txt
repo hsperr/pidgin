@@ -1,0 +1,6 @@
+# torch comes from the CPU-only index (see deploy.sh) -- the default wheel
+# drags in ~2GB of CUDA.
+flask>=3.0
+gunicorn>=21.0
+numpy
+endplay==0.5.12
