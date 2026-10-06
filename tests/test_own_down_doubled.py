@@ -4,14 +4,14 @@ from pathlib import Path
 
 import torch
 
-from bridgezero.bridge.deals import load_dataset
-from bridgezero.bridge.scoring import contract_score
-from bridgezero.contract.data import TorchDeals
-from bridgezero.contract.targets import TorchScorer
-from bridgezero.fourseat import state
-from bridgezero.fourseat.fast_rollout import FastCollector
-from bridgezero.fourseat.model import FourSeatCompetitiveNet
-from bridgezero.bridge.calls import PASS
+from training.bridge.deals import load_dataset
+from training.bridge.scoring import contract_score
+from training.contract.data import TorchDeals
+from training.contract.targets import TorchScorer
+from training.fourseat import state
+from training.fourseat.fast_rollout import FastCollector
+from training.fourseat.model import FourSeatCompetitiveNet
+from training.bridge.calls import PASS
 
 SMOKE = Path(__file__).resolve().parents[1] / "data" / "smoke_128.npz"
 TABLE_STRAIN = (3, 2, 1, 0, 4)

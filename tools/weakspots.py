@@ -23,8 +23,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from bridgezero.bridge.deals import load_dataset  # noqa: E402
-from bridgezero.bridge.scoring import contract_score  # noqa: E402
+from training.bridge.deals import load_dataset  # noqa: E402
+from training.bridge.scoring import contract_score  # noqa: E402
 
 DATA = "data/dds_results_100M.npy"
 PASS, DOUBLE, REDOUBLE = 35, 36, 37

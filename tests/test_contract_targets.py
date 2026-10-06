@@ -7,10 +7,10 @@ import numpy as np
 import pytest
 import torch
 
-from bridgezero.bridge.calls import CONTRACTS, parse_call
-from bridgezero.bridge.deals import load_dataset
-from bridgezero.bridge.scoring import contract_score, dd_cooperative_score
-from bridgezero.contract.targets import (
+from training.bridge.calls import CONTRACTS, parse_call
+from training.bridge.deals import load_dataset
+from training.bridge.scoring import contract_score, dd_cooperative_score
+from training.contract.targets import (
     PAIR_PASS,
     TorchScorer,
     contract_score_table,

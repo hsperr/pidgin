@@ -5,9 +5,9 @@ from types import SimpleNamespace
 import numpy as np
 import torch
 
-from bridgezero.bridge.calls import PASS
-from bridgezero.contract.data import TorchDeals
-from bridgezero.fourseat.competitive import code_word_mask
+from training.bridge.calls import PASS
+from training.contract.data import TorchDeals
+from training.fourseat.competitive import code_word_mask
 from tools.simplicity import analyse
 
 
@@ -54,11 +54,11 @@ def test_light_open_share_counts_0_to_7_hcp_hands_that_open():
 
 
 def test_trainer_logs_the_shared_simplicity_numbers():
-    from bridgezero.bridge.deals import load_dataset
-    from bridgezero.contract.targets import TorchScorer
-    from bridgezero.fourseat import competitive as C
-    from bridgezero.fourseat.model import FourSeatCompetitiveNet
-    from bridgezero.simplicity import analyse_batch
+    from training.bridge.deals import load_dataset
+    from training.contract.targets import TorchScorer
+    from training.fourseat import competitive as C
+    from training.fourseat.model import FourSeatCompetitiveNet
+    from training.simplicity import analyse_batch
     from pathlib import Path
     deals = TorchDeals(*load_dataset(Path(__file__).resolve().parents[1] / "data" / "smoke_128.npz"))
     torch.manual_seed(2)
@@ -76,7 +76,7 @@ def test_trainer_logs_the_shared_simplicity_numbers():
 
 
 def test_opening_numbers_flag_unbalanced_nt_and_wide_calls():
-    from bridgezero.simplicity import opening_numbers
+    from training.simplicity import opening_numbers
     one_nt, one_s = 4, 3
     calls = [one_nt] * 4 + [one_s] * 40 + [PASS] * 2
     hcp = [16, 17, 18, 20] + list(range(0, 20)) * 2 + [3, 5]
@@ -87,7 +87,7 @@ def test_opening_numbers_flag_unbalanced_nt_and_wide_calls():
     assert 15 < out["opening_hcp_spread"] < 19        # only 1S has 20+ hands: 1..18
 
 def test_light_open_flags_openings_on_7_hcp_or_less_but_not_preempts():
-    from bridgezero.fourseat.competitive import code_word_parts
+    from training.fourseat.competitive import code_word_parts
     # N: spades T..2 (9 cards) and hearts 5..2, 0 HCP; the rest dealt in order to E, S, W.
     north = [s for s in range(4, 13)] + [13 + r for r in range(9, 13)]
     rest = [c for c in range(52) if c not in north]

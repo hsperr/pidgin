@@ -6,13 +6,13 @@ import numpy as np
 import pytest
 import torch
 
-from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import CONTRACTS, DOUBLE, PASS, REDOUBLE
-from bridgezero.bridge.deals import load_dataset
-from bridgezero.bridge.scoring import contract_score, stand_pat_actor_score, terminal_ns_score
-from bridgezero.contract.data import TorchDeals
-from bridgezero.contract.targets import TorchScorer
-from bridgezero.fourseat.competitive import (
+from training.bridge.auction import AuctionState
+from training.bridge.calls import CONTRACTS, DOUBLE, PASS, REDOUBLE
+from training.bridge.deals import load_dataset
+from training.bridge.scoring import contract_score, stand_pat_actor_score, terminal_ns_score
+from training.contract.data import TorchDeals
+from training.contract.targets import TorchScorer
+from training.fourseat.competitive import (
     FourSeatFinalDoubleBatch,
     FourSeatRedoubleBatch,
     collect_competitive_trajectories,
@@ -22,7 +22,7 @@ from bridgezero.fourseat.competitive import (
     redouble_delta,
     sac_targets,
 )
-from bridgezero.fourseat.model import (
+from training.fourseat.model import (
     FourSeatCompetitiveCritic,
     FourSeatCompetitiveNet,
     FourSeatDoubleCritic,
@@ -33,7 +33,7 @@ from bridgezero.fourseat.model import (
     save_fourseat_checkpoint,
     warm_start_competitive,
 )
-from bridgezero.fourseat.state import FourSeatDoubleBatch, own_bid_scores, table_ns_score
+from training.fourseat.state import FourSeatDoubleBatch, own_bid_scores, table_ns_score
 
 SMOKE = Path(__file__).resolve().parents[1] / "data" / "smoke_128.npz"
 TRICK_STRAIN = (3, 2, 1, 0, 4)

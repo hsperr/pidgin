@@ -4,7 +4,7 @@ An opening call sees only the opener's hand, the seat (how many passes came
 before), and its side's vulnerability, so no auction has to be played: each
 held-out hand is asked directly. The model plays its greedy call, as in a match.
 
-    python tools/openings.py runs/bridgezero/4_D/best.pt
+    python tools/openings.py runs/training/4_D/best.pt
     python tools/openings.py CKPT --seat 3 --vul --deals 50000 --examples 5
     python tools/openings.py brl:../bridge_new/experiments/brl/fsp_weights.npz   # diagnostic only
 
@@ -25,12 +25,12 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from bridgezero.bridge.calls import ACTION_NAMES, PASS, STRAIN_PERM  # noqa: E402
-from bridgezero.contract.data import load_range  # noqa: E402
-from bridgezero.fourseat.competitive import apply_opening_rule, competitive_features  # noqa: E402
-from bridgezero.fourseat.model import load_fourseat_checkpoint, policy_log_probs  # noqa: E402
-from bridgezero.fourseat.state import features_from_history  # noqa: E402
-from bridgezero.simplicity import BALANCED_SHAPES, LIGHT_HCP, opening_numbers  # noqa: E402
+from training.bridge.calls import ACTION_NAMES, PASS, STRAIN_PERM  # noqa: E402
+from training.contract.data import load_range  # noqa: E402
+from training.fourseat.competitive import apply_opening_rule, competitive_features  # noqa: E402
+from training.fourseat.model import load_fourseat_checkpoint, policy_log_probs  # noqa: E402
+from training.fourseat.state import features_from_history  # noqa: E402
+from training.simplicity import BALANCED_SHAPES, LIGHT_HCP, opening_numbers  # noqa: E402
 
 SYMBOL = {"S": "♠", "H": "♥", "D": "♦", "C": "♣", "NT": "NT"}
 CARD_SUITS = "SHDC"                                   # hand layout: suit * 13 + rank
@@ -161,7 +161,7 @@ def main() -> None:
             cells.append(f"{pct(opens.mean())}  ({point} HCP)")
         print(f"  seat {seat}  {cells[0]:<20}  {cells[1]}")
 
-    # -- simplicity numbers (bridgezero/simplicity.py, the same ones the dashboard charts)
+    # -- simplicity numbers (training/simplicity.py, the same ones the dashboard charts)
     print(f"\nOPENING SIMPLICITY  (light = 0-{LIGHT_HCP} HCP; spread = HCP 5%-95% range of a call,"
           " averaged over openings)")
     print("          light openings   unbalanced 1NT/2NT   HCP spread")

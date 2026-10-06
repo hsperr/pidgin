@@ -71,9 +71,9 @@ import numpy as np
 import torch
 from flask import has_request_context, jsonify, request, send_from_directory
 
-from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
-from bridgezero.bridge.scoring import contract_score, dd_par_score, imps
+from training.bridge.auction import AuctionState
+from training.bridge.calls import DOUBLE, PASS, REDOUBLE
+from training.bridge.scoring import contract_score, dd_par_score, imps
 from emergent import engine, players, playdesk
 from emergent.deck import (HCP_W, N_CALLS, NAMES, RANKS, SEAT_NAMES, STRAINS, SUITS,
                            TRUMP_TO_BID_STRAIN, beats, call_name, call_token, card_name, trick_best)

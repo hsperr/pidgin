@@ -1,6 +1,6 @@
 import numpy as np
 
-from bridgezero.bridge.deals import (
+from training.bridge.deals import (
     PGX_RANK_TO_OURS,
     PackedPGXOwners,
     PackedPGXTricks,

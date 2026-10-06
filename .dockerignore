@@ -1,0 +1,9 @@
+# Docker builds from the repo root (server/Dockerfile) and needs only these.
+*
+!training/
+!server/emergent/
+!server/models/
+!server/requirements.txt
+**/__pycache__
+*.pyc
+.DS_Store

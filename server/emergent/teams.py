@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
-from bridgezero.bridge.auction import AuctionState
+from training.bridge.auction import AuctionState
 from emergent import engine
 from emergent.deck import N_CALLS
 

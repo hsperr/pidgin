@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from bridgezero.play.data import N_CALLS
+from training.play.data import N_CALLS
 
 LAST = 6                      # the last six calls, one-hot, after the call bag
 
@@ -139,7 +139,7 @@ class QPlayBot:
     def searcher(self):
         from emergent import engine
         if self._searcher is None:
-            from bridgezero.play.search import PIMCPlayer
+            from training.play.search import PIMCPlayer
             p = PIMCPlayer.from_net(self.sampler_net, engine.CONFIG.samples, budget_ms=engine.CONFIG.budget_ms,
                                     defence=engine.CONFIG.defence, defence_from_trick=engine.CONFIG.defence_from)
             p.net = _PriorSwap(p.net)

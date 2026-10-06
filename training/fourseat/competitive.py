@@ -714,7 +714,7 @@ def competitive_validation(actor, deals: TorchDeals, scorer: TorchScorer, frozen
                                    "mse": float((cat["xx_q"] - cat["xx_delta"]).pow(2).mean()),
                                    "profitable_share": float((cat["xx_delta"] > 0).float().mean())}
     extra["level5_share"] = float((level >= 5).float().mean())
-    # bridgezero/simplicity.py numbers (the one implementation), greedy auctions
+    # training/simplicity.py numbers (the one implementation), greedy auctions
     extra["simplicity"] = {k: v for k, v in analyse_batch(batch, deals).items() if k != "auctions"}
 
     if frozen is not None:

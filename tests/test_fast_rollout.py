@@ -12,26 +12,26 @@ from pathlib import Path
 import pytest
 import torch
 
-from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
-from bridgezero.bridge.deals import load_dataset
-from bridgezero.contract.data import TorchDeals
-from bridgezero.contract.model import AuctionContractNet
-from bridgezero.contract.targets import TorchScorer
-from bridgezero.fourseat.competitive import (
+from training.bridge.calls import DOUBLE, PASS, REDOUBLE
+from training.bridge.deals import load_dataset
+from training.contract.data import TorchDeals
+from training.contract.model import AuctionContractNet
+from training.contract.targets import TorchScorer
+from training.fourseat.competitive import (
     MAX_REDOUBLE_CALLS,
     CompetitiveTrajectories,
     competitive_batch_class,
     competitive_trajectories,
     competitive_trajectory_losses,
 )
-from bridgezero.fourseat.fast_rollout import (
+from training.fourseat.fast_rollout import (
     COMPETITIVE_ROUNDS,
     ROUNDS,
     FastCollector,
     inverse_cdf_sample,
     sac_fire,
 )
-from bridgezero.fourseat.model import (
+from training.fourseat.model import (
     FourSeatCompetitiveCritic,
     FourSeatCompetitiveNet,
     FourSeatDoubleGateNet,
@@ -39,13 +39,13 @@ from bridgezero.fourseat.model import (
     competitive_parts,
     policy_log_probs,
 )
-from bridgezero.fourseat.rollout import (
+from training.fourseat.rollout import (
     FourSeatTrajectories,
     batch_class,
     episode_setup,
     play,
 )
-from bridgezero.fourseat.state import double_delta, own_bid_scores
+from training.fourseat.state import double_delta, own_bid_scores
 
 SMOKE = Path(__file__).resolve().parents[1] / "data" / "smoke_128.npz"
 

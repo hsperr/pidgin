@@ -1,8 +1,8 @@
 import numpy as np
 
-from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import parse_call
-from bridgezero.bridge.scoring import (
+from training.bridge.auction import AuctionState
+from training.bridge.calls import parse_call
+from training.bridge.scoring import (
     contract_score,
     imps,
     own_contract_score,

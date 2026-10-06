@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE, parse_call
+from training.bridge.auction import AuctionState
+from training.bridge.calls import DOUBLE, PASS, REDOUBLE, parse_call
 
 
 def calls(text):

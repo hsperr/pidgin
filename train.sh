@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 
 SMOKE=0
 if [[ ${1:-} == --smoke ]]; then SMOKE=1; shift; fi
-OUT=${1:-runs/bridgezero}
+OUT=${1:-runs/training}
 PY=${PYTHON:-python}
 SEED=${SEED:-1}
 THREADS=${THREADS:-8}
@@ -41,14 +41,14 @@ completed() {
 
 echo "== stage 1: grounding from random weights"
 if ! completed "$OUT/1_ground" result.json; then
-  "$PY" -u -m bridgezero.ground "${COMMON[@]}" "${GROUND[@]}" --out "$OUT/1_ground"
+  "$PY" -u -m training.ground "${COMMON[@]}" "${GROUND[@]}" --out "$OUT/1_ground"
 fi
 
 own_stage() {
   local dest=$1 init=$2
   shift 2
   if ! completed "$dest" eval.json; then
-    "$PY" -u -m bridgezero.fourseat.train "${COMMON[@]}" "${FOURSEAT[@]}" \
+    "$PY" -u -m training.fourseat.train "${COMMON[@]}" "${FOURSEAT[@]}" \
       --out "$dest" --init "$init" --select own --table-weight 0 --pg-lr 1e-4 --patience 0 \
       --max-level5-rise 0.15 --max-own-drop 60 --max-double-rate 0.6 "$@"
   fi
@@ -64,7 +64,7 @@ own_stage "$OUT/3_simple" "$OUT/2_own/last.pt" \
 
 echo "== stage 4: D table-score training with simplicity cost"
 if ! completed "$OUT/4_D" eval.json; then
-  "$PY" -u -m bridgezero.fourseat.train "${COMMON[@]}" "${FOURSEAT[@]}" \
+  "$PY" -u -m training.fourseat.train "${COMMON[@]}" "${FOURSEAT[@]}" \
     --out "$OUT/4_D" --init "$OUT/3_simple/last.pt" \
     --select imp --imp-opponent "$OUT/3_simple/last.pt" --table-weight 1 \
     --code-word-penalty "$CODE_WORD_PENALTY" \

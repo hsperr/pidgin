@@ -3,18 +3,18 @@
 import pytest
 import torch
 
-from bridgezero.bridge.calls import PASS
-from bridgezero.contract.targets import TorchScorer
-from bridgezero.fourseat import competitive
-from bridgezero.fourseat.competitive import (
+from training.bridge.calls import PASS
+from training.contract.targets import TorchScorer
+from training.fourseat import competitive
+from training.fourseat.competitive import (
     ONE_LEVEL,
     apply_opening_rule,
     competitive_trajectory_losses,
     opening_points,
     set_opening_rule,
 )
-from bridgezero.fourseat.fast_rollout import FastCollector
-from bridgezero.fourseat.model import FourSeatCompetitiveCritic, FourSeatNet
+from training.fourseat.fast_rollout import FastCollector
+from training.fourseat.model import FourSeatCompetitiveCritic, FourSeatNet
 from test_fast_rollout import competitive_actor, deals, noisy
 
 

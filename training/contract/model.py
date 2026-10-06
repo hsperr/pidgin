@@ -416,3 +416,30 @@ def load_checkpoint(path: str | Path, device: torch.device | str = "cpu",
     net = MODEL_KINDS[checkpoint.get("model_kind", "hand")](**checkpoint["model_config"]).to(device)
     net.load_state_dict(checkpoint["net"])
     return net, checkpoint
+
+class CentralCritic(nn.Module):
+    """Training-only ``V(pair hands, public auction)`` baseline."""
+
+    def __init__(self, width: int = 384, suit_width: int = 64, depth: int = 3):
+        super().__init__()
+        self.config = dict(width=width, suit_width=suit_width, depth=depth)
+        self.suit_net = nn.Sequential(
+            nn.Linear(26, suit_width), nn.GELU(),
+            nn.Linear(suit_width, suit_width), nn.GELU())
+        self.auction_net = nn.Sequential(nn.Linear(AUCTION_FEATURES, width), nn.GELU())
+        layers: list[nn.Module] = []
+        dim = 4 * suit_width + width
+        for _ in range(depth):
+            layers.extend((nn.Linear(dim, width), nn.GELU()))
+            dim = width
+        self.trunk = nn.Sequential(*layers)
+        self.value_head = nn.Linear(width, 1)
+        nn.init.zeros_(self.value_head.weight)
+        nn.init.zeros_(self.value_head.bias)
+
+    def forward(self, hands: torch.Tensor, auction: torch.Tensor) -> torch.Tensor:
+        batch = len(hands)
+        suits = hands.view(batch, 2, 4, 13).transpose(1, 2).reshape(batch, 4, 26)
+        encoded = self.suit_net(suits).reshape(batch, -1)
+        hidden = self.trunk(torch.cat((encoded, self.auction_net(auction)), dim=-1))
+        return self.value_head(hidden).squeeze(-1)

@@ -51,7 +51,7 @@ CODE_WORD_PENALTY=0 ./train.sh runs/no_simplicity_cost
 | `4_D` | Real table rewards, 0.2 code-word cost, and a league of past snapshots | Paired IMPs against `3_simple/last.pt` |
 
 Stage 2 starts from `1_ground/best.pt`; stages 3 and 4 start from the preceding
-stage's `last.pt`. The final selected model is **`runs/bridgezero/4_D/best.pt`**.
+stage's `last.pt`. The final selected model is **`runs/training/4_D/best.pt`**.
 D enables doubles and redoubles at any legal seat. Its starting policy is
 measured and kept as a fallback when updates fail to improve or trip a guard.
 Changing the legal doubling policy at this transition can change play even
@@ -80,18 +80,18 @@ improvement. Every stage logs metrics and saves its run settings.
 
 Completed stages are skipped when rerunning the script with the same output
 folder. Use a new folder when changing settings. Interrupted four-seat stages
-can resume with `python -m bridgezero.fourseat.train --resume`, the same
+can resume with `python -m training.fourseat.train --resume`, the same
 `--out`, and the original options recorded in that stage's `run.json`.
 Grounding has no resume support; use a fresh output folder if it is interrupted.
 
 ## Dashboard and analysis
 
 ```bash
-python tools/dashboard.py --runs runs/bridgezero
-python tools/openings.py runs/bridgezero/4_D/best.pt
-python tools/match.py --a four:runs/bridgezero/4_D/best.pt \
-  --b four:runs/bridgezero/3_simple/last.pt --out results/d_vs_parent
-python tools/simplicity.py runs/bridgezero/4_D/best.pt --boards 4000
+python tools/dashboard.py --runs runs/training
+python tools/openings.py runs/training/4_D/best.pt
+python tools/match.py --a four:runs/training/4_D/best.pt \
+  --b four:runs/training/3_simple/last.pt --out results/d_vs_parent
+python tools/simplicity.py runs/training/4_D/best.pt --boards 4000
 python tools/weakspots.py results/d_vs_parent
 ```
 

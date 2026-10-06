@@ -415,7 +415,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--rule-frac", type=float, default=0.0,
                    help="share of episodes against rule bidders (split evenly over --rule-bots)")
     p.add_argument("--rule-bots", default="sayc,weakclub,happy",
-                   help="comma-separated bridgezero/fourseat/rulebots.py styles")
+                   help="comma-separated training/fourseat/rulebots.py styles")
     p.add_argument("--fixed-frac", type=float, default=0.0,
                    help="share of episodes against --fixed-opponents (split evenly)")
     p.add_argument("--fixed-opponents", default="",

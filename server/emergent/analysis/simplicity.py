@@ -8,7 +8,7 @@ artificial 2♣ opening. Fewer code words = easier for a beginner to follow.
 Reference values (10,000 self-play boards): E46 14, E44 17, EPBot Acol 63, SAYC 75,
 2/1 76, Polish Club 83, Precision 92 code words per 100 auctions.
 
-    python tools/simplicity.py runs/bridgezero/3_table/best.pt --boards 4000
+    python tools/simplicity.py runs/training/3_table/best.pt --boards 4000
     python tools/simplicity.py --boards-npz results/x/boards.npz   # analyse existing auctions
 """
 
@@ -26,8 +26,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from bridgezero.bridge.calls import ACTION_NAMES  # noqa: E402
-from bridgezero.bridge.deals import load_dataset  # noqa: E402
+from training.bridge.calls import ACTION_NAMES  # noqa: E402
+from training.bridge.deals import load_dataset  # noqa: E402
 
 DATA = "data/dds_results_100M.npy"
 SUIT = {"S": 0, "H": 1, "D": 2, "C": 3}          # card // 13 order in the dataset

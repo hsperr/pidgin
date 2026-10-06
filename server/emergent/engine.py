@@ -21,10 +21,10 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
-from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
-from bridgezero.fourseat.state import features_from_history
-from bridgezero.play.model import encode
+from training.bridge.auction import AuctionState
+from training.bridge.calls import DOUBLE, PASS, REDOUBLE
+from training.fourseat.state import features_from_history
+from training.play.model import encode
 from emergent.deck import N_CALLS
 
 
@@ -120,7 +120,7 @@ def legal_calls(bot, st):
 
 
 def fourseat_features(bot, history, dealer, vul_ns, vul_ew, actor):
-    """(B, width) input of a bridgezero four-seat net; `history` (B, T) with -1 padding.
+    """(B, width) input of a training four-seat net; `history` (B, T) with -1 padding.
 
     Competitive (E28, D5OWN4XC) nets read two more bits: [149] Pass would end the
     auction, [150] the contract stands redoubled. A copy of fourseat/competitive.py,
@@ -225,7 +225,7 @@ def searcher(bot):
     opening and waste effort at the end.
     """
     if getattr(bot, "_searcher", None) is None:
-        from bridgezero.play.search import PIMCPlayer
+        from training.play.search import PIMCPlayer
         bot._searcher = PIMCPlayer.from_net(bot.net, CONFIG.samples, budget_ms=CONFIG.budget_ms,
                                             defence=CONFIG.defence,
                                             defence_from_trick=CONFIG.defence_from)
@@ -250,7 +250,7 @@ def seat_free_sampler(seed):
     """
     from dataclasses import replace
 
-    from bridgezero.play.search import LayoutSampler
+    from training.play.search import LayoutSampler
 
     class SeatFree(LayoutSampler):
         def draw(self, position):

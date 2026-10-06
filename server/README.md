@@ -70,7 +70,7 @@ decides how many deals count. The deals are seeded by the position, so asking ag
 
 ## Update to the newest snapshots, then deploy
 
-    ./sync_models.sh      # bridgezero code + E46/play snapshots from ~/code/bridge_new
+    ./sync_models.sh      # training code + E46/play snapshots from ~/code/bridge_new
     ./deploy.sh
 
 Server config (nginx, systemd) lives in `~/code/infra` (app `bridge`, port 3500).
@@ -82,14 +82,14 @@ The unit still passes `ck.pt` to `create_app`; that argument is ignored now.
 default. Kept: D (default), E46, brl, and two light-opening experiments from
 `~/code/bridge_public` for `/debug` (`hi3_s60k`, `lo_s28k`; no corpus). Two families are supported:
 
-- bridgezero four-seat checkpoints (D, E46), copied without the critic. E46 comes
+- training four-seat checkpoints (D, E46), copied without the critic. E46 comes
   from `sync_models.sh` (edit its `copy` lines to add runs); D was trained in
   `~/code/bridge_public` and copied by hand.
 - brl FSP (`brl_fsp_weights.npz`), the external baseline.
 
 ## Frozen copies
 
-`bridgezero/` is copied by `sync_models.sh`. E28's classes (D5OWN4XC) are only on
+`training/` is copied by `sync_models.sh`. E28's classes (D5OWN4XC) are only on
 branch `integrate-fast-xxsac`, so it copies from that worktree by default; after the
 merge run `CODE=~/code/bridge_new ./sync_models.sh`.
 
@@ -171,7 +171,7 @@ Three parts, all from the deployed net alone:
 `emergent/playdesk.py` registers `/play` and `/api/play/*` on the same Flask app,
 and `emergent/bidserver_static/play.html` is the page. The net runs through the
 exact classes it was trained with, copied by `sync_models.sh`:
-`bridgezero/play/{data,model,match}.py` and `bridgezero/bridge/play.py`.
+`training/play/{data,model,match}.py` and `training/bridge/play.py`.
 
 Where a board comes from, in order of preference:
 

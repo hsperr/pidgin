@@ -15,7 +15,7 @@ around the 18th percentile of the sampled ones. Label them as the net's imaginat
 import numpy as np
 import torch
 
-from bridgezero.bridge.auction import AuctionState
+from training.bridge.auction import AuctionState
 from emergent.deck import NAMES, call_name
 
 MAX_CONTINUATION = 16          # safety stop for the played-out auction

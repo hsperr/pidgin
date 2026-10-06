@@ -3,7 +3,7 @@ import base64
 
 import numpy as np
 
-from bridgezero.bridge.calls import CONTRACTS, DOUBLE, PASS, REDOUBLE
+from training.bridge.calls import CONTRACTS, DOUBLE, PASS, REDOUBLE
 
 RANKS = "AKQJT98765432"   # index 0 = ace ... 12 = two
 SUITS = "SHDC"            # index 0 = spades ... 3 = clubs; card = suit * 13 + rank

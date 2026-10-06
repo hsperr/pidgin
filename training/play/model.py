@@ -17,7 +17,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from bridgezero.play.data import N_CALLS
+from training.play.data import N_CALLS
 
 N_CARDS = 52
 AUCTION_DIM = 96

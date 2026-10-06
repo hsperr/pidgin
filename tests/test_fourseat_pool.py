@@ -2,19 +2,19 @@ from pathlib import Path
 
 import torch
 
-from bridgezero.bridge.calls import DOUBLE
-from bridgezero.bridge.deals import load_dataset
-from bridgezero.contract.data import TorchDeals
-from bridgezero.contract.model import AuctionContractNet
-from bridgezero.contract.targets import TorchScorer
-from bridgezero.fourseat.model import (
+from training.bridge.calls import DOUBLE
+from training.bridge.deals import load_dataset
+from training.contract.data import TorchDeals
+from training.contract.model import AuctionContractNet
+from training.contract.targets import TorchScorer
+from training.fourseat.model import (
     FourSeatCritic,
     FourSeatDoubleGateNet,
     FourSeatNet,
     save_fourseat_checkpoint,
     warm_start_from_fourseat,
 )
-from bridgezero.fourseat.rollout import collect_trajectories, fourseat_validation
+from training.fourseat.rollout import collect_trajectories, fourseat_validation
 
 SMOKE = Path(__file__).resolve().parents[1] / "data" / "smoke_128.npz"
 

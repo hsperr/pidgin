@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 import torch
 
-from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import PASS
-from bridgezero.bridge.deals import load_dataset
-from bridgezero.fourseat.rulebots import STYLES, RuleBot
+from training.bridge.auction import AuctionState
+from training.bridge.calls import PASS
+from training.bridge.deals import load_dataset
+from training.fourseat.rulebots import STYLES, RuleBot
 
 SMOKE = Path(__file__).resolve().parents[1] / "data" / "smoke_128.npz"
 POINTS = torch.tensor(([4, 3, 2, 1] + [0] * 9) * 4, dtype=torch.float32)

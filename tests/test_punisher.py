@@ -6,13 +6,13 @@ from pathlib import Path
 import pytest
 import torch
 
-from bridgezero.bridge.calls import DOUBLE, PASS
-from bridgezero.bridge.deals import load_dataset
-from bridgezero.contract.data import TorchDeals
-from bridgezero.contract.targets import TorchScorer
-from bridgezero.fourseat import competitive
-from bridgezero.fourseat.fast_rollout import FastCollector
-from bridgezero.fourseat.model import FourSeatCompetitiveNet
+from training.bridge.calls import DOUBLE, PASS
+from training.bridge.deals import load_dataset
+from training.contract.data import TorchDeals
+from training.contract.targets import TorchScorer
+from training.fourseat import competitive
+from training.fourseat.fast_rollout import FastCollector
+from training.fourseat.model import FourSeatCompetitiveNet
 
 SMOKE = Path(__file__).resolve().parents[1] / "data" / "smoke_128.npz"
 TABLE_STRAIN = (3, 2, 1, 0, 4)              # bid strain C D H S NT -> tricks S H D C NT

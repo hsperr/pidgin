@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from emergent import bench, bidserver  # noqa: E402
-from bridgezero.bridge.scoring import contract_score  # noqa: E402
+from training.bridge.scoring import contract_score  # noqa: E402
 
 HCP = {"A": 4, "K": 3, "Q": 2, "J": 1}
 

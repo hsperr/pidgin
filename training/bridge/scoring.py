@@ -8,7 +8,7 @@ import numpy as np
 
 from .auction import AuctionState
 from .calls import CONTRACTS, PASS
-from bridgezero.bridge.calls import STRAIN_PERM
+from training.bridge.calls import STRAIN_PERM
 
 
 def contract_score(

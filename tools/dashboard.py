@@ -1,7 +1,7 @@
 """Local training dashboard: metrics, openings, and IMP matches against public
 checkpoints and built-in rule bidders. Matches include weak-spot measurements.
 
-    python tools/dashboard.py --runs runs/bridgezero
+    python tools/dashboard.py --runs runs/training
 """
 
 from __future__ import annotations
@@ -131,7 +131,7 @@ def checkpoint_step(ckpt: Path) -> int | None:
 
 
 def run_simplicity(run: Path, ckpt: Path) -> None:
-    """Self-play simplicity numbers (bridgezero/simplicity.py) for ``ckpt``, appended to
+    """Self-play simplicity numbers (training/simplicity.py) for ``ckpt``, appended to
     ``simplicity.jsonl`` so the charts pick up numbers added after the run was logged."""
     step = checkpoint_step(ckpt)
     if step is None:

@@ -5,11 +5,11 @@ from pathlib import Path
 
 import torch
 
-from bridgezero import ground
-from bridgezero.contract.data import block_starts
-from bridgezero.contract.model import AuctionContractNet, CentralCritic, save_checkpoint
-from bridgezero.fourseat import train as fourseat
-from bridgezero.fourseat.model import (
+from training import ground
+from training.contract.data import block_starts
+from training.contract.model import AuctionContractNet, CentralCritic, save_checkpoint
+from training.fourseat import train as fourseat
+from training.fourseat.model import (
     FourSeatCompetitiveCritic,
     FourSeatCompetitiveNet,
     load_fourseat_checkpoint,
@@ -184,7 +184,7 @@ def test_grounding_checks_final_step_and_zero_patience(tmp_path):
 
 def test_invalid_training_pools_fail_before_training(tmp_path):
     import pytest
-    from bridgezero.contract.data import validate_training_pool
+    from training.contract.data import validate_training_pool
     for start, end, size, every in [(-1, 96, 32, 2), (0, 129, 32, 2),
                                     (0, 96, 0, 2), (0, 16, 32, 2), (0, 96, 32, 0)]:
         with pytest.raises(ValueError):

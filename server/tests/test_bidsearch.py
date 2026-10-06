@@ -13,7 +13,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from bridgezero.bridge.auction import AuctionState  # noqa: E402
+from training.bridge.auction import AuctionState  # noqa: E402
 from emergent import bidserver, bidsearch, engine  # noqa: E402
 from emergent.deck import owners_to_bitmaps, owners_to_pbn  # noqa: E402
 

@@ -4,22 +4,22 @@ import numpy as np
 import pytest
 import torch
 
-from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import PASS
-from bridgezero.bridge.deals import load_dataset
-from bridgezero.bridge.scoring import own_contract_score
-from bridgezero.contract.data import TorchDeals
-from bridgezero.contract.environment import AUCTION_FEATURES
-from bridgezero.contract.model import AuctionContractNet, CentralCritic, save_checkpoint
-from bridgezero.contract.prefixes import CoopBatch
-from bridgezero.contract.targets import TorchScorer
-from bridgezero.fourseat.model import (
+from training.bridge.auction import AuctionState
+from training.bridge.calls import PASS
+from training.bridge.deals import load_dataset
+from training.bridge.scoring import own_contract_score
+from training.contract.data import TorchDeals
+from training.contract.environment import AUCTION_FEATURES
+from training.contract.model import AuctionContractNet, CentralCritic, save_checkpoint
+from training.contract.prefixes import CoopBatch
+from training.contract.targets import TorchScorer
+from training.fourseat.model import (
     FourSeatNet,
     SilentView,
     warm_start,
 )
-from bridgezero.fourseat.rollout import collect_trajectories
-from bridgezero.fourseat.state import (
+from training.fourseat.rollout import collect_trajectories
+from training.fourseat.state import (
     FOURSEAT_FEATURES,
     FourSeatBatch,
     features_from_history,
@@ -110,7 +110,7 @@ def test_own_bid_reward_matches_reference_scoring():
     batch, refs, _ = random_batch(128, 2)
     score, ceiling, table_ns = own_bid_scores(batch, data, TorchScorer())
     tricks = data.tricks.numpy()
-    from bridgezero.bridge.scoring import dd_cooperative_score, terminal_ns_score
+    from training.bridge.scoring import dd_cooperative_score, terminal_ns_score
     for i, ref in enumerate(refs):
         t = tricks[int(batch.deal[i])]
         for side in (0, 1):

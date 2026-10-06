@@ -11,7 +11,7 @@ Two halves:
   from the net's belief head or from card counting alone. Every draw respects the cards
   already seen, how many cards each unseen seat still holds, and every void the play has
   revealed.
-* :class:`PIMCPlayer` plugs into :mod:`bridgezero.play.match` in place of ``NetPlayer``.
+* :class:`PIMCPlayer` plugs into :mod:`training.play.match` in place of ``NetPlayer``.
 
 The solver conversions live here so that the package, not an experiment script, owns the
 one mapping between our card indices and :mod:`endplay`.
@@ -26,10 +26,10 @@ from pathlib import Path
 
 import torch
 
-from bridgezero.bridge.deals import RANKS, deal_to_pbn
-from bridgezero.bridge.play import N_CARDS, N_SEATS, PlayBatch
-from bridgezero.play.data import Contracts
-from bridgezero.play.model import PlayNet, encode
+from training.bridge.deals import RANKS, deal_to_pbn
+from training.bridge.play import N_CARDS, N_SEATS, PlayBatch
+from training.play.data import Contracts
+from training.play.model import PlayNet, encode
 
 try:                                              # endplay is the optional `dds` extra
     from endplay.dds import solve_all_boards, solve_board

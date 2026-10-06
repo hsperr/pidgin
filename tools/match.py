@@ -40,17 +40,17 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from bridgezero.bridge.auction import AuctionState  # noqa: E402
-from bridgezero.bridge.calls import PASS  # noqa: E402
-from bridgezero.bridge.scoring import contract_score, terminal_ns_score  # noqa: E402
-from bridgezero.contract.data import load_range  # noqa: E402
-from bridgezero.bridge.scoring import IMP_LOWER_BOUNDS  # noqa: E402
-from bridgezero.contract.targets import CONTRACT_TABLE_STRAIN, SCORE_LOOKUP  # noqa: E402
-from bridgezero.fourseat.model import load_fourseat_checkpoint, policy_log_probs  # noqa: E402
-from bridgezero.fourseat.competitive import (  # noqa: E402
+from training.bridge.auction import AuctionState  # noqa: E402
+from training.bridge.calls import PASS  # noqa: E402
+from training.bridge.scoring import contract_score, terminal_ns_score  # noqa: E402
+from training.contract.data import load_range  # noqa: E402
+from training.bridge.scoring import IMP_LOWER_BOUNDS  # noqa: E402
+from training.contract.targets import CONTRACT_TABLE_STRAIN, SCORE_LOOKUP  # noqa: E402
+from training.fourseat.model import load_fourseat_checkpoint, policy_log_probs  # noqa: E402
+from training.fourseat.competitive import (  # noqa: E402
     MAX_REDOUBLE_CALLS, apply_opening_rule, competitive_features)
-from bridgezero.fourseat.rulebots import RuleBot  # noqa: E402
-from bridgezero.fourseat.state import features_from_history  # noqa: E402
+from training.fourseat.rulebots import RuleBot  # noqa: E402
+from training.fourseat.state import features_from_history  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 DATA = "data/dds_results_100M.npy"
@@ -243,7 +243,7 @@ class PassPlayer:
 
 
 class RulePlayer:
-    """A batched rule bidder (bridgezero/fourseat/rulebots.py); never doubles."""
+    """A batched rule bidder (training/fourseat/rulebots.py); never doubles."""
 
     def __init__(self, style: str):
         self.bot = RuleBot(style)
@@ -321,7 +321,7 @@ def run_boards(players, deals, deal, dealer, vul, chunk):
 
 
 def replay_check(deals, deal, dealer, vul, hist, ns, n_check, seed):
-    """Replay sampled auctions through bridgezero's reference AuctionState."""
+    """Replay sampled auctions through training's reference AuctionState."""
     rng = np.random.default_rng(seed)
     idx = rng.choice(len(deal), min(n_check, len(deal)), replace=False)
     tricks = deals.tricks.numpy()

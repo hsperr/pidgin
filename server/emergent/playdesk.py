@@ -14,7 +14,7 @@ process serves both pages:
     POST /api/play/model        pick the checkpoint
 
 Everything the net needs goes through the exact code it was trained with
-(`bridgezero/play`, `bridgezero/bridge/play.py`, copied by sync_models.sh). The
+(`training/play`, `training/bridge/play.py`, copied by sync_models.sh). The
 game holds only the deal, the contract and the cards played so far; the
 `PlayBatch` is rebuilt from that on every request, which makes undo free.
 
@@ -33,12 +33,12 @@ import numpy as np
 import torch
 from flask import jsonify, redirect, request
 
-from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
-from bridgezero.bridge.deals import deal_to_pbn
-from bridgezero.bridge.play import PlayBatch
-from bridgezero.bridge.scoring import contract_score
-from bridgezero.play.data import N_CALLS, Contracts, load_contracts
-from bridgezero.play.model import PLAY_FEATURES, PlayNet
+from training.bridge.calls import DOUBLE, PASS, REDOUBLE
+from training.bridge.deals import deal_to_pbn
+from training.bridge.play import PlayBatch
+from training.bridge.scoring import contract_score
+from training.play.data import N_CALLS, Contracts, load_contracts
+from training.play.model import PLAY_FEATURES, PlayNet
 from emergent import engine
 from emergent.deck import (CALL_CHARS, HCP_W, RANKS, SEAT_NAMES, STRAINS, SUITS,
                            TRUMP_TO_BID_STRAIN, call_name, card_name, deal_owners, decode_cards,
@@ -228,7 +228,7 @@ def models_list():
 def contract_from_calls(calls, dealer):
     """(trump, declarer, level, doubled) for an auction, or None if it was passed out.
 
-    Mirrors `load_contracts` in bridgezero/play/data.py, which is what the net was
+    Mirrors `load_contracts` in training/play/data.py, which is what the net was
     trained on; keep the two in step.
     """
     bids = [(i, c) for i, c in enumerate(calls) if 0 <= c < PASS]

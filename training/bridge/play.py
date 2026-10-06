@@ -1,7 +1,7 @@
 """Batched card play: thirteen tricks for many deals at once.
 
 Card index is ``suit * 13 + rank`` with suits S,H,D,C and rank 0 = ace, 12 = two,
-the same convention as :mod:`bridgezero.bridge.deals`. So the *lowest* rank index
+the same convention as :mod:`training.bridge.deals`. So the *lowest* rank index
 wins a trick. Strain 0..3 is a trump suit, 4 is notrump, matching the double dummy
 table's S,H,D,C,NT column order.
 

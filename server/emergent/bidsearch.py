@@ -40,9 +40,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import CONTRACTS
-from bridgezero.bridge.scoring import contract_score
+from training.bridge.auction import AuctionState
+from training.bridge.calls import CONTRACTS
+from training.bridge.scoring import contract_score
 from emergent.deck import N_CALLS, call_name, owners_to_pbn
 
 T_MAX = 48                      # the belief net reads at most 48 calls

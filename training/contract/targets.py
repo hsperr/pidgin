@@ -19,7 +19,7 @@ import torch
 
 from ..bridge.calls import CONTRACTS
 from ..bridge.scoring import contract_score
-from bridgezero.bridge.calls import STRAIN_PERM
+from training.bridge.calls import STRAIN_PERM
 
 N_CONTRACTS = len(CONTRACTS)
 N_DECLARERS = 2

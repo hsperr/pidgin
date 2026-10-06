@@ -10,11 +10,11 @@ runs it under gunicorn, one worker, via `create_app` -- see deploy.sh.
 
 Two model families, each through the exact code it was trained with:
 
-- four-seat bridgezero nets (D, E46; bridgezero/fourseat): policy, Q, trick head,
+- four-seat training nets (D, E46; training/fourseat): policy, Q, trick head,
   double value/gate, 147 or 149 readable input bits;
 - brl FSP (emergent/brl_player.py), the external baseline.
 
-The auction rules and all scores come from bridgezero/bridge (AuctionState,
+The auction rules and all scores come from training/bridge (AuctionState,
 contract_score, dd_par_score). Redouble is never offered: no model has it.
 Dealer is North, nobody vulnerable.
 """
@@ -30,12 +30,12 @@ import numpy as np
 import torch
 from flask import Flask, jsonify, request
 
-from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import PASS
-from bridgezero.bridge.scoring import (contract_score, dd_par_score, own_contract_score,
+from training.bridge.auction import AuctionState
+from training.bridge.calls import PASS
+from training.bridge.scoring import (contract_score, dd_par_score, own_contract_score,
                                        terminal_ns_score)
-from bridgezero.contract.environment import AUCTION_FEATURES
-from bridgezero.fourseat.model import (competitive_log_probs, load_fourseat_checkpoint,
+from training.contract.environment import AUCTION_FEATURES
+from training.fourseat.model import (competitive_log_probs, load_fourseat_checkpoint,
                                        policy_log_probs)
 from emergent import apis, bench, engine, playdesk, tabledesk, teams
 from emergent.deck import (CALL_CHARS, HCP_W, N_CALLS, NAMES, RANKS, SEAT_NAMES, SUITS,
@@ -70,7 +70,7 @@ def hand_tensor(game, seat):
 
 
 class FourSeatBot:
-    """bridgezero four-seat net: greedy over its policy (X via the gate on gated nets)."""
+    """training four-seat net: greedy over its policy (X via the gate on gated nets)."""
 
     family = "fourseat"
 

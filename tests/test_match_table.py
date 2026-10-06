@@ -5,11 +5,11 @@ from pathlib import Path
 
 import torch
 
-from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
-from bridgezero.bridge.deals import load_dataset
-from bridgezero.contract.data import TorchDeals
-from bridgezero.fourseat.competitive import MAX_REDOUBLE_CALLS
+from training.bridge.auction import AuctionState
+from training.bridge.calls import DOUBLE, PASS, REDOUBLE
+from training.bridge.deals import load_dataset
+from training.contract.data import TorchDeals
+from training.fourseat.competitive import MAX_REDOUBLE_CALLS
 
 ROOT = Path(__file__).resolve().parents[1]
 

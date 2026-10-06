@@ -10,7 +10,7 @@ fixed opponent plays East-West at both. Score each table from North-South's side
 difference, turn it into IMPs. The deal is identical at both tables, so most of the luck
 cancels and the error bar shrinks.
 
-    python -m bridgezero.play.match BENCH.npz --challenger runs/x/last.pt \\
+    python -m training.play.match BENCH.npz --challenger runs/x/last.pt \\
         --reference random --opponent random --deals 20000
 """
 
@@ -22,11 +22,11 @@ from pathlib import Path
 
 import torch
 
-from bridgezero.bridge.play import PlayBatch
-from bridgezero.bridge.scoring import contract_score, imps
-from bridgezero.play.data import Contracts, load_contracts
-from bridgezero.play.model import PlayNet, encode
-from bridgezero.bridge.calls import STRAIN_PERM
+from training.bridge.play import PlayBatch
+from training.bridge.scoring import contract_score, imps
+from training.play.data import Contracts, load_contracts
+from training.play.model import PlayNet, encode
+from training.bridge.calls import STRAIN_PERM
 
 TRUMP_TO_BID_STRAIN = STRAIN_PERM         # its own inverse, so this is the same tuple
 
@@ -77,7 +77,7 @@ def make_player(spec: str, search: int = 0, counting: bool = False,
     if spec == "random":
         return RandomPlayer()
     if search > 0:
-        from bridgezero.play.search import PIMCPlayer      # needs the optional dds extra
+        from training.play.search import PIMCPlayer      # needs the optional dds extra
         return PIMCPlayer(spec, search, counting=counting, defence=defence,
                           defence_from_trick=defence_from_trick)
     return NetPlayer(spec)

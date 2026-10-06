@@ -9,7 +9,7 @@ A decision is (calls so far, dealer, seat to act, 13-card hand). This module abs
 
 and applies the rules in rules.json to suggest what D would do. numpy is the only dependency.
 
-Conventions (same as bridgezero): calls 0..34 are 1C,1D,1H,1S,1NT,2C,...,7NT; 35 Pass, 36 X,
+Conventions (same as training): calls 0..34 are 1C,1D,1H,1S,1NT,2C,...,7NT; 35 Pass, 36 X,
 37 XX. Seats 0..3 = N E S W. A card is suit * 13 + rank with suits S H D C and rank 0 = ace.
 
     from situations import advise, load_rules, parse_hand, parse_calls

@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 import numpy as np
-from bridgezero.bridge.calls import STRAIN_PERM
+from training.bridge.calls import STRAIN_PERM
 
 SUITS = ("S", "H", "D", "C")
 RANKS = "AKQJT98765432"

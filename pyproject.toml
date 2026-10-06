@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bridgezero"
+name = "pidgin"
 version = "0.1.0"
 description = "Contract bridge bidding from self-play: grounding, own contract, then table score"
 readme = "README.md"
@@ -15,7 +15,7 @@ dependencies = ["numpy>=2.0", "torch>=2.0"]
 dev = ["pytest>=8"]
 
 [tool.setuptools]
-packages = ["bridgezero", "bridgezero.bridge", "bridgezero.contract", "bridgezero.fourseat", "tools"]
+packages = ["training", "training.bridge", "training.contract", "training.fourseat", "training.play", "tools"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

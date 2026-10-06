@@ -5,7 +5,7 @@ in that suit (4+ cards, or 3+ to raise partner's suit), a low double (the contra
 at level 3 or below, so it is takeout-style, not penalty), a redouble, or a strong
 artificial 2♣ opening. Fewer code words = easier for a beginner to follow.
 
-    python tools/simplicity.py runs/bridgezero/4_D/best.pt --boards 4000
+    python tools/simplicity.py runs/training/4_D/best.pt --boards 4000
     python tools/simplicity.py --boards-npz results/x/boards.npz   # analyse existing auctions
     python tools/simplicity.py --boards-npz results/a_vs_brl/boards.npz --who B   # brl's calls
 """
@@ -24,7 +24,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from bridgezero.simplicity import DATA, analyse  # noqa: E402,F401  (the one implementation)
+from training.simplicity import DATA, analyse  # noqa: E402,F401  (the one implementation)
 
 
 def self_play(checkpoint: Path, boards: int, threads: int, data: str = DATA) -> dict:

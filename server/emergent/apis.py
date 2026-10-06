@@ -29,8 +29,8 @@ from xml.sax.saxutils import quoteattr
 import numpy as np
 from flask import Response, jsonify, request
 
-from bridgezero.bridge.auction import AuctionState
-from bridgezero.bridge.calls import DOUBLE, PASS, REDOUBLE
+from training.bridge.auction import AuctionState
+from training.bridge.calls import DOUBLE, PASS, REDOUBLE
 from emergent import engine, playdesk, teams
 from emergent.deck import RANKS, SUITS, call_token, card_name, trick_best
 

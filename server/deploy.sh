@@ -11,6 +11,10 @@ APP="/opt/bridge/app"
 VENV="/opt/bridge/venv"
 
 cd "$(dirname "$0")"
+# Ship only committed code: a dirty tree once put an unreviewed file live.
+if [ -n "$(git status --porcelain -- . ../training)" ] && [ -z "${DEPLOY_DIRTY:-}" ]; then
+  echo "uncommitted changes in server/ or training/; commit them (or DEPLOY_DIRTY=1)"; exit 1
+fi
 for manifest in models/models.json models/play_models.json; do
   python3 -c "import json,os,sys; [open(os.path.join('models', m['file'])).close() for m in json.load(open(sys.argv[1]))]" "$manifest" \
     || { echo "$manifest names a missing file"; exit 1; }
@@ -21,7 +25,7 @@ python3 -c "import json; [open('models/'+f).close() for m in json.load(open('mod
 
 echo "==> syncing code + models to $HOST:$APP"
 ssh "$HOST" "mkdir -p $APP"
-rsync -az --delete \
+rsync -azL --delete \
   --exclude '.git' --exclude '/data/' --exclude '__pycache__' --exclude '*.pyc' --exclude '.DS_Store' \
   ./ "$HOST:$APP/"
 

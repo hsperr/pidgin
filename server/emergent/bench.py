@@ -37,7 +37,7 @@ import time
 import numpy as np
 from flask import Response, jsonify, request
 
-from bridgezero.bridge.auction import AuctionState
+from training.bridge.auction import AuctionState
 from emergent.analysis import simplicity, weakspots
 from emergent.apis import ApiError, parse_call
 from emergent.deck import RANKS, SUITS
@@ -81,7 +81,7 @@ def pbn(first: int, stop: int) -> str:
     d, out = deals(), []
     for i in range(first, stop):
         hands = " ".join(hand_text(d["owners"][i], s) for s in range(4))
-        out.append(f'[Event "bridgezero bench {SET_NAME}"]\n[Board "{i + 1}"]\n'
+        out.append(f'[Event "training bench {SET_NAME}"]\n[Board "{i + 1}"]\n'
                    f'[Dealer "{SEATS[d["dealer"][i]]}"]\n[Vulnerable "{VUL_NAMES[d["vul"][i]]}"]\n'
                    f'[Deal "N:{hands}"]\n')
     return "\n".join(out)
