@@ -8,7 +8,7 @@
         --start 0 --temperature 1,3,5 --out data/play/auctions_1M.npz
 
 All four seats are the same model. With the default --temperature 0 it bids greedily,
-exactly like the server's bots. A temperature above 0 samples the calls instead; with a
+using the bidding network without bidding search. A positive temperature samples calls; with a
 list, each deal draws one temperature from it. Dealer and vulnerability are random
 (seeded).
 

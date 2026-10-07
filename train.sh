@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Public random -> D recipe. See README.md for checkpoint selection and splits.
+# Public Pidgin V1 training recipe. See README.md for checkpoint selection and splits.
 # ./train.sh [OUT] | ./train.sh --smoke [OUT]
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -62,7 +62,7 @@ echo "== stage 3: own-contract simplicity fine-tune"
 own_stage "$OUT/3_simple" "$OUT/2_own/last.pt" \
   "${OWN_SIMPLE[@]}" --code-word-penalty "$CODE_WORD_PENALTY"
 
-echo "== stage 4: D table-score training with simplicity cost"
+echo "== stage 4: Pidgin V1 table-score training with simplicity cost"
 if ! completed "$OUT/4_D" eval.json; then
   "$PY" -u -m training.fourseat.train "${COMMON[@]}" "${FOURSEAT[@]}" \
     --out "$OUT/4_D" --init "$OUT/3_simple/last.pt" \

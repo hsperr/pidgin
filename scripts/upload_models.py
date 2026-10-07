@@ -33,7 +33,9 @@ live there; this repo only holds the weights.
 {rows}
 
 Other files: `belief_r2.pt` (belief net for the bidding search),
-`bench_100k.npz` (frozen card-play benchmark), `play_E48_leagueE.pt`.
+`bench_100k.npz` (frozen card-play benchmark), and `play_E48_leagueE.pt`
+(the compact self-play card-play model). Filenames retain their original identifiers;
+use the team names above when choosing a bot.
 
 `brl_fsp_weights.npz` is not ours: it is the FSP bidder of Kita et al. (2024),
 redistributed under its Apache-2.0 licence (`brl_LICENSE`).
@@ -42,6 +44,10 @@ redistributed under its Apache-2.0 licence (`brl_LICENSE`).
 
 ```bash
 git clone https://github.com/{gh} && cd {name}
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+python -m pip install -r server/requirements.txt
 scripts/get_models.sh
 python scripts/bid.py AKQ2.JT9.876.543 --auction "1H P"
 scripts/serve.sh

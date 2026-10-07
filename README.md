@@ -1,8 +1,9 @@
 # Pidgin — bridge bidding from self-play
 
-Train a bridge bidder from random weights through the D recipe: grounding,
+Train a bridge bidder from random weights through the Pidgin V1 recipe: grounding,
 own-contract self-play, a simplicity fine-tune, and table-score self-play.
-The bidder sees its own hand and public calls. Double-dummy trick tables
+The bidder sees its own hand and public calls. Double-dummy (DD) trick tables
+show how many tricks can be taken with perfect play and all hands visible. They
 supply training targets and rewards; they are never bidder inputs.
 No expert auctions or bidding labels are required.
 
@@ -18,23 +19,47 @@ No expert auctions or bidding labels are required.
 | `scripts/` | Commands to use the models: download, bid, generate auctions, serve ([scripts/README.md](scripts/README.md)). |
 | `tools/` | Matches, dashboard, analysis. |
 
+## Set up
+
+Use Python 3.10 or newer. From the repo root:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+python -m pip install -r server/requirements.txt
+scripts/get_models.sh
+```
+
+The download puts released weights in `server/models/`. Training and model
+comparisons also need the DD dataset described below.
+
 ## Use the released models
 
 ```bash
-python -m pip install -e . && python -m pip install -r server/requirements.txt
-scripts/get_models.sh                                    # weights from Hugging Face, ~130 MB
-python scripts/bid.py AKQ2.JT9.876.543 --auction "1H P"  # one call, with the top four
+python scripts/bid.py AKQ2.JT9.876.543 --auction "1H P" --model PidginV1
 python scripts/generate_auctions.py --n 100000 --out auctions.npz --pbn auctions.txt
 scripts/serve.sh                                         # the site and APIs on localhost:8787
 ```
 
+The first command prints the chosen call and the four most likely legal calls:
+
+```text
+PidginV1 as S: 1S
+   1S  0.916
+```
+
+The hand uses spades.hearts.diamonds.clubs, with `T` for ten. `--auction` is the
+public calls so far (`P` means pass); the hand belongs to the next player to call.
 `--model` picks a team (`PidginV1`, `PidginV2`, `BRL`) or a checkpoint file.
-`generate_auctions.py` bids about 4,000 deals a second on a laptop CPU; `--help` lists
-the output format.
+These command-line tools use the bidding network directly. The Pidgin V2 team
+through the Brill API also uses bidding search, so its calls can differ from
+the scripts.
+`generate_auctions.py --help` describes its options and output format.
 
 ## Quick start
 
-Use Python 3.10 or newer. Run commands from this checkout:
+Run commands from this checkout:
 
 ```bash
 python -m pip install -e ".[dev]"
@@ -67,27 +92,29 @@ DATA=/path/to/dds_results_100M.npy THREADS=8 SEED=1 ./train.sh runs/my_run
 CODE_WORD_PENALTY=0 ./train.sh runs/no_simplicity_cost
 ```
 
-## Random → D
+## Train Pidgin V1
+
+`train.sh` runs four stages. The folder names are checkpoint paths used by the
+script; `4_D` is the final Pidgin V1 stage. IMPs (International Match Points)
+measure the score difference between two tables playing the same deal.
 
 | Output directory | Training | Checkpoint selection |
 |---|---|---|
-| `1_ground` | Regress DD tricks and contract values on silent-opponent prefixes; learn a policy from predicted values | Silent-opponent contract score |
-| `2_own` | Four-seat self-play, rewarded for each partnership's own contract | Own-contract score |
-| `3_simple` | Continue own-contract training for up to 30,000 steps with a 0.2 code-word cost | Own-contract score |
-| `4_D` | Real table rewards, 0.2 code-word cost, and a league of past snapshots | Paired IMPs against `3_simple/last.pt` |
+| `1_ground` | Learn what contracts can make from DD results, then learn to bid while opponents pass | Contract score with opponents passing |
+| `2_own` | All four seats bid; each partnership learns to score its own final contract | Own-contract score |
+| `3_simple` | Continue stage 2 for up to 30,000 steps, charging for calls flagged as hard to read | Own-contract score |
+| `4_D` | Learn from final contract scores, with the same call cost and past versions as opponents | Paired IMPs against `3_simple/last.pt` |
 
 Stage 2 starts from `1_ground/best.pt`; stages 3 and 4 start from the preceding
 stage's `last.pt`. The final selected model is **`runs/training/4_D/best.pt`**.
-D enables doubles and redoubles at any legal seat. Its starting policy is
+Pidgin V1 enables doubles and redoubles at any legal seat. Its starting policy is
 measured and kept as a fallback when updates fail to improve or trip a guard.
 Changing the legal doubling policy at this transition can change play even
 before the first update, so its starting IMP score need not be zero.
 
-This is a public adaptation of the historical D experiment. It preserves the
-own-contract simplicity fine-tune and D's reward settings, but selects against
-its public parent. The historical experiment used a separate private reference
-for selection. This recipe does not promise the same chosen weights or strength.
-No pretrained weights or sibling repositories are needed.
+This recipe trains from scratch and selects its final checkpoint against the
+preceding stage. Results vary with training and may differ from the released
+Pidgin V1 weights. No pretrained weights are needed.
 
 Default dataset ranges are zero-based, with exclusive ends:
 
@@ -101,7 +128,7 @@ Training shuffles full one-million-deal blocks. A partial final block is dropped
 episodes sample within each block **with replacement**, so a sweep does not
 visit every deal. Grounding validates every 1,000 steps and stops after 5,000
 without improvement. Own-contract training completes its block sweep unless
-a guard trips. D validates every 3,000 steps and stops after 12,000 without
+a guard trips. Pidgin V1 validates every 3,000 steps and stops after 12,000 without
 improvement. Every stage logs metrics and saves its run settings.
 
 Completed stages are skipped when rerunning the script with the same output
@@ -116,9 +143,9 @@ Grounding has no resume support; use a fresh output folder if it is interrupted.
 python tools/dashboard.py --runs runs/training
 python tools/openings.py runs/training/4_D/best.pt
 python tools/match.py --a four:runs/training/4_D/best.pt \
-  --b four:runs/training/3_simple/last.pt --out results/d_vs_parent
+  --b four:runs/training/3_simple/last.pt --out results/pidgin_v1_vs_parent
 python tools/simplicity.py runs/training/4_D/best.pt --boards 4000
-python tools/weakspots.py results/d_vs_parent
+python tools/weakspots.py results/pidgin_v1_vs_parent
 ```
 
 Pass `--data` to each analysis command for a different dataset. On the smoke
@@ -153,7 +180,7 @@ A **code word** is a call flagged by any of these rules:
 - A suit bid with fewer than 4 cards, or fewer than 3 when raising partner.
 - A double of a contract at level 3 or below.
 - A redouble.
-- A 2♣ opening with fewer than 5 clubs or at least 20 HCP.
+- A 2♣ opening with fewer than 5 clubs or at least 20 high-card points (HCP).
 
 Each flagged call counts once, even when multiple rules apply. The trainer logs
 `code_words_per_100` on greedy validation self-play and `code_word_share` on
@@ -165,7 +192,7 @@ Set `CODE_WORD_PENALTY` to change it in stages 3 and 4.
 reports natural suit bids, cue bids, jumps, 4NT, and auction length:
 
 ```bash
-python tools/simplicity.py --boards-npz results/d_vs_parent/boards.npz
+python tools/simplicity.py --boards-npz results/pidgin_v1_vs_parent/boards.npz
 ```
 
 For a match between different players, the Python `analyse(..., who="A")`
@@ -175,7 +202,7 @@ Compare both IMPs and simplicity when assessing a model.
 
 The sacrifice value head ranks candidate contracts using a DD counterfactual
 where the opponents double and everyone passes. Actual opponents can respond
-differently. D's policy reward uses the final auction, but candidate ranking
+differently. Pidgin V1's policy reward uses the final auction, but candidate ranking
 still uses this proxy; inspect sacrifice credit and positive share alongside IMPs.
 
 ## Public contents and license

@@ -1,32 +1,43 @@
-# Belief net (bidding search)
+# Belief model for bidding search
 
-Reads one seat's hand, the vulnerability and the auction so far, and guesses who holds
-each hidden card, plus each hidden hand's HCP and suit lengths. The `PidginV2` team uses
-it to sample deals that fit the auction. It scores its top candidate calls on those
-deals and changes its call only when another one is clearly better
-(`server/emergent/bidsearch.py`).
+Given one player's hand, vulnerability, and the auction so far, this model estimates
+which opponent or partner holds each unseen card. It also estimates each hidden hand's
+high-card points and suit lengths. Pidgin V2 samples possible deals from these
+estimates, then checks whether another bid performs clearly better on those deals.
+See `server/emergent/bidsearch.py` for the search.
 
-Released file: `belief_r2.pt` (float16, without the training-only system head).
-
-Code in `belief/`: `train.py` (trainer), `gen.py` (training data), `analyze.py` (how the
-guess sharpens over an auction), `train_shape.py` (a variant that predicts shapes first).
-
-## Data
-
-The net must read many bidding styles, not one. `belief/gen.py` deals hands from
-`dds_results_100M.npy`, lets a pool of bidders bid them against each other, and writes
-shards to `belief/data/{train,test}/`. `belief/data/systems.json` lists the pool: Pidgin
-nets, BRL, EPBot systems (through libEPBot) and recorded WBridge5 auctions
-(`$BRIDGE_WB5`; `--no-wb5` skips them).
+The released checkpoint is `belief_r2.pt`. Download it with `scripts/get_models.sh`.
+To ask the released Pidgin V2 bidder for a call (without bidding search):
 
 ```bash
-OMP_NUM_THREADS=4 python -u belief/gen.py test
-OMP_NUM_THREADS=4 python -u belief/gen.py train     # keeps writing shards until stopped
+python -m pip install -e .
+python -m pip install -r server/requirements.txt
+scripts/get_models.sh
+python scripts/bid.py AKQ2.JT9.876.543 --auction "1H P" --model PidginV2
 ```
 
-## Train it
+The complete team uses bidding search on the server; see [serving.md](serving.md).
 
-Two runs: card guesses first, then the HCP and suit-length heads on top.
+## Training data and reproduction
+
+`belief/train.py` reads auction shards from `belief/data/train/` and a complete,
+fixed set of pairwise test shards from `belief/data/test/`. It rebuilds hands from
+`data/dds_results_100M.npy` (see the [README](../README.md#training-data)). The
+committed `belief/data/systems.json` records bidder IDs used in those shards; it
+is a data schema, not a list of models supplied by this repository. Its `D75` ID
+means Pidgin V1's bidding checkpoint. Other old IDs remain because changing them
+would mislabel saved data; they are not needed to use the released team.
+
+The auction generator, `belief/gen.py`, is **not independently runnable from this
+checkout**. It imports `match` from an external `BRIDGE_LAB` checkout and points to
+additional bidder checkpoints under `BRIDGE_KEEP`, plus EPBot and WBridge5 data.
+Neither those sources nor the generated shards are included here. The released
+belief checkpoint can be used without them. To reproduce training, first supply
+the external bidders and compatible auction shards. `--no-wb5` removes only the
+WBridge5 training input: the test loader still requires the WBridge5 test file
+and all 120 original pair files.
+
+Once those inputs exist, the historical training sequence is:
 
 ```bash
 python -u belief/train.py --out runs/belief/r0 --steps 100000 --lr 3e-4 --d 1024 --layers 4 \
@@ -36,5 +47,8 @@ python -u belief/train.py --out runs/belief/r2 --init runs/belief/r0/last.pt --s
   --holdout ep_wj,E28 --wb5-frac 0.2 --reload 1000000
 ```
 
-`--holdout` names bidders from `systems.json` that stay out of training and are used
-only for testing. Add `--device mps` or `--device cuda` for a GPU.
+The first run learns card locations; the second adds point and suit-length
+predictions. `--holdout` uses exact system IDs from `systems.json` and excludes
+those bidders from training. These commands describe the original settings;
+they require the missing auction data and bidders. Use `--device cpu`,
+`--device mps`, or `--device cuda` as available.

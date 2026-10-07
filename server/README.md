@@ -1,492 +1,93 @@
-# Server
+# Pidgin server
 
-One page at https://bridge.localgeek.jp, one Flask app in one process:
+This Flask app serves the playable bridge table, a debug table, and bot APIs. The public site is [bridge.localgeek.jp](https://bridge.localgeek.jp/).
 
-- `/` (also `/table`) — **play a board**: you hold one chair and play that one hand,
-  the nets hold the other three. Bid the auction, play the cards, get a duplicate
-  score against par, deal again. A hint toggle turns on teaching notes before every
-  call and every card. Challenges, a rating and a leaderboard live here too.
-- `/debug` — **the same page in debug mode**: all four hands face up, any dealer and
-  vulnerability, and the position spelled out in the address bar (see "Debug mode" below).
+| Path | What it does |
+|---|---|
+| `/` or `/table` | Play one seat against three bots, with optional hints, challenges, and scoring. |
+| `/debug` | Inspect a deal with all hands visible; choose seats, dealer, vulnerability, and models. |
+| `/bench` | Learn how to compare bidding bots on fixed deals; running a comparison requires the benchmark file. |
+| `/apis/brill/` | Discover the stateless Brill Seat Robot API and its available teams. |
 
-The old bid desk and play desk pages are gone (`/play` redirects to `/`). Their APIs,
-`/api/*` and `/api/play/*`, stay: the tests use them to check that every surface
-bids and plays alike.
+The former `/play` page redirects to `/`. The older `/api/*` and `/api/play/*` endpoints remain available for clients, but new integrations should use `/apis/brill/`.
 
-- `/bench` — **bot benchmark**: anyone gets a fixed deal set, plays a duplicate match
-  with their bot, posts the auctions and gets a weak-spot report page (IMPs, competition,
-  doubles, openings, bidding style). Contract: `/apis/bench/agent.md` and
-  `/apis/bench/openapi.json`; code in `emergent/bench.py`, example client in
-  `examples/bench_client.py`. Deals are rows 90,000–99,999 of `models/bench_100k.npz`;
-  reports are files in `data/bench/`.
+## Run from the repository root
 
-## Run locally
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e .
+python -m pip install -r server/requirements.txt
+scripts/get_models.sh
+scripts/serve.sh
+```
 
-    python3 -m emergent.bidserver                           # http://127.0.0.1:8787
+Open <http://127.0.0.1:8787/>. `scripts/get_models.sh` downloads released weights from Hugging Face into `server/models/`; it requires network access. Set `PORT=8080` before `scripts/serve.sh` to use another port. The model classes live in `training/`; the server uses that code when it loads the weights.
 
-## The bot engine
+For a container, run these commands from the repository root after downloading the weights:
 
-`emergent/engine.py` is how the bots bid and play, for every page and API:
-`choose_call(bot, hand, calls, dealer, vul)` and `choose_card(bot, contracts, batch, search)`.
-Its `CONFIG` is read from the environment once, at start:
+```bash
+docker build -f server/Dockerfile -t pidgin-brill .
+docker run --rm -p 8080:8080 pidgin-brill
+curl http://localhost:8080/apis/brill/
+```
 
-| env | default | |
+## Play and share a board
+
+Open `/` and choose a chair. You bid and play that chair; if you declare, you also play dummy's cards. The other seats use bots. The page shows the score against double-dummy par when the board ends. Hints can be switched on during the game. **Copy link** shares the current position, including the auction and cards already played. The link encodes all four hands, so anyone with it can recover the full deal.
+
+Use `/debug` to examine a position. It shows all hands and lets you change the dealer, vulnerability, chair, and models. With no chair selected you may act for all four seats; **Net: this call/card** advances one bot move and **Nets play to the end** finishes the board. A short example deals random hands with East as dealer and North-South vulnerable:
+
+```text
+http://127.0.0.1:8787/debug#dealer=E&vul=ns&seat=S
+```
+
+You can also specify hands as `spades.hearts.diamonds.clubs`, for example `n=AKQJ.T98.765.432`. A full deal must assign 13 distinct cards to each seat. `auction` uses calls such as `1S-P-2C-P`; `play` uses cards such as `H7-HQ-HK-HA`. The server checks that calls and cards are legal. A shared debug link resumes at the stated position when you press **Continue from here**.
+
+The table's search switch controls card-play search. On `/debug`, it also controls bidding search for bot calls. Bidding search considers alternative calls using sampled unseen hands and double-dummy scoring. Its default settings come from the environment variables in `emergent/engine.py`; the most useful are `PLAY_SEARCH=0` to disable card search, `PLAY_SEARCH_SAMPLES=20`, `BID_SEARCH_SAMPLES=32`, and `BID_SEARCH_K=1` to disable bidding search. These are read at server start.
+
+## Use a bot through the Brill API
+
+The API is stateless: each request includes the acting seat's hand, dealer, vulnerability, and auction. Card-play requests also include the played cards and dummy's hand once dummy is visible. A successful bid request returns JSON with `bid`, `candidates`, `explanation`, and `model`; a play request returns `card`, `candidates`, and `model`. Invalid positions return HTTP 400 with an `error` field.
+
+The `model` parameter selects a complete team for `/bid`, `/lead`, and `/play`:
+
+| Public team ID | Bidding | Card play |
 |---|---|---|
-| `BOT_BID_MODEL` / `BOT_PLAY_MODEL` | first entry of `models/models.json` / `play_models.json` | default models |
-| `PLAY_SEARCH` | `1` | PIMC card-play search on |
-| `PLAY_SEARCH_SAMPLES` | `20` | layouts per decision |
-| `PLAY_SEARCH_BUDGET_MS` | `900` | wall clock cap per decision |
-| `PLAY_SEARCH_DEFENCE` | `all` | `off` / `lead` / `all` / `only`; declarer always searches |
-| `PLAY_SEARCH_DEFENCE_FROM` | `2` | defence searches from this trick index (the third trick) |
+| `PidginV1` | Pidgin V1 bidding model | Pidgin V1 card-play model with search |
+| `PidginV2` | Pidgin V2 bidding model with search | Pidgin Q-net card-play model with search |
+| `BRL` | External BRL bidding baseline | Pidgin Q-net card-play model with search |
 
-| `BID_SEARCH_SAMPLES` | `32` | /debug bidding search: belief-sampled deals per call |
-| `BID_SEARCH_K` | `3` | candidate calls (the net's best K); `1` turns the bidding search off |
-| `BID_SEARCH_MARGIN` | `50` | points a call must beat the net's own by |
-| `BID_SEARCH_BUDGET_MS` | `2400` | wall clock cap per call; then the deals solved so far decide |
-| `BID_SEARCH_MIN_SAMPLES` | `8` | fewer solved in time: the net's own call |
-| `BID_SEARCH_PMIN` | `0.02` | smallest policy p of a candidate |
-| `BID_SEARCH_BELIEF` | `belief_r2.pt` | belief net in `models/` |
+These IDs are listed at `/apis/brill/`. The internal weight filenames are recorded in `models/teams.json` and described in [Serving](../docs/serving.md). An unqualified Brill request uses `BRILL_DEFAULT_MODEL` when set; the Docker image sets it to `PidginV2`. Otherwise the API uses the first loaded bidding or play model. Specify `model` when comparing teams so the result is unambiguous.
 
-/table's search toggle overrides `PLAY_SEARCH` for that game; the play desk API shows the
-plain net and never searches.
+For example, ask Pidgin V1 to bid from North on a new auction:
 
-### Bidding search (`/debug` only)
+```bash
+curl -G 'http://127.0.0.1:8787/apis/brill/bid' \
+  --data-urlencode 'model=PidginV1' \
+  --data-urlencode 'seat=N' --data-urlencode 'dealer=N' \
+  --data-urlencode 'vul=None' --data-urlencode 'ctx=' \
+  --data-urlencode 'hand=AKQJ.T98.765.432'
+```
 
-`emergent/bidsearch.py`, a port of the research search in `belief/` (`bid_search.py`,
-the shape-first sampler of `sample_eval.py`; E57 in its NOTES.md). On `/debug`, with the
-page's search toggle on, every net call goes through `engine.search_call`; with it off, and
-on every other page and API, the net's own call. For the seat on turn: the picked bidding
-net's top K calls (p >= PMIN); N deals drawn from the belief net (`models/belief_r2.pt`, the
-r2 MLP in float16, system tags "not told"), shape first; on each deal x call the same net
-bids the auction out at all four seats; DDS scores the contract reached (doubles included).
-The net's call is left only for a mean gain over MARGIN points. Research: +0.37 IMP/board
-for g_s2o_hi3_lo with search vs brl (N 32, K 3, margin 50). One log line per search
-(`journalctl -u bridge | grep "bid search"`): candidates, mean scores, deals solved, ms.
+`ctx` contains two-character calls from the dealer (`1S--2H` means 1♠, pass, 2♥); the API also accepts dash-separated calls such as `1S-P-2H`. Card-play requests use `/apis/brill/lead` before the opening lead and `/apis/brill/play` afterward; `played` is a string of suit-rank pairs such as `H7HQ`. See the [Brill Seat Robot API specification](https://brill.aalborgdata.dk/seat-api.html) for the full request format. The BBO-compatible endpoint is `/apis/bbo.php`; see `emergent/apis.py` for its accepted parameters.
 
-A one-contract DD solve costs 30–500 ms on the one-core droplet, so the budget usually
-decides how many deals count. The deals are seeded by the position, so asking again
-(undo) draws the same ones. The belief net loads on the first search (32 MB).
-`sync_models.sh` rebuilds it from `runs/r2/last.pt`.
+## Benchmark a bidding bot
 
-## Update to the newest snapshots, then deploy
+When `server/models/bench_100k.npz` is present, `/bench` serves a fixed deal set and reports results from two auctions per deal: your bot at North-South and at East-West against the same opponent. Card play is scored with a double-dummy solver. The server exposes the full protocol at `/apis/bench/agent.md` and `/apis/bench/openapi.json`.
 
-    ./sync_models.sh      # weights only: newest snapshots from $SRC
-    ./deploy.sh
+```bash
+curl 'http://127.0.0.1:8787/apis/bench/deals?offset=0&limit=10'
+python server/examples/bench_client.py --url http://127.0.0.1:8787 \
+  --bot D_cw_s75k --opp brl_fsp --boards 1000
+```
 
-The host runs the app behind nginx as a systemd service; that config is not in this repo.
+The example client currently accepts checkpoint IDs, so `D_cw_s75k` is the file-backed ID for the Pidgin V1 bidding model. It downloads the deals, runs both auctions with local models, then submits the report. Replace its `bid()` function to use your own bidding bot. Install the benchmark file before requesting deals; that endpoint needs it to respond.
 
-## Models
+## Models and deployment
 
-`models/models.json` lists what the dropdown shows; the first entry is the
-default. Entries whose file is missing are skipped, so the public download (team models
-only) runs too. Two families are supported:
+`models/teams.json` maps public team IDs to weights and search choices. `models/models.json` and `models/play_models.json` supply the debug table's model menus; entries with missing files are skipped. The first available entry is the default for its menu. Weight filenames and checkpoint IDs stay as they are because the manifests and APIs use them; use public team names when describing behavior to readers.
 
-- four-seat checkpoints from `training/`, stored without the critic.
-- brl FSP (`brl_fsp_weights.npz`), the external baseline.
+`server/deploy.sh` ships the app to a configured Linux host and restarts its systemd service. Set `DEPLOY_HOST=user@host` or put it in the ignored `server/.deploy.env`, then run `server/deploy.sh` from the repository root. It requires every manifest weight and the bidding belief model. The host's nginx and systemd configuration lives outside this repository.
 
-## Model code and frozen copies
-
-The net classes come from `../training` (`server/training` is a link to it).
-`deploy.sh` ships it with the app; Docker builds from the repo root.
-
-`emergent/teaching/` (`situations.py`, `rules.json`; numpy only) holds Pidgin V1's 15
-teaching rules with their SAYC notes, used by the /table "rule of thumb" card.
-
-## Machine APIs (`/apis/…`) — seat our bots at other sites' tables
-
-`emergent/apis.py`, on the same app. Stateless: every request carries the whole position.
-Default models are the first entries of `models/models.json` (bidding) and
-`models/play_models.json` (card play); `model=<id>` / `play_model=<id>` pick another.
-Dealer and vulnerability are real inputs here (the desks fix North / nobody).
-
-- **BBO robot.php format** — `GET /apis/bbo.php?pov=S&d=N&v=-&n=..&e=..&s=..&w=..&h=1c-p`
-  (hands `s.h.d.c` lowercase, `h` calls from the dealer joined by `-`, `v` one of `- n e b`,
-  `botstyle` ignored). Answers `<sc_bm ...><r type="bid" bid="1N" meaning="..."/></sc_bm>`.
-  Card play too: once the auction is over `h` goes on with the cards played
-  (`...-4h-p-p-p-H9`) and the answer is `<r type="play" card="HJ"/>`; when dummy is on turn
-  the declarer is asked. Only what `pov` can see is read: its hand, dummy after the lead.
-- **Brill Seat Robot API** (https://brill.aalborgdata.dk/seat-api.html), base URL
-  `https://bridge.localgeek.jp/apis/brill`: `GET /` (200), `/bid`, `/lead`, `/play`.
-  `/bid` answers `bid`, `alert`, `explanation` (from `models/corpus_<id>.json`), `candidates`.
-  Card play uses the play net; unseen cards are random filler that never reaches its input
-  (checked in `tests/test_apis.py`). Card play is deterministic and seat-free: the search
-  is seeded by the position as the seat on turn sees it (seats counted from that seat) and
-  always draws all `PLAY_SEARCH_SAMPLES` layouts, never cut by `PLAY_SEARCH_BUDGET_MS`. So
-  the same position gets the same card, also with the whole deal turned round the table. §11 answers: one process serves all four seats, no state
-  between requests; cold start = server start (models load at boot), then ~10–50 ms per
-  request; `meanings` and `matchtype` are accepted and ignored; one system per model id.
-
-    python3 -m pytest -q tests/test_apis.py      # Brill's §9 checklist + robot.php, full boards
-
-### Teams and the Docker image (`model=PidginV1|BRL|PidginV2`)
-
-`models/teams.json` names three bots, each a bidding net + bidding search on/off + a card player,
-picked on `/apis/brill/{bid,lead,play}` with `model=<id>` (or `model_id=<id>`); `GET /apis/brill/`
-lists them under `models`. A team loads on the first request that names it; `BRILL_DEFAULT_MODEL`
-(unset on the public site) answers requests that name none. Code: `emergent/teams.py`, B2g play net in `emergent/playq.py`.
-
-| id | bidding | card play |
-|---|---|---|
-| PidginV1 | D_cw_s75k, no search | E48 wide league H + PIMC (as on the site) |
-| BRL | brl FSP, no search | B2g Q-net + PIMC, E48 belief layouts |
-| PidginV2 | g_s2o_hi3_lo s40k (`pidginv2_bid_s40000.pt`) + bidding search, no clock | B2g Q-net + PIMC, E48 belief layouts |
-
-Measured (4,000 boards): PidginV2 vs PidginV1 +0.33 ± 0.20 IMP/board. B2g is
-`play_B2g_s540k.pt`, weights only ([docs/card_play.md](../docs/card_play.md)).
-All answers are deterministic (bidding search scores all 32 deals; card search seeded by the view).
-
-    docker build -t pidgin-brill .                 # amd64 too: docker buildx build --platform linux/amd64 ...
-    docker run --rm -p 8080:8080 pidgin-brill      # http://localhost:8080/apis/brill/
-    python3 -m pytest -q tests/test_teams.py       # one full board per team, model_id, determinism
-
-A full board takes ~4-6 s (PidginV1, BRL) and ~15 s (PidginV2, the bidding search) on an M-series
-Mac; ~1.2 GB RAM.
-
-## Why this call (the section under the bidding box)
-
-Three parts, all from the deployed net alone:
-
-1. **Its own numbers** — its chance for its call and the runner-up, and how far below the
-   best possible contract it expects to finish after each (`why()` in `bidserver.py`).
-2. **What this call means** — `models/corpus_<model id>.json`, built offline from 1,000,000
-   greedy self-play auctions (dealer North, no vulnerability, the desk's setting) by
-   greedy self-play auctions (`scripts/generate_auctions.py`), summarised by prefix. Positions with fewer than 200
-   hands are dropped; 8 calls deep.
-3. **Play it out** — `emergent/explain.py`: 256 random completions of the unseen 39 cards,
-   weighted by how likely the net thinks the calls so far were, then the net finishes the
-   auction on each. About 1.7 s on the droplet, in a background thread, newest request wins.
-   The samples are the net's guess: the real hand ranks around the 18th percentile of them,
-   and the weights are softened (eps 0.02, beta chosen for ESS = 25% of the samples).
-
-## The play desk (`/play`)
-
-`emergent/playdesk.py` registers `/play` and `/api/play/*` on the same Flask app,
-and `emergent/bidserver_static/play.html` is the page. The net runs through the
-exact classes it was trained with, copied by `sync_models.sh`:
-`training/play/{data,model,match}.py` and `training/bridge/play.py`.
-
-Where a board comes from, in order of preference:
-
-1. **A link from the bid desk** — `#d=<deal>&a=<auction>&dr=0&v=none`. Same deal
-   codec and same call codec as the bid desk, so the two pages share links.
-2. **The frozen benchmark** — `models/bench_100k.npz`, the slice every card-play number
-   was measured on. `#b=<row>` loads one. Each row brings its own auction,
-   contract, vulnerability and stored `dd_tricks`, so the page can say what the
-   benchmark thought the board was worth. Only the first `PLAY_BENCH_LIMIT` rows
-   are read (4000 by default); loading all 100k takes ~30 s.
-3. **Configured on the page** — a random deal or the cards already on the table,
-   plus level, strain, declarer, doubled and vulnerability. There is no real
-   auction then, so the net is handed the shortest one that lands in the
-   contract: declarer bids it, everybody passes. The page says so.
-
-The page shows the net's whole information set for the seat on turn (its own
-hand, the face-up hand, every card played by relative seat, the contract, both
-readings of the auction, all 740 input numbers), its probability over the 52
-cards with the illegal ones greyed out, and its belief head as a per-card split
-over the hands it cannot see, with the true holder as the cell border.
-
-Double dummy comes from endplay/DDS, the same solver that produced the
-benchmark's `dd_tricks`: `calc_all_tables` for the board, `solve_board` at the
-live position for what each card is worth, and one solve per card after the play
-for the card-by-card review. 52 solves cost about 50 ms. If endplay is missing or
-throws, every DD field is `None` and the page says there is no answer rather than
-guessing.
-
-`models/play_models.json` lists the checkpoints the dropdown shows, like
-`models/models.json` does for the bid desk.
-
-## Play a board (`/table`)
-
-`emergent/tabledesk.py` registers `/table` and `/api/table/*`, and
-`emergent/bidserver_static/table.html` is the page. It adds no model of its own:
-the auction runs through the bid desk's `MODELS` and the play through
-`playdesk.MODELS` and a `playdesk`-shaped game dict, so a board here is played by
-exactly the code the other two pages use. `python -m emergent.bidserver` imports
-the bid desk twice, so `tabledesk.load(sys.modules[__name__])` hands over the
-module that actually loaded the checkpoints instead of importing it again.
-
-You hold one chair and the nets hold the other three. North deals and nobody is
-vulnerable, the same setting as the other two desks, because the "what this call
-means" corpus was built that way.
-
-**The play follows a real table.** Declarer plays both of the declaring side's
-hands: when you declare, you pick the card for your own hand and for dummy's
-(face up opposite you after the opening lead). When you are dummy you play
-nothing — your partner, the net, declares and plays both hands while yours lies
-face up. As a defender you play your own hand. Each hand on the page is labelled
-with who plays it.
-
-The board is scored with duplicate scoring and compared against `dd_par_score`,
-in points and in IMPs. `result.par` is that par from your side; `par_ns` and
-`par_mine` are the same numbers under the older names.
-
-### Sharing a board
-
-The address bar always holds the position on screen, so copying it (or pressing
-**Copy link** in the header) shares exactly that board:
-
-    /table#d=<deal>&a=<calls>&dr=0&v=none&p=<cards>&s=<N|E|S|W>&m=<bid model>&pm=<play model>&h=<0|1>
-    /table#d=WsFp3_tWPNyvIKiARQ&a=AD&dr=0&v=none&s=S&m=D_cw_s75k&pm=E48_wideleagueH&h=0
-
-- `d`, `a`, `dr`, `v` and `m` are the bid desk's (`bidserver.encode_deal`, one
-  `CALL_CHARS` character per call) and `p` is the play desk's (one `CARD_CHARS`
-  character per card, in play order), so the same link also opens on `/` and `/play`.
-  `a` and `p` are left out while empty. `dr` is the dealer (0–3 = N E S W) and `v` the
-  vulnerability (`none`, `ns`, `ew`, `all`); a new board on `/` is always `0` and `none`,
-  but a link may carry others and the nets and the score use them.
-- `s` is your chair, `pm` the card-play model id, `h` hints on/off. Speed, search
-  and the solver peek are the viewer's own settings and are not in the link.
-
-The page keeps the hash in sync with `history.replaceState` (no reload, no history
-entry per card; `state_dump` sends the pieces as `code`). While the nets' moves are
-still being played out on screen, `a` and `p` are cut back to the frame being
-drawn, not to where the server already is.
-
-Opening a link posts it to `POST /api/table/load`, which builds a new game in the
-visitor's own `X-Game` — nothing is shared between people. Everything is checked
-(`board_from_link`): the deal code, the chair, that both models exist on this
-server, every call legal in turn by the rules, every card legal in turn and only
-after an auction that produced a contract. Anything wrong is a JSON 400 naming the
-first bad piece; the page then says the link could not be opened and deals a fresh
-board.
-
-The board stops exactly at the link's position, even when a net is on turn there:
-`load` never calls `advance`, and the page holds its auto-advance and shows
-**Continue from here** until the visitor presses it (or plays, or starts something
-new). From there the nets act as usual. With search on, a net's next card may
-differ from the one the sharer saw — the link is the position, not its future.
-
-**The link contains all four hands** — it has to, to rebuild the board — and so
-does the `code` in every state payload. The page still draws only what the
-visitor's chair may see, exactly as in normal play: their own hand, dummy after
-the opening lead, all four once the board is over. Anyone who decodes the URL
-knows the deal, so share mid-board links with people who won't.
-
-### Debug mode (`/debug`)
-
-`/debug` serves the same `table.html`; the page sees its own path and switches on
-debug mode (`DEBUG` in the script). Bidding, play, undo, new board and the nets are
-exactly the table's. What changes:
-
-- all four hands are face up the whole time (`visible_seats`), dummy before the lead too;
-- challenges, the rating and the leaderboard are hidden, and the server refuses
-  challenges for a debug game (`game["debug"]`): none can start, so nothing is ever
-  written to `players.db`, and `me` is not sent;
-- the hints toggle works as on `/`, and the hints still read only what your chair may
-  see (`known_seats`), not the four hands on screen;
-- a bar under the header picks dealer, vulnerability, your chair and both models
-  (**Bidding**: every entry of `models/models.json`; **Cards**: `play_models.json`).
-  The nets in the bot chairs, the step and the play to the end use the picked
-  models; the teaching rules stay D's (a note says so), and a model without a
-  `corpus_<id>.json` just has no "what this call meant" table;
-- who plays what: with no `seat` you call and play for all four chairs (declarer picks
-  dummy's card) and the nets wait; `user_seat` follows the chair acting, so the hints
-  and "you" are that chair's, while `view_seat` stays at the bottom. **Net: this
-  call/card** (`POST /api/table/step`) lets a net make one move, **Nets play to the end**
-  (`finish`) hands them every chair. `seat=S` is one chair against three nets, as on /;
-  `bots=EW&seat=N` any mix (`bots=-` for none);
-- the search toggle covers the auction too: on, the nets' calls come from the bidding
-  search (see "Bidding search" above); off, the plain nets bid and play;
-- the tab keeps its own `X-Game` (`table-game-debug`), apart from a `/` tab.
-
-The address bar always holds the position in plain words, cut to the frame on screen:
-
-    /debug#n=<hand>&e=<hand>&s=<hand>&w=<hand>&dealer=<N|E|S|W>&vul=<none|ns|ew|both>
-           &auction=<calls>&play=<cards>&seat=<N|E|S|W>&bm=<bid model>&pm=<play model>&hints=<0|1>
-    /debug#n=AQJ32.Q8.T32.K83&e=T54.KT63.875.AJ9&s=K987.AJ.AKQJ.QT4&w=6.97542.964.7652&dealer=E&vul=ns&auction=1S-P-2C-P&seat=S
-
-- hands: `spades.hearts.diamonds.clubs`, ranks `AKQJT98765432` (`10` reads as `T`),
-  `-` for a void, always all thirteen cards (played ones too). A hand left out is
-  dealt at random from what nobody holds; no hands at all is a random deal.
-- `dealer` defaults to N, `vul` to none (`all` works too); no `seat` or `bots`: you play all four.
-- `auction`: calls from the dealer joined by `-`: `P`, `X`, `XX`, `1C` … `7NT` (`1N` works).
-- `play`: cards in play order joined by `-`, suit then rank: `H7-HQ-HK-HA`.
-- `hints`: 1 or 0; left out, the tab keeps what it had.
-- `bm`, `pm`: bidding and card-play model ids, e.g. `bm=lo_s28k&pm=E48_leagueE`. Left
-  out, the defaults (first entries of the manifests), so a link means the same models
-  in any tab; the page leaves them out for the defaults. An old link's `m` reads as `bm`.
-  An id the server does not have is a 400 like any bad field.
-- Case does not matter on the way in; the page writes it back in this form.
-
-Hints for another dealer or vulnerability: the self-play meanings and the rule of thumb
-are keyed by the calls from the dealer with seats relative to it, as the nets see them,
-so they hold for any dealer. The "where does each call lead" rollout deals from North,
-so the table turns the board round for it and turns the seats back. Vulnerability is
-not in the corpus or the rules (both measured with nobody vulnerable): the hint carries
-`conditions_note` and the page shows it, tagged approximate. The net's own numbers, the
-play hints and the solver use the real vulnerability.
-
-It opens through `POST /api/table/debug` (`debug_board` in `tabledesk.py`), checked
-like a `/` link: 13 cards a hand, no card twice, every call and card legal in turn. A
-bad one gets a 400 naming the problem; the page shows it with the text that failed and
-deals a random board. Like a `/` link, the board stops at the position until Continue.
-A new dealer or vulnerability from the bar replays the same hands from the top; a new
-chair keeps the position. Tests: `tests/test_table_debug.py`.
-
-### Challenge: you against a table of bots
-
-The **Challenge** button starts a short team match. Four boards, you sit South with
-three nets. At the "other table" four nets play the same deals. As each of your
-boards ends, the page shows both tables side by side and scores the difference
-in IMPs; after the last board it shows the whole match.
-
-- The other table is played once, when the challenge starts (a few seconds), and
-  kept. With search on a net can pick a different card each time, so it is never
-  re-run.
-- Its result for a board is sent only once your own board is over.
-- Hints, the solver, search and the models are fixed for the match; Restart is
-  refused. **New board** or a chair change leaves the challenge.
-- `POST /api/table/challenge` starts one, `/api/table/challenge/next` moves on,
-  `/api/table/challenge/load` opens a link. `state.challenge` holds the match.
-
-While a challenge runs, the address bar holds the challenge link, not the position:
-
-    /table#c=<deal>.<deal>…&ca=<calls>.<calls>…&cp=<cards>.<cards>…&m=<bid model>&pm=<play model>&r=<search>
-
-`c` is every deal, `ca` and `cp` the other table's auction and play for each. A
-friend who opens it plays the same boards against the same other table: the moves
-are replayed and checked like a board link, not played again. Reloading the page
-on the same link keeps your place.
-
-### Playing the nets' moves out
-
-`advance` can answer with a whole trick, or with the rest of the deal when the
-user is dummy. Dropping that on screen in one jump is unreadable, so the page
-holds the payload and walks to it one call or one card at a time, deriving every
-intermediate frame from the state it already has — **no extra round trips**. A
-card animates in from its seat, the finished trick pauses to be read, then slides
-to the side that won it. `frameOf()` in `table.html` rebuilds a whole synthetic
-state for a given `(nCalls, nCards)`, so the drawing code never learns that an
-animation exists.
-
-A speed control in the header (slow / normal / fast / instant) is remembered in
-`localStorage`; `prefers-reduced-motion` drops the transforms and defaults to
-fast. Clicking the table, or the Skip button, jumps to the end of what the nets
-just did. Nothing is clickable and no hint is shown until the page has caught up.
-
-### The page is the product; `/play` is the lab
-
-`/table` shows a bridge game and a teacher: the felt, the hands, the trick, the
-score, a short block of plain-English advice and one big button. Every
-percentage, sample count and policy grid now sits inside a **"Show the numbers"**
-disclosure, closed by default, with its source tags intact. Nothing was deleted —
-and the raw article (full policy grids, the 740 inputs, the belief map, card-by-card
-double dummy) is what `/play` is for. `/play` is untouched.
-
-**The Next button** commits whatever is highlighted: the ringed call during the
-auction, the ringed card during the play, "Next board" once the deal is scored,
-"Play the rest out" while the others are still going. Enter or space does the
-same. Clicking a call or a card directly still works, and hovering a call in the
-bidding box previews what that call would say without committing to it.
-
-**Hints are off by default**, on every new game. With them off the page shows no
-suggestion of any kind, and the payload carries none: `hint` and `suggest` are
-both `null`, and `POST /api/table/explain` refuses. The Next button then only says
-whose turn it is. With them on, `suggest` comes from the hint's own forward pass
-(`suggest_from_hint`). A choice made with the toggle lasts for the rest of that
-browser tab's session, new boards included.
-
-Below 980px the Next button is fixed to the bottom of the viewport, so a board can
-be played one-handed.
-
-**Nothing on the table moves when a card is played.** The felt is a grid of fixed
-tracks; every hand keeps a slot for all thirteen of its cards for the whole board
-(played ones stay in place, faded; a hidden hand keeps thirteen backs, the played
-ones blank), cards shrink rather than wrap when a suit is long, the auction
-scrolls inside the centre instead of growing it, and the long model line in the
-header is one line with an ellipsis. Only transforms and opacity animate.
-
-### Saying the corpus out loud
-
-The teaching text is generated by template functions in `tabledesk.py`
-(`holding_words`, `showed_sentence`, `would_show_sentence`, `fit_sentence`),
-never by free text. Every number in a sentence is read out of a corpus entry:
-
-- `stats.hcp` is [5th, 50th, 95th percentile] → "12 to 17 points".
-- `stats.suit_len` is the share of hands holding **at least 4, at least 5, at
-  least 6** cards of the named suit — *not* 5/6/7. `promised_length()` takes the
-  longest one at least half the hands had → "five or more spades". If none
-  reaches half, the sentence says so instead: "four or more clubs only about 30%
-  of the time".
-- `stats.bal` is the balanced share → "a balanced hand" above 0.75, "an
-  unbalanced hand" below 0.15, nothing in between.
-
-The thresholds (`PROMISE_AT`, `BALANCED_HIGH`, `BALANCED_LOW`) are named
-constants: they are our judgement, and the wording around them is ours, but every
-quantity is measured. `fit_sentence` compares the user's actual hand against the
-same promised length the sentence quoted, so the prose and the fit test can never
-disagree. Nothing the corpus does not measure is said at all — in particular the
-page never claims a stopper, a control, or what a call *asks for* as opposed to
-what it showed.
-
-### What the hints may say
-
-The net has no explanation head, so nothing on the page claims a reason it did
-not have. Every claim carries a tag saying where it came from:
-
-- **the net** — the deployed net's own output for the seat on turn, given exactly
-  the user's information set (their hand, the face-up hand, the cards played).
-  During the auction: its policy and Q over the legal calls. During the play: its
-  policy over the 52 cards and its belief head, cut down to the missing honours,
-  with the true holder stripped out until the deal is over.
-- **self-play** — `models/corpus_<model id>.json`, a million greedy self-play
-  auctions summarised by prefix.
-  What a call actually held: point band, balanced share, suit lengths. Positions
-  with fewer than 200 hands, and anything past eight calls, are not in the file.
-  There the advice leads with the net's own policy on the user's cards
-  (`net_sentence`: "You have 13 HCP and 5 hearts: with exactly these cards the net
-  bids 1♥ 78% of the time"), and quotes the nearest auction the corpus does hold
-  (`nearest_position`), tagged **approximate** with what was changed to reach it:
-  opening passes left out, an opponent's call replaced by a pass, or the earliest
-  calls dropped (keeping at least a round). Every stand-in keeps the user on turn
-  and partner two calls back. "If you bid X, partner usually answers…" walks two
-  nodes further on and prints the opponent call it assumed to get there.
-- **the cards** — arithmetic on what the user can already see: who is winning the
-  trick, whether they must follow suit, how many trumps are unaccounted for,
-  whether a card is a certain winner, whether a finesse is available. The finesse
-  test only fires for declarer, who can see both hands, and only when a low card
-  in one hand faces an honour in the other with a higher card still out.
-- **standard advice** — an ordinary club rule of thumb, ours, shown only for the
-  opening lead. The play advice line (`play_advice`) names the card, how often the
-  net plays it here, one fact about it, and a second choice once that is at least
-  10% likely; it never says *why* the net chose it, because the net cannot say.
-- **rule of thumb (experimental)** — during the auction, a separate card under the
-  advice box: which of D's 15 teaching rules owns this decision
-  (`emergent/teaching/`, see Frozen copies), its "how to think", the line of it that
-  fits the user's cards with the call it names, how often D itself made that call on
-  that line in held-out self-play, and how SAYC treats the same spot. It is in the
-  payload as `hint.rule` (`rule_hint`), next to and independent of the other hint
-  fields, and says neutrally when the rule's call and the net's top call differ.
-  Opening bids are not covered (`covered: false`). The rules were measured with
-  nobody vulnerable (dealer North; they are relative to the dealer), and describe D
-  (`D_cw_s75k`); with another bidding model the card says so. Folded, the card has a
-  fixed height and is hidden (not removed) when it is not the user's call.
-- **solver** — double dummy, which looks at all four hands. Off by default,
-  always labelled. It also drives the after-the-deal review, which re-solves the
-  board card by card (`playdesk.review`) and lists the user's own cards that cost
-  a trick against a defence that never errs.
-
-### Asking the server for things
-
-Every POST sends a JSON body, even an empty one, and every endpoint reads it with
-`body_of(request)` (`get_json(silent=True) or {}`). Declaring
-`Content-Type: application/json` and then sending nothing makes Flask's
-`request.json` raise, and the 400 comes back as an HTML page — which is how "New
-board" and "Next board" died while the seat buttons, which happen to send
-`{seat}`, went on working. Both ends are fixed so neither alone can bring it back.
-
-Failures are shown, never swallowed: `post()` reads the body as text before
-parsing, so a proxy error page reports its status instead of a bare SyntaxError,
-and `go()` puts whatever went wrong in the header's error slot and the console.
-
-Requests are serialised, but a click that starts something new — new board, a
-different chair, restart, play the rest out — goes through `goNow()`, which bumps
-a generation counter, cancels the pending auto-advance and abandons the queue.
-Work from an older generation neither fires nor draws, so a button never has to
-wait out a run of `advance` calls it has just made irrelevant.
-
-"Where does each call lead?" reuses `emergent/explain.py` unchanged, including
-its guard against the effective sample size collapsing: `auction_weights` mixes
-2% of a flat policy into every call and flattens the log weights by a `beta`
-chosen so the ESS reaches 25% of the samples. The page prints the ESS next to the
-sample count. 128 samples by default here, half what the bid desk uses.
+For implementation details, start with `emergent/tabledesk.py` (table), `emergent/apis.py` (bot APIs), `emergent/bench.py` (benchmark), and `emergent/engine.py` (model choices and search).

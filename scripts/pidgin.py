@@ -1,7 +1,8 @@
 """Shared helpers for the scripts: load a bidder the way the server does.
 
 A bidder is a team id from server/models/teams.json (PidginV1, PidginV2, BRL) or a
-checkpoint file. Bots come from server/emergent, so a script bids exactly like the site.
+checkpoint file. Bots use the server's bidding networks without bidding search;
+Pidgin V2's full Brill API team also uses belief-based bidding search.
 """
 from __future__ import annotations
 

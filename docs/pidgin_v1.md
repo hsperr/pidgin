@@ -1,49 +1,50 @@
-# Pidgin V1 (bidding)
+# Pidgin V1 bidding
 
-The bidding net of the `PidginV1` team, trained from random weights with no expert
-auctions. Released file: `D_cw_s75k.pt`. The team plays the cards with the self-play
-policy net ([card_play.md](card_play.md)).
+Pidgin V1 learns to bid from dealt hands and double-dummy trick results, without
+expert auction examples. Its released bidder is `D_cw_s75k.pt`; that historical
+filename identifies the Pidgin V1 bidding checkpoint at training step 75,000.
+The complete team uses the card-play model described in
+[card_play.md](card_play.md).
 
-Data: `dds_results_100M.npy` (see the README). Nothing else.
-
-## Train it
+To try the released team, install the package, download the models, and ask it
+for one call. Hand suits are written spades.hearts.diamonds.clubs:
 
 ```bash
-./train.sh runs/v1
+python -m pip install -e .
+python -m pip install -r server/requirements.txt
+scripts/get_models.sh
+python scripts/bid.py AKQ2.JT9.876.543 --auction "1H P" --model PidginV1
 ```
 
-| Stage | Output | What it trains |
+## Train a new bidder
+
+The public training recipe needs `data/dds_results_100M.npy`; the
+[README](../README.md#training-data) shows where to get it. From the repository
+root, run:
+
+```bash
+./train.sh runs/my_v1
+```
+
+For a quick pipeline check with the included small fixture, run
+`./train.sh --smoke runs/smoke`. This tests the stages, but does not produce a
+competitive bidder. The full recipe trains on CPU. `THREADS=8 ./train.sh
+runs/my_v1` sets its CPU thread count.
+
+| Stage | Output | Purpose |
 |---|---|---|
-| 1 ground | `1_ground/best.pt` | double-dummy tricks and contract values on silent-opponent auctions |
-| 2 own | `2_own/last.pt` | four-seat self-play; each side is rewarded for its own contract |
-| 3 simple | `3_simple/last.pt` | stage 2 plus a 0.2 cost per code word, 30,000 steps |
-| 4 table | `4_D/best.pt` | real table score with the code-word cost, against a league of past selves |
+| Grounding | `1_ground/best.pt` | Learn tricks and contract value from double-dummy results. |
+| Own-contract play | `2_own/last.pt` | Bid all four seats; reward each partnership's own contract. |
+| Simplicity | `3_simple/last.pt` | Continue training with a small cost for calls flagged by the repository's [code-word rule](../README.md#simplicity). |
+| Table score | `4_D/best.pt` | Learn from the final contract's table score and select a checkpoint by paired IMPs against stage 3. |
 
-Each stage starts from the one before. Stage 4 picks its best checkpoint by paired IMPs
-against stage 3. Training runs on CPU.
+The script writes the final selected checkpoint to `runs/my_v1/4_D/best.pt`.
+`4_D` is a legacy output directory name. The public recipe uses its stage 3
+bidder to select the final checkpoint; the original released weights were
+selected against a private reference. Rerunning this recipe trains a Pidgin V1
+style bidder, but does not recreate the exact released weights or guarantee the
+same strength.
 
-## Settings
-
-Shared by every stage:
-
-```
---data data/dds_results_100M.npy --val-start 3028000 --val-count 5000
---eval-start -10000 --eval-count 10000 --train-pool-start 3033000
---train-pool-end 99990000 --train-block-size 1000000
-```
-
-1. Ground (`python -m training.ground`): width 768, lr 1e-3, batch 1024, patience 5,000.
-2. Own contract (`python -m training.fourseat.train`):
-   `--episodes 512 --silent-frac 0.25 --select own --table-weight 0 --pg-lr 1e-4
-   --redouble --sacrifice --double-value --double-gate --fast-rollout
-   --max-level5-rise 0.15 --max-own-drop 60 --max-double-rate 0.6`
-3. Code-word cost: stage 2 plus `--code-word-penalty 0.2 --steps 30000`.
-4. Table score:
-   `--select imp --table-weight 1.0 --code-word-penalty 0.2
-   --pg-lr 1e-5 --critic-lr 1e-3 --double-tau 0.1 --xx-tau 0.1 --sac-tau 0.5
-   --double-value-lr 1e-5 --xx-value-lr 1e-5 --sac-value-lr 1e-5
-   --double-cf-weight 0 --xx-cf-weight 0 --sac-cf-weight 0 --gate-pg
-   --any-seat-double --league-frac 0.5 --league-every 1000
-   --eval-every 3000 --patience 12000 --max-level5-rise 1 --max-sac-rate 0.2 --max-double-rate 0.4`
-
-The released file is stage 4 at step 75,000.
+Completed stages are skipped if you rerun the same output directory. Use a new
+directory when changing settings. The [README](../README.md#train-pidgin-v1) explains
+the data splits, resume behavior, and stage settings.

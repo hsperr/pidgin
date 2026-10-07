@@ -1,42 +1,93 @@
-# Pidgin V2 (bidding)
+# Pidgin V2 bidding
 
-The bidding net of the `PidginV2` team. Released file: `pidginv2_bid_s40000.pt`. The
-team bids with the belief-net search on top ([belief.md](belief.md)) and plays the
-cards with the Q-net ([card_play.md](card_play.md)).
+Pidgin V2's released bidder is `pidginv2_bid_s40000.pt`. The complete team also
+uses [belief-based bidding search](belief.md) and the
+[Pidgin Q-net card-play model](card_play.md). Its training starts with Pidgin V1's
+grounding stage, then trains on table score. Later stages add a stronger penalty
+for contracts that fail when doubled and a cost for weak opening bids.
 
-V2 starts from V1's grounding and trains on the table score from the start. Two things
-push it away from V1's style: perfect doublers in stage 2 (a failing contract always
-costs the doubled penalty) and a penalty on light openings in stage 4.
+To ask the released Pidgin V2 bidder for a call without bidding search:
 
-Data: `dds_results_100M.npy`, plus Pidgin V1 (`D_cw_s75k.pt`, written `$V1` below) as a
-fixed opponent and the yardstick for checkpoint selection.
-
-Every stage runs `python -m training.fourseat.train` with:
-
+```bash
+python -m pip install -e .
+python -m pip install -r server/requirements.txt
+scripts/get_models.sh
+python scripts/bid.py AKQ2.JT9.876.543 --auction "1H P" --model PidginV2
 ```
+
+The complete team uses bidding search and card play on the server; see
+[serving.md](serving.md).
+
+## Training outline
+
+The trainer is `training/fourseat/train.py`. It needs the
+`data/dds_results_100M.npy` dataset (see [README](../README.md#training-data)),
+Pidgin V1's grounding checkpoint, and the released Pidgin V1 bidder as a fixed
+opponent. Generate a grounding checkpoint with `./train.sh runs/my_v1`, or use
+one from a previous run. Download Pidgin V1's bidder with
+`scripts/get_models.sh`. The common settings for each V2 stage are:
+
+```text
 --data data/dds_results_100M.npy --episodes 2048
 --val-start 3028000 --val-count 5000 --eval-start -10000 --eval-count 10000
 --train-pool-start 3033000 --train-pool-end 99990000 --train-block-size 1000000
 --train-block-every 2000 --silent-frac 0.25 --snapshot-every 1000 --patience 0
---select imp --imp-opponent $V1 --table-weight 1 --code-word-penalty 0.2
+--select imp --imp-opponent server/models/D_cw_s75k.pt
+--table-weight 1 --code-word-penalty 0.2
 ```
 
-## Stages
+`D_cw_s75k.pt` is Pidgin V1's existing checkpoint filename. Pass its full path
+wherever `--fixed-opponents` is needed too.
 
-1. Ground: V1's stage 1, `1_ground/best.pt` ([pidgin_v1.md](pidgin_v1.md)).
-2. Perfect doublers, from stage 1:
-   `--table-down-doubled own --pg-lr 3e-4 --steps 40000 --eval-every 2000
-   --max-level5-rise 0.15 --max-double-rate 0.6`
-   A GPU helps here (`--device cuda`).
-3. Real table score, from stage 2's `best.pt`:
-   `--pg-lr 3e-5 --critic-lr 1e-3 --double-tau 0.1 --xx-tau 0.1 --sac-tau 0.5
-   --double-value-lr 3e-5 --xx-value-lr 3e-5 --sac-value-lr 3e-5
-   --double-cf-weight 0 --xx-cf-weight 0 --sac-cf-weight 0 --gate-pg
-   --any-seat-double --league-frac 0.2 --league-every 1000
-   --punisher-frac 0.4 --punisher-miss 0 --punisher-refresh 1000
-   --fixed-frac 0.2 --fixed-opponents $V1
-   --steps 60000 --eval-every 2000 --max-level5-rise 1 --max-sac-rate 0.2 --max-double-rate 0.4`
-4. Light-opening penalty, from stage 3 at step 32,000: the stage 3 settings plus
-   `--light-open-penalty 0.5`.
+| Stage | Start from | Main change |
+|---|---|---|
+| Grounding | Random weights | Reuse Pidgin V1's `1_ground/best.pt`. |
+| Doubled-failure training | Grounding | Treat a failing contract as doubled when calculating the reward. |
+| Table play | Previous stage's `best.pt` | Add a league of past selves, a perfect-information punisher, and Pidgin V1 as a fixed opponent. |
+| Light-opening cost | Table-play checkpoint at step 32,000 | Add `--light-open-penalty 0.5` to discourage weak opening bids. |
 
-The released file is stage 4 at step 40,000.
+For example, stage 2 starts as follows once the dataset, grounding checkpoint,
+and V1 model are in place:
+
+```bash
+python -m training.fourseat.train --out runs/my_v2/2_doubling \
+  --init runs/my_v1/1_ground/best.pt --data data/dds_results_100M.npy \
+  --episodes 2048 --val-start 3028000 --val-count 5000 \
+  --eval-start -10000 --eval-count 10000 --train-pool-start 3033000 \
+  --train-pool-end 99990000 --train-block-size 1000000 \
+  --train-block-every 2000 --silent-frac 0.25 --snapshot-every 1000 \
+  --patience 0 --select imp --imp-opponent server/models/D_cw_s75k.pt \
+  --table-weight 1 --code-word-penalty 0.2 --table-down-doubled own \
+  --pg-lr 3e-4 --steps 40000 --eval-every 2000 \
+  --max-level5-rise 0.15 --max-double-rate 0.6
+```
+
+For stage 3, start from stage 2's selected checkpoint. The additional opponents
+are a league of past checkpoints, a perfect-information punisher that doubles
+failing contracts, and the fixed Pidgin V1 bidder:
+
+```bash
+python -m training.fourseat.train --out runs/my_v2/3_table \
+  --init runs/my_v2/2_doubling/best.pt --data data/dds_results_100M.npy \
+  --episodes 2048 --val-start 3028000 --val-count 5000 \
+  --eval-start -10000 --eval-count 10000 --train-pool-start 3033000 \
+  --train-pool-end 99990000 --train-block-size 1000000 \
+  --train-block-every 2000 --silent-frac 0.25 --snapshot-every 1000 \
+  --patience 0 --select imp --imp-opponent server/models/D_cw_s75k.pt \
+  --table-weight 1 --code-word-penalty 0.2 \
+  --pg-lr 3e-5 --critic-lr 1e-3 --double-tau 0.1 --xx-tau 0.1 --sac-tau 0.5 \
+  --double-value-lr 3e-5 --xx-value-lr 3e-5 --sac-value-lr 3e-5 \
+  --double-cf-weight 0 --xx-cf-weight 0 --sac-cf-weight 0 --gate-pg \
+  --any-seat-double --league-frac 0.2 --league-every 1000 \
+  --punisher-frac 0.4 --punisher-miss 0 --punisher-refresh 1000 \
+  --fixed-frac 0.2 --fixed-opponents server/models/D_cw_s75k.pt \
+  --steps 60000 --eval-every 2000 --max-level5-rise 1 \
+  --max-sac-rate 0.2 --max-double-rate 0.4
+```
+
+Stage 4 starts from `runs/my_v2/3_table/ckpt_step32000.pt`, uses the stage 3
+flags, and adds `--light-open-penalty 0.5`. Set a new `--out` directory and
+`--steps 40000` to reach the released checkpoint's step count. The selected
+`best.pt` may be from another step: the released file is the step 40,000
+checkpoint. The intermediate V2 checkpoints are not distributed here, so the
+released file cannot be recreated simply by running these examples.

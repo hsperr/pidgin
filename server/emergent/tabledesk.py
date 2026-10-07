@@ -1137,7 +1137,7 @@ def rule_hint(game, net):
     net_top = net["calls"][0] if net and net.get("calls") else None
     base = {"model": game["model"], "rules_model": TEACH_MODEL,
             "model_note": (None if game["model"] == TEACH_MODEL else
-                           f"These rules describe D ({TEACH_MODEL}); the bidding model at "
+                           f"These rules describe Pidgin V1 ({TEACH_MODEL}); the bidding model at "
                            f"this table is {game['model']}."),
             "net_call": call_glyph(net_top["call"]) if net_top else None,
             "net_call_name": net_top["call"] if net_top else None,

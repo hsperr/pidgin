@@ -9,7 +9,9 @@ One repo to train and serve the bridge bots. Read `README.md` "What is here" for
 
 ## Commands
 
-- Python: `/Users/hsperr/miniconda3/bin/python`.
+- Python: use Python 3.10 or newer in an activated virtual environment.
+  Install development dependencies with `python -m pip install -e ".[dev]"`
+  and server dependencies with `python -m pip install -r server/requirements.txt`.
 - Tests: `python -m pytest -q` in the repo root and again in `server/`.
 - Smoke train: `./train.sh --smoke /tmp/smoke`.
 
@@ -22,3 +24,12 @@ One repo to train and serve the bridge bots. Read `README.md` "What is here" for
   means to alter them.
 - New trainers take data paths from flags or `BRIDGE_DATA`, never `/Users/...`.
 - New code here trains or serves a released model; add its doc in `docs/`.
+
+## Documentation
+
+- Write for someone seeing the repository for the first time. Use Pidgin V1 and
+  Pidgin V2 in prose; explain any research identifier required in a command or file.
+- Keep checkpoint filenames and API IDs compatible. Change display labels rather
+  than renaming an artifact without migrating its consumers.
+- Give commands from the repository root, define required variables, and distinguish
+  runnable public recipes from historical runs that need unpublished inputs.

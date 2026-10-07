@@ -1,49 +1,54 @@
-# Serving
+# Serving Pidgin
 
-`server/` is the site at https://bridge.localgeek.jp and its bot APIs. Full details:
-[server/README.md](../server/README.md).
+The `server/` directory contains the [playable table](https://bridge.localgeek.jp/), debug table, benchmark, and bot APIs. See the [server guide](../server/README.md) for routes and request examples.
 
 ## Run locally
 
+From the repository root:
+
 ```bash
-scripts/get_models.sh      # weights from Hugging Face into server/models/
-scripts/serve.sh           # http://localhost:8787
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e .
+python -m pip install -r server/requirements.txt
+scripts/get_models.sh
+scripts/serve.sh
 ```
 
-The net classes come from `training/`; `server/training` is a link to it.
+Visit <http://127.0.0.1:8787/>. `scripts/get_models.sh` downloads the released weights to `server/models/`. The server loads model classes from `training/` and weights from `server/models/`.
 
-## Models
+To serve the same app in Docker, after downloading the weights:
 
-Weights live in `server/models/` and are not in Git. The manifests are:
+```bash
+docker build -f server/Dockerfile -t pidgin-brill .
+docker run --rm -p 8080:8080 pidgin-brill
+curl http://localhost:8080/apis/brill/
+```
 
-- `teams.json`: the three teams of the Brill API (`model=PidginV1|BRL|PidginV2`): bidding
-  file, card-play file, bidding search on or off.
-- `models.json`: `/debug`'s bidding menu; the first entry is the default. Entries whose
-  file is missing are skipped.
-- `play_models.json`: the card-play menu.
+The final request lists the teams available to the Brill API. The Docker image selects `PidginV2` by default; pass `model=PidginV1`, `model=PidginV2`, or `model=BRL` on a Brill request to choose a team explicitly.
+
+## Which files select a model?
+
+| File | Purpose |
+|---|---|
+| `server/models/teams.json` | Public Brill team IDs, weights, and search settings. |
+| `server/models/models.json` | Bidding models offered in the debug table. |
+| `server/models/play_models.json` | Card-play models offered in the debug table. |
 
 | Team | Bidding | Card play |
 |---|---|---|
-| PidginV1 | `D_cw_s75k.pt` ([pidgin_v1.md](pidgin_v1.md)) | `play_E48_wideleagueH.pt` + PIMC |
-| PidginV2 | `pidginv2_bid_s40000.pt` ([pidgin_v2.md](pidgin_v2.md)) + belief search ([belief.md](belief.md)) | `play_B2g_s540k.pt` + PIMC |
-| BRL | `brl_fsp_weights.npz` (Kita et al. 2024) | `play_B2g_s540k.pt` + PIMC |
+| Pidgin V1 (`PidginV1`) | Pidgin V1 bidding model, stored as `D_cw_s75k.pt` | Pidgin V1 card-play model, stored as `play_E48_wideleagueH.pt`, with search |
+| Pidgin V2 (`PidginV2`) | Pidgin V2 bidding model, stored as `pidginv2_bid_s40000.pt`, with bidding search | Pidgin Q-net card-play model, stored as `play_B2g_s540k.pt`, with search |
+| BRL (`BRL`) | External BRL bidding baseline | The same Pidgin Q-net card-play model as Pidgin V2 |
 
-## Docker
+The filenames preserve checkpoint names because the manifests and loaders depend on them. For how the models were trained, see [Pidgin V1](pidgin_v1.md), [Pidgin V2](pidgin_v2.md), [card play](card_play.md), and [bidding search](belief.md).
+
+## Deploy to your own host
+
+`server/deploy.sh` copies `server/` and `training/` to a configured Linux host and restarts its systemd service. The host's nginx and systemd setup is outside this repository. Set `DEPLOY_HOST=user@host` or put that assignment in the ignored `server/.deploy.env`, then run:
 
 ```bash
-docker build -f server/Dockerfile -t pidgin-brill .     # from the repo root
-docker run --rm -p 8080:8080 pidgin-brill
-curl 'localhost:8080/apis/brill/'
+server/deploy.sh
 ```
 
-## Deploy your own
-
-`server/deploy.sh` copies `server/` and `training/` to a host over rsync and restarts a
-systemd service there. Set `DEPLOY_HOST=user@host` (or write it to the git-ignored
-`server/.deploy.env`). It refuses uncommitted changes in `server/` or `training/`.
-
-## Changing model code
-
-Any change under `training/` can change what the served bots do. Bid a fixed set of
-seeded auctions with every model before and after the change and compare; the calls
-must match unless the change is meant to alter them.
+The script checks that weights named in the manifests and `belief_r2.pt` are present, and refuses uncommitted changes under `server/` or `training/` by default. A change to `training/` can change the bots' answers even if the weights are identical; compare the calls and cards on a fixed set of deals when changing model code.
