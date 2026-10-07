@@ -49,6 +49,8 @@ E=$M/play_E48_leagueE.pt
 "$PY" -m training.play.match "$B" --challenger "$H" --reference random --opponent "$H" --deals 50000 > "$R/play_H_vs_random.txt"
 "$PY" -m training.play.match "$B" --challenger "$E" --reference random --opponent "$H" --deals 50000 > "$R/play_E_vs_random.txt"
 "$PY" -m training.play.match "$B" --challenger "$H" --reference "$E"   --opponent "$H" --deals 50000 > "$R/play_H_vs_E.txt"
+# Opening leads, double dummy (DDOLAR / ADDOLAR); the forced-search rows take ~25 minutes.
+"$PY" scripts/opening_leads.py --boards 5000 --search 3000 --out "$R/opening_leads.txt"
 # Belief net, by number of calls heard. Needs the test shards from belief/gen.py in
 # belief/data/test/ and a training checkpoint with its args (BELIEF_CKPT); skipped otherwise.
 if [ -n "${BELIEF_CKPT:-}" ] && [ -d belief/data/test ]; then

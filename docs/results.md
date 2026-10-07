@@ -178,6 +178,40 @@ The PIMC rows search as the served players do: 20 layouts of the hidden cards sa
 from the policy net's belief head, each solved double dummy, the card with the best total
 played. With search on, the two nets are level within one standard error.
 
+## Opening leads
+
+**Fresh.** `scripts/opening_leads.py` on the first 5,000 contracts of
+`server/models/bench_100k.npz`. Every legal lead is solved double dummy. DDOLAR is the
+share of leads that give up no trick against the best lead; ADDOLAR is the same, leaving
+out deals where every lead gives the same result (3,689 of 5,000). Definitions from
+[Hammond](https://detectingcheatinginbridge.com).
+
+The served players do not search the opening lead (defence search starts at the third
+trick), so their lead is the net's greedy card. The "PIMC on the lead" rows force the
+search on for the lead (20 layouts, seeded, no clock) on the first 3,000 of the same
+boards.
+
+| Lead | DDOLAR | ADDOLAR | N (adjusted N) | Tricks lost per lead |
+|---|---|---|---|---|
+| policy net (served) | 76.5 ± 0.6% | 68.2 ± 0.8% | 5,000 (3,689) | 0.28 |
+| earlier policy net | 77.0 ± 0.6% | 68.9 ± 0.8% | 5,000 (3,689) | 0.27 |
+| Q-net (served) | 81.3 ± 0.6% | 74.7 ± 0.7% | 5,000 (3,689) | 0.21 |
+| policy net, PIMC on the lead | 79.4 ± 0.7% | 72.0 ± 1.0% | 3,000 (2,212) | 0.24 |
+| earlier policy net, PIMC on the lead | 79.5 ± 0.7% | 72.2 ± 1.0% | 3,000 (2,212) | 0.25 |
+| Q-net, PIMC on the lead | 79.7 ± 0.7% | 72.5 ± 0.9% | 3,000 (2,212) | 0.23 |
+
+On those 3,000 boards the greedy leads score 76.3 / 77.1 / 81.0% DDOLAR (policy, earlier,
+Q-net). Human reference (Hammond): top experts about 81% DDOLAR and 74.7% ADDOLAR, club
+players about 79–80% and 73–74%.
+
+- The Q-net's greedy lead is the best measured, level with the expert reference.
+- Forcing PIMC on the lead lifts both policy nets by about 3 points and lowers the Q-net's
+  by about 1.3 points; all three land near 79.5%.
+
+Rerun: `python scripts/opening_leads.py --boards 5000 --search 3000 --out results/opening_leads.txt`
+(about 25 minutes on a laptop CPU, almost all of it the search rows; the lead table is
+cached in `results/opening_leads_dd.npz`).
+
 ## Belief net
 
 **Fresh**, with `belief/analyze.py` on the float32 training checkpoint that `belief_r2.pt`
