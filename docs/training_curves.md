@@ -1,12 +1,14 @@
 # Training curves
 
-One figure per model, covering every training stage. Each stage gets its own
-column. The step count restarts at 0 in each stage, and each stage starts from the
-previous stage's weights. All numbers are validation or held-out measurements logged
-during training, except the belief net's hand-summary loss, which comes from training
-batches. Faint lines are the raw values. Where a thick line is drawn over a faint
-one, it is a centred rolling mean over 3–5 logged points. A dashed vertical line
+One figure per model. The panels share one step axis, and the training stages run
+end to end along it. A grey line marks each stage change, and every other stage is
+shaded. Each stage starts from the previous stage's weights. A dashed black line
 marks the released checkpoint.
+
+All numbers are validation or held-out measurements logged during training, except
+the belief net's hand-summary loss, which comes from training batches. Faint lines
+are the raw values. Where a thick line is drawn over a faint one, it is a centred
+rolling mean over 3–5 logged points.
 
 ## Pidgin V1 bidding
 
@@ -22,7 +24,7 @@ marks the released checkpoint.
   board. Over the same steps the own-contract score drops from 147 to about 95, then
   recovers to about 118. The model accepts worse contracts for its own side when that
   costs the opponents more.
-- **Competitive calls:** in the table-score stage, sacrifices fall from 4% of chances
+- **Competitive calls** (not drawn): in the table-score stage, sacrifices fall from 4% of chances
   to almost none, and doubles rise from 2% to about 8%.
 
 ## Pidgin V2 bidding
@@ -34,7 +36,7 @@ marks the released checkpoint.
   within 4,000 steps and reaches +0.29. The light-opening stage ends at +0.36 at the
   released step. Diamonds are 20,000-board matches against Pidgin V1 with a
   perfect-information doubler. These improve from −1.6 to about 0.
-- **Contract score:** most of the own-contract score (33 → 118) comes in the first
+- **Contract score** (not drawn): most of the own-contract score (33 → 118) comes in the first
   2,000 steps. After that it stays flat while IMPs keep improving.
 - **Light openings:** table play pushes openings on 0–7 HCP hands from 2% to 30%. The
   light-opening cost brings them down to about 10% within 4,000 steps.

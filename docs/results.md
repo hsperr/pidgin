@@ -65,6 +65,8 @@ Where Pidgin V1 loses to BRL (paper, the same 160,000 boards):
 
 ## Openings
 
+Side-by-side opening tables for Pidgin, BRL and SAYC: [simplicity](simplicity.md).
+
 **Fresh.** 100,000 held-out hands per seat and vulnerability, the model's greedy call
 with no earlier calls but passes. `tools/openings.py`. Rates have a standard error of
 about 0.2 percentage points.

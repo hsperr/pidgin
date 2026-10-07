@@ -5,9 +5,9 @@
     python scripts/plot_training_curves.py --preview-dir /tmp/pidgin-curves
 
 Reads docs/data/training_curves.json and writes one multi-panel SVG per model to
-docs/figures/. Each model has training stages; a "steps" panel (the default) draws one
-sub-plot per stage, side by side, with the step count restarting at 0 in every stage.
-"xy" and "bars" panels show single measurements and share one row.
+docs/figures/. Each model has training stages; "steps" panels (the default) are stacked
+on one shared step axis with the stages laid end to end and a line at each stage change.
+"xy" and "bars" panels show single measurements and share one row below.
 """
 from __future__ import annotations
 
@@ -100,78 +100,120 @@ def legend_handles(panel: dict) -> list:
     return handles
 
 
-def steps_row(fig, cell, model: dict, panel: dict, last_row: bool, first_row: bool) -> None:
-    stages = model["stages"]
-    widths = [max(st["steps"] ** 0.5, 0.25 * max(t["steps"] for t in stages) ** 0.5) for st in stages]
-    grid = GridSpecFromSubplotSpec(1, len(stages), subplot_spec=cell, width_ratios=widths, wspace=0.05)
-    used = sorted({s["stage"] for s in panel["series"] if s["points"]})
-    ylim = panel.get("ylim")
-    axes, all_y = {}, []
-    for i in used:
-        ax = fig.add_subplot(grid[0, i], sharey=next(iter(axes.values()), None))
-        axes[i] = ax
-        ax.set_facecolor(STAGE_TINT[i % 2])
-        style_axis(ax)
-        ax.set_xlim(0, stages[i]["steps"])
-        ax.xaxis.set_major_locator(MaxNLocator(3 if widths[i] < 0.6 * max(widths) else 5))
-        ax.xaxis.set_major_formatter(FuncFormatter(kfmt))
-        for s in panel["series"]:
-            if s["stage"] == i:
-                draw_series(ax, s, ylim)
-                all_y += [y for _, y in s["points"] if not (ylim and ylim[0] is not None and y < ylim[0])]
-        if panel.get("zero"):
-            ax.axhline(0, color=MUTED, linewidth=0.8, linestyle=":")
-        for ref in panel.get("ref", []):
-            c = COLORS[ref["color"] % len(COLORS)] if "color" in ref else MUTED
-            ax.axhline(ref["y"], color=c, linewidth=1, linestyle="--", alpha=0.7)
-        rel = model.get("release")
-        if rel and rel["stage"] == i:
-            ax.axvline(rel["step"], color=INK, linewidth=1, linestyle="--")
-            ax.annotate("released", (rel["step"], 1), xycoords=("data", "axes fraction"),
-                        xytext=(-3, -3), textcoords="offset points", ha="right", va="top",
-                        fontsize=7.5, color=INK)
-        if ax is not axes[used[0]]:
-            plt.setp(ax.get_yticklabels(), visible=False)
-            ax.tick_params(axis="y", length=0)
-        if first_row:
-            ax.set_title(stages[i]["name"], fontsize=10.5, color=MUTED, pad=38)
-    empty_runs: list[list[int]] = []
-    for i in range(len(stages)):
-        if i in axes:
+def stage_offsets(stages: list[dict]) -> list[int]:
+    out, total = [], 0
+    for st in stages:
+        out.append(total)
+        total += st["steps"]
+    return out + [total]
+
+
+def joined_series(panel: dict, offsets: list[int]) -> list[dict]:
+    """One series per label, its stages laid end to end on the shared step axis."""
+    gap = 0.05 * offsets[-1]
+    by_label: dict[str, dict] = {}
+    for s in sorted(panel["series"], key=lambda s: s["stage"]):
+        if not s["points"]:
             continue
-        ax = fig.add_subplot(grid[0, i])
-        ax.axis("off")
-        if first_row:
-            ax.set_title(stages[i]["name"], fontsize=10.5, color=MUTED, pad=38)
-        if empty_runs and empty_runs[-1][-1] == i - 1:
-            empty_runs[-1].append(i)
-        else:
-            empty_runs.append([i])
-    for run in empty_runs if panel.get("empty") else []:
-        left, right = grid[0, run[0]].get_position(fig), grid[0, run[-1]].get_position(fig)
-        fig.text((left.x0 + right.x1) / 2, (left.y0 + left.y1) / 2, panel["empty"], ha="center",
-                 va="center", fontsize=8.5, color=MUTED, style="italic")
-    box = cell.get_position(fig)
+        pts = [(x + offsets[s["stage"]], y) for x, y in s["points"]]
+        window = s.get("smooth", 1)
+        smoothed = smooth([y for _, y in pts], window) if window > 1 else None
+        entry = by_label.setdefault(s["label"], {**s, "points": [], "smoothed": [], "raw": False})
+        if entry["points"] and pts[0][0] - entry["points"][-1][0] > gap:
+            entry["points"].append((pts[0][0], float("nan")))      # break the line
+            entry["smoothed"].append(float("nan"))
+        entry["points"] += pts
+        entry["smoothed"] += smoothed or [y for _, y in pts]
+        entry["raw"] |= smoothed is not None
+    return list(by_label.values())
+
+
+def draw_joined(ax, s: dict, ylim) -> None:
+    color = COLORS[s.get("color", 0) % len(COLORS)]
+    xs, ys = zip(*s["points"])
+    if s.get("style") == "markers":
+        ax.plot(xs, ys, linestyle="none", marker="D", markersize=5, color=color,
+                markeredgecolor="white", markeredgewidth=0.6, zorder=4)
+        return
+    if s["raw"]:
+        ax.plot(xs, ys, color=color, linewidth=0.8, alpha=0.25)
+    ax.plot(xs, s["smoothed"], color=color, linewidth=1.8, zorder=3)
+    if ylim and ylim[0] is not None:
+        for x, y in s["points"]:
+            if y < ylim[0]:
+                ax.annotate(f"{y:.3g}", (x, ylim[0]), xytext=(7, 3), textcoords="offset points",
+                            fontsize=7.5, color=color, va="bottom")
+                ax.plot([x], [ylim[0]], marker="v", color=color, markersize=6, clip_on=False,
+                        zorder=5)
+
+
+def steps_panel(fig, ax, model: dict, panel: dict, first: bool, last: bool) -> None:
+    stages = model["stages"]
+    offsets = stage_offsets(stages)
+    total = offsets[-1]
+    style_axis(ax)
+    ax.set_xlim(0, total)
+    for i, st in enumerate(stages):
+        if i % 2:
+            ax.axvspan(offsets[i], offsets[i + 1], color=STAGE_TINT[1], zorder=0, linewidth=0)
+        if i:
+            ax.axvline(offsets[i], color=EDGE, linewidth=1, zorder=1)
+    ylim = panel.get("ylim")
+    all_y = []
+    series = joined_series(panel, offsets)
+    for s in series:
+        draw_joined(ax, s, ylim)
+        all_y += [y for _, y in s["points"]
+                  if y == y and not (ylim and ylim[0] is not None and y < ylim[0])]
+    if panel.get("zero"):
+        ax.axhline(0, color=MUTED, linewidth=0.8, linestyle=":")
+    for ref in panel.get("ref", []):
+        c = COLORS[ref["color"] % len(COLORS)] if "color" in ref else MUTED
+        ax.axhline(ref["y"], color=c, linewidth=1, linestyle="--", alpha=0.7)
     lo, hi = (ylim or [None, None])
     ys = all_y + [ref["y"] for ref in panel.get("ref", [])] + ([0] if panel.get("zero") else [])
     pad = 0.08 * (max(ys) - min(ys) or 1)
-    first = axes[used[0]]
-    first.set_ylim(lo if lo is not None else min(ys) - pad, hi if hi is not None else max(ys) + pad)
-    first.yaxis.set_major_locator(MaxNLocator(4))
-    title = fig.text(box.x0, box.y1 + 0.24 / fig.get_figheight(), panel["title"], fontsize=10.5,
-                     weight="bold", color=INK, va="bottom")
-    first.annotate(f"y: {panel['ylabel']}", (1, 0), xycoords=title, xytext=(8, 0),
-                   textcoords="offset points", va="bottom", fontsize=9, color=MUTED,
-                   annotation_clip=False)
+    ax.set_ylim(lo if lo is not None else min(ys) - pad, hi if hi is not None else max(ys) + pad)
+    ax.yaxis.set_major_locator(MaxNLocator(4))
+    ax.xaxis.set_major_locator(MaxNLocator(8))
+    ax.xaxis.set_major_formatter(FuncFormatter(kfmt))
+    if not last:
+        plt.setp(ax.get_xticklabels(), visible=False)
+    measured = {s["stage"] for s in panel["series"] if s["points"]}
+    if panel.get("empty"):
+        for i in range(len(stages)):
+            if i not in measured and stages[i]["steps"] / total > 0.12:
+                ax.text((offsets[i] + offsets[i + 1]) / 2, 0.5, panel["empty"],
+                        transform=ax.get_xaxis_transform(), ha="center", va="center",
+                        fontsize=8.5, color=MUTED, style="italic")
+    rel = model.get("release")
+    if rel:
+        x = offsets[rel["stage"]] + rel["step"]
+        ax.axvline(x, color=INK, linewidth=1, linestyle="--", zorder=2)
+        if first:
+            ax.annotate("released", (x, 1), xycoords=("data", "axes fraction"), xytext=(-3, -3),
+                        textcoords="offset points", ha="right", va="top", fontsize=7.5, color=INK)
+    if first:
+        for i, st in enumerate(stages):
+            narrow = st["steps"] / total < 0.09
+            at_end = narrow and i == len(stages) - 1        # a narrow last stage: label leftwards
+            x = offsets[i + 1] if at_end else offsets[i] if narrow else (offsets[i] + offsets[i + 1]) / 2
+            ax.annotate(f"{i + 1} {st['name']}", (x, 1),
+                        xycoords=("data", "axes fraction"), xytext=(0, 26),
+                        textcoords="offset points",
+                        ha="right" if at_end else "left" if narrow else "center",
+                        va="bottom", fontsize=9.5, color=MUTED, weight="bold")
+    title = ax.text(0, 1.04, panel["title"], transform=ax.transAxes, fontsize=10.5,
+                    weight="bold", color=INK, va="bottom")
+    ax.annotate(panel["ylabel"], (1, 0), xycoords=title, xytext=(8, 0), textcoords="offset points",
+                va="bottom", fontsize=9, color=MUTED, annotation_clip=False)
     handles = legend_handles(panel)
     if len(handles) > 1:
-        fig.legend(handles=handles, loc="lower right", ncol=len(handles), frameon=False,
-                   fontsize=8, handlelength=1.6, columnspacing=1.2,
-                   bbox_to_anchor=(box.x1, box.y1 + 0.02 / fig.get_figheight()))
-    if last_row:
-        fig.text((box.x0 + box.x1) / 2, box.y0 - 0.42 / fig.get_figheight(),
-                 "training steps, counted from 0 within each stage", ha="center", va="top",
-                 fontsize=9, color=INK)
+        ax.legend(handles=handles, loc="lower right", bbox_to_anchor=(1, 1), ncol=len(handles),
+                  frameon=False, fontsize=8, handlelength=1.6, columnspacing=1.2,
+                  borderaxespad=0.2)
+    if last:
+        ax.set_xlabel("training steps, all stages end to end", fontsize=9, color=INK)
 
 
 def other_row(fig, cell, panels: list[dict]) -> None:
@@ -211,23 +253,26 @@ def other_row(fig, cell, panels: list[dict]) -> None:
 
 
 def render(model: dict, out: Path, preview: Path | None) -> None:
-    rows = model["rows"]
-    heights = [1.0 if row[0].get("type", "steps") == "steps" else 1.25 for row in rows]
-    fig = plt.figure(figsize=(11, 1.95 + 2.25 * sum(heights)))
-    top = 1 - 1.6 / fig.get_figheight()
-    bottom = 0.55 / fig.get_figheight()
-    grid = GridSpec(len(rows), 1, figure=fig, height_ratios=heights, left=0.085, right=0.985,
-                    top=top, bottom=bottom, hspace=0.62)
-    fig.text(0.085, 1 - 0.3 / fig.get_figheight(), model["title"], fontsize=17, weight="bold",
+    rows = [row for row in model["rows"] if row[0].get("plot", True)]
+    steps = [row[0] for row in rows if row[0].get("type", "steps") == "steps"]
+    others = [row for row in rows if row[0].get("type", "steps") != "steps"]
+    heights = [1.0] * len(steps) + [1.6] * len(others)
+    fig = plt.figure(figsize=(10, 1.9 + 1.75 * sum(heights)))
+    top = 1 - 1.55 / fig.get_figheight()
+    bottom = 0.6 / fig.get_figheight()
+    grid = GridSpec(len(heights), 1, figure=fig, height_ratios=heights, left=0.08, right=0.985,
+                    top=top, bottom=bottom, hspace=0.5)
+    fig.text(0.08, 1 - 0.3 / fig.get_figheight(), model["title"], fontsize=16, weight="bold",
              color=INK, va="center")
-    fig.text(0.085, 1 - 0.58 / fig.get_figheight(), model["subtitle"], fontsize=10.5, color=MUTED,
+    fig.text(0.08, 1 - 0.56 / fig.get_figheight(), model["subtitle"], fontsize=10, color=MUTED,
              va="center")
-    step_rows = [i for i, row in enumerate(rows) if row[0].get("type", "steps") == "steps"]
-    for i, row in enumerate(rows):
-        if row[0].get("type", "steps") == "steps":
-            steps_row(fig, grid[i], model, row[0], last_row=i == step_rows[-1], first_row=i == 0)
-        else:
-            other_row(fig, grid[i], row)
+    first_ax = None
+    for i, panel in enumerate(steps):
+        ax = fig.add_subplot(grid[i], sharex=first_ax)
+        first_ax = first_ax or ax
+        steps_panel(fig, ax, model, panel, first=i == 0, last=i == len(steps) - 1)
+    for j, row in enumerate(others):
+        other_row(fig, grid[len(steps) + j], row)
     path = out / f"{model['id']}.svg"
     fig.savefig(path, metadata={"Date": None, "Title": model["title"],
                                "Description": model["subtitle"]})

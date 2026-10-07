@@ -74,7 +74,7 @@ Style: 0.92 code words per 100 calls; 4.4% of 0–7 HCP hands open; no weak twos
 
 ## Training history
 
-![Pidgin V1 contract score, code words, IMPs and competitive calls across the four training stages](figures/pidgin_v1_training.svg)
+![Pidgin V1 contract score, code words and IMPs across the four training stages](figures/pidgin_v1_training.svg)
 
 Grounding and own-contract play raise the contract score to about 150 points per deal.
 The simplicity stage halves the code words. Table score then trades some own-contract

@@ -35,6 +35,7 @@ Pidgin V2 team through the Brill API adds bidding search, so its calls can diffe
 | see its openings by high-card points and suit lengths | `python tools/openings.py server/models/pidginv2_bid_s40000.pt` |
 | openings in one seat or vulnerable | add `--seat 3 --vul` |
 | count Pidgin V1's code words | `python tools/simplicity.py server/models/D_cw_s75k.pt --boards 4000` |
+| compare openings of several bidders side by side | `python scripts/opening_tables.py "Pidgin V1=server/models/D_cw_s75k.pt" "BRL=brl:server/models/brl_fsp_weights.npz"` ([docs/simplicity.md](../docs/simplicity.md)) |
 
 `D_cw_s75k.pt` is the released Pidgin V1 bidding checkpoint;
 `pidginv2_bid_s40000.pt` is Pidgin V2's. A code word is a call flagged by the
