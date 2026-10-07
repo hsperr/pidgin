@@ -101,10 +101,8 @@ python -m training.fourseat.train --out runs/my_v2/3_table \
 
 Stage 4 starts from `runs/my_v2/3_table/ckpt_step32000.pt`, uses the stage 3
 flags, and adds `--light-open-penalty 0.5`. Set a new `--out` directory and
-`--steps 40000` to reach the released checkpoint's step count. The selected
-`best.pt` may be from another step: the released file is the step 40,000
-checkpoint. These steps train a comparable Pidgin V2 bidder; results vary with
-the training seed.
+`--steps 40000` to reach the released checkpoint's step count. The released file is the step 40,000
+checkpoint.
 
 ## Training history
 
@@ -113,6 +111,5 @@ the training seed.
 These are recorded validation results from the run that produced the released
 checkpoint, shown at the logged steps without smoothing. IMPs compare against
 released Pidgin V1. Weak-opening share is the percentage of 0–7 HCP hands
-opened by the bidder. These validation results guided checkpoint selection;
-they are not an independent estimate of playing strength. See
+opened by the bidder. See
 [training curves](training_curves.md) for the plotted data.

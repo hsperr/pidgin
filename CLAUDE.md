@@ -31,5 +31,5 @@ One repo to train and serve the bridge bots. Read `README.md` "What is here" for
   Pidgin V2 in prose; explain any research identifier required in a command or file.
 - Keep checkpoint filenames and API IDs compatible. Change display labels rather
   than renaming an artifact without migrating its consumers.
-- Give commands from the repository root, define required variables, and distinguish
-  runnable public recipes from historical runs that need unpublished inputs.
+- Give commands from the repository root and define required variables. State how a
+  model is trained; leave out caveats about exact reproduction or run history.

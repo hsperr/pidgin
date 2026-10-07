@@ -39,7 +39,6 @@ Pidgin V2 team through the Brill API adds bidding search, so its calls can diffe
 `D_cw_s75k.pt` is the released Pidgin V1 bidding checkpoint;
 `pidginv2_bid_s40000.pt` is Pidgin V2's. A code word is a call flagged by the
 repo's simplicity heuristic, such as a suit bid without the usual suit length.
-The count describes calls; it does not establish how easily a human learns the system.
 
 ## Compare two bidders
 

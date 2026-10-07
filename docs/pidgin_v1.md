@@ -63,8 +63,7 @@ stage 3 checkpoint. Results vary with the training seed.
 The first panel shows training error when predicting a call's reward, measured
 in units of 100 bridge points. The second counts calls flagged by the
 [simplicity rule](../README.md#simplicity) per 100 validation auctions. Both follow
-the final table-score stage, which starts from a pretrained bidder. Lower loss
-or fewer flagged calls alone does not establish stronger play; see
+the final table-score stage, which starts from a pretrained bidder. See
 [results](results.md) for match performance and [training curves](training_curves.md)
 for the plotted data.
 

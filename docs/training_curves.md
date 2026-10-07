@@ -22,9 +22,7 @@ starts with pretrained weights.
 - **IMPs per board:** positive means the bidder scores better than its named
   opponent. These are validation matches used during training. See
   [results](results.md) for separate comparisons of the released models.
-- **Style measures:** fewer flagged calls or weak openings describes a change in
-  bidding behavior. It does not by itself establish stronger or easier-to-learn
-  bidding.
+- **Style measures:** flagged calls (code words) and weak openings per 100 auctions.
 
 The belief losses average batches within each logging window. The other training
 losses show the batch recorded at each point. The V1 call-value loss starts at

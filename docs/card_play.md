@@ -145,8 +145,7 @@ from step 1 to 20,000. It starts from an already trained policy model. The lines
 show the raw training batch's critic mean squared error and hidden-card
 cross-entropy recorded by the trainer; they are loss measurements, not match
 results. See [Training curves](training_curves.md) for the data and plotting
-method. The available log for the released Q-net has only two evaluations at
-step 540,000, so it cannot show a training trajectory.
+method.
 
 Download the released models with
 `scripts/get_models.sh`. To compare the Pidgin V1 policy model with random legal

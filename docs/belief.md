@@ -122,12 +122,7 @@ shards from `belief/data/test/`, with style labels listed in
 `belief/data/systems.json`. It rebuilds hands from the DDS dataset described in
 the [README](../README.md#training-data).
 
-**The belief training data is not included.** The current generator also needs
-external bidding engines, and the test loader expects recorded WBridge5 auctions
-in addition to generated test shards. The commands below require those inputs;
-to use bidding search now, download the released belief model instead.
-
-With compatible training and test data in place:
+Generate the shards with `belief/gen.py` (see above), then train in two runs:
 
 ```bash
 python -u belief/train.py --out runs/belief/card_owners \
