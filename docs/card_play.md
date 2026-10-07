@@ -12,6 +12,22 @@ average result. See `training/play/search.py` and `server/emergent/engine.py`.
 | Compact self-play card-play model | `play_E48_leagueE.pt` | Alternative in the site's debug view. |
 | Pidgin Q-net card play | `play_B2g_s540k.pt` | Pidgin V2 and BRL. |
 
+With search enabled for the current move, card selection follows this path:
+
+```mermaid
+flowchart TD
+    view["Visible cards, auction, contract and cards played"] --> model["Policy model or Q-net: rank legal cards"]
+    view --> sampler["Card-play belief head: sample possible hidden deals"]
+    sampler --> solver["Double-dummy solver: value legal cards on each deal"]
+    solver --> choice["Choose the card with the highest average trick value"]
+    model -->|Break ties| choice
+```
+
+The Q-net uses the Pidgin V1 card-play model's belief head to sample deals.
+This is separate from the [bidding belief model](belief.md). When search is off
+or does not apply to a move, the card-play model chooses directly. Search works
+with guessed hidden deals, not the opponents' actual hands.
+
 The old codes in these filenames identify published files. Download them with
 `scripts/get_models.sh`. To compare the Pidgin V1 policy model with random legal
 play on the published benchmark (without search):

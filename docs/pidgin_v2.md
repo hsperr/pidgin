@@ -20,6 +20,18 @@ The complete team uses bidding search and card play on the server; see
 
 ## Training outline
 
+Pidgin V2 branches from Pidgin V1's grounding stage, before own-contract training.
+The released Pidgin V1 bidder is a separate opponent for training and evaluation.
+
+```mermaid
+flowchart TD
+    ground["Pidgin V1 grounding checkpoint"] --> doubled["Train with doubled penalties for failing contracts"]
+    doubled -->|best.pt| table["Table-score training with mixed opponents"]
+    table -->|Step 32,000| light["Add a penalty for weak opening bids"]
+    light -->|Step 40,000| released["Released Pidgin V2 bidder"]
+    v1["Released Pidgin V1 bidder"] -.->|Fixed training opponent| table
+```
+
 The trainer is `training/fourseat/train.py`. It needs the
 `data/dds_results_100M.npy` dataset (see [README](../README.md#training-data)),
 Pidgin V1's grounding checkpoint, and the released Pidgin V1 bidder as a fixed

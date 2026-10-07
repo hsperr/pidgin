@@ -38,6 +38,19 @@ runs/my_v1` sets its CPU thread count.
 | Simplicity | `3_simple/last.pt` | Continue training with a small cost for calls flagged by the repository's [code-word rule](../README.md#simplicity). |
 | Table score | `4_D/best.pt` | Learn from the final contract's table score and select a checkpoint by paired IMPs against stage 3. |
 
+The arrows show which saved weights start the next stage. The dashed arrow is
+an evaluation opponent, not a source of training examples.
+
+```mermaid
+flowchart TD
+    random["Random weights"] --> ground["1. Grounding"]
+    ground -->|best.pt| own["2. Own-contract self-play"]
+    own -->|last.pt| simple["3. Simplicity fine-tune"]
+    simple -->|last.pt| table["4. Table-score self-play"]
+    simple -.->|Checkpoint selection opponent| table
+    table --> selected["Selected bidder: 4_D/best.pt"]
+```
+
 The script writes the final selected checkpoint to `runs/my_v1/4_D/best.pt`.
 `4_D` is a legacy output directory name. The public recipe uses its stage 3
 bidder to select the final checkpoint; the original released weights were

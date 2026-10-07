@@ -27,6 +27,30 @@ curl http://localhost:8080/apis/brill/
 
 The final request lists the teams available to the Brill API. The Docker image selects `PidginV2` by default; pass `model=PidginV1`, `model=PidginV2`, or `model=BRL` on a Brill request to choose a team explicitly.
 
+## How a team answers a request
+
+A Brill team combines a bidder, a card player, and search settings. The server
+loads their weights from the team manifest and reconstructs the position from
+each request; the client sends the current position again on its next turn.
+
+```mermaid
+flowchart TD
+    request["Brill request: position and public team ID"] --> team["teams.json: select models and search settings"]
+    team --> phase{"Bidding or card play?"}
+    phase -->|Bidding| bid["Bidding model"]
+    bid --> bidsearch{"Team enables bidding search?"}
+    bidsearch -->|Yes: Pidgin V2| belief["Compare calls using belief-sampled deals"]
+    bidsearch -->|No: Pidgin V1 or BRL| call["Return a legal call"]
+    belief --> call
+    phase -->|Card play| play["Card-play model with sampled-deal search"]
+    play --> card["Return a legal card"]
+```
+
+This describes requests with an explicit team ID, such as `model=PidginV2`.
+The command-line bidding scripts use the bidding network directly; they skip
+the bidding-search step. For a copyable request, see the
+[Brill API example](../server/README.md#use-a-bot-through-the-brill-api).
+
 ## Which files select a model?
 
 | File | Purpose |

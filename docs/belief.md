@@ -6,6 +6,26 @@ high-card points and suit lengths. Pidgin V2 samples possible deals from these
 estimates, then checks whether another bid performs clearly better on those deals.
 See `server/emergent/bidsearch.py` for the search.
 
+The bidding model proposes calls; the belief model proposes hidden deals.
+Search compares the calls on those same sampled deals. It never receives the
+real hidden hands.
+
+```mermaid
+flowchart TD
+    view["Own hand, public auction, dealer and vulnerability"] --> bidder["Bidding model: candidate calls"]
+    view --> belief["Belief model: sample possible hidden deals"]
+    bidder --> rollout["For each call and deal, bid the auction to the end"]
+    belief --> rollout
+    rollout --> score["Double-dummy solver: score the resulting contracts"]
+    score --> decision{"Enough samples and a gain of at least the margin?"}
+    decision -->|Yes| alternative["Choose the best-scoring call"]
+    decision -->|No| original["Keep the bidding model's call"]
+```
+
+Search also keeps the original call when there is only one candidate or the
+auction exceeds the belief model's input limit. The default improvement margin
+is 50 bridge points; settings are in `server/emergent/engine.py`.
+
 The released checkpoint is `belief_r2.pt`. Download it with `scripts/get_models.sh`.
 To ask the released Pidgin V2 bidder for a call (without bidding search):
 
