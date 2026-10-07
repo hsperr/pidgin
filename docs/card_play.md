@@ -154,9 +154,9 @@ Declarer play, 49,927 benchmark boards, IMPs per board: policy net vs random car
 
 ## Training history
 
-![Policy net tricks gained over random play and tricks below double dummy across self-play and league training](figures/card_play_training.svg)
+<p align="center"><img src="figures/card_play/below_double_dummy.svg" alt="Policy net shortfall against double dummy" width="720"></p>
 
-![Q-net tricks lost against double dummy and best-card rate by position](figures/qnet_training.svg)
+<p align="center"><img src="figures/qnet/tricks_lost.svg" alt="Q-net tricks lost against double dummy per decision" width="720"></p>
 
 The policy net learns most of its declarer and defence play in the first 10,000
 self-play steps. The Q-net beats the policy net's double-dummy accuracy at every

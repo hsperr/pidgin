@@ -104,11 +104,13 @@ information arrives in the first four calls.
 
 ## Training history
 
-![Belief net held-out accuracy over both training stages, plus the released model by auction length and by card](figures/belief_training.svg)
+<p align="center"><img src="figures/belief/cards_placed.svg" alt="Belief net share of hidden cards placed on the right player" width="720"></p>
+
+<p align="center"><img src="figures/belief/released_by_call.svg" alt="Released belief net placement accuracy by number of calls heard" width="720"></p>
 
 Held-out card placement improves through the card-owner stage and holds through the
-hand-summary fine-tune. The bottom row shows the released model by auction length and
-card rank. See [training curves](training_curves.md).
+hand-summary fine-tune. The second plot shows the released model by auction length.
+[Training curves](training_curves.md#belief-net) has the losses and placement by card rank.
 
 The released checkpoint is `belief_r2.pt`. Download it with `scripts/get_models.sh`.
 To ask the released Pidgin V2 bidder for a call (without bidding search):

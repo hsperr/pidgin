@@ -123,7 +123,9 @@ suits; 1♠ shows five cards 91% of the time (V1: 66%); 6.5% of 0–7 HCP hands 
 
 ## Training history
 
-![Pidgin V2 IMPs against Pidgin V1, light openings and code words across stages 2–4](figures/pidgin_v2_training.svg)
+<p align="center"><img src="figures/pidgin_v2/imps_vs_v1.svg" alt="Pidgin V2 IMPs per board against Pidgin V1" width="720"></p>
+
+<p align="center"><img src="figures/pidgin_v2/light_openings.svg" alt="Pidgin V2 share of 0–7 HCP hands opened" width="720"></p>
 
 IMPs against Pidgin V1 climb from −3.7 to about +0.35 per board over the three stages.
 The light-opening cost cuts openings on 0–7 HCP from 30% to about 10%. See
