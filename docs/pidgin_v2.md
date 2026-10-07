@@ -5,6 +5,8 @@ uses [belief-based bidding search](belief.md) and the
 [Pidgin Q-net card-play model](card_play.md). Its training starts with Pidgin V1's
 grounding stage, then trains on table score. Later stages add a stronger penalty
 for contracts that fail when doubled and a cost for weak opening bids.
+The [bidding model guide](bidding_model.md) explains the network layout,
+losses, and a training-loop example shared with V1.
 
 To ask the released Pidgin V2 bidder for a call without bidding search:
 
@@ -101,5 +103,16 @@ Stage 4 starts from `runs/my_v2/3_table/ckpt_step32000.pt`, uses the stage 3
 flags, and adds `--light-open-penalty 0.5`. Set a new `--out` directory and
 `--steps 40000` to reach the released checkpoint's step count. The selected
 `best.pt` may be from another step: the released file is the step 40,000
-checkpoint. The intermediate V2 checkpoints are not distributed here, so the
-released file cannot be recreated simply by running these examples.
+checkpoint. These steps train a comparable Pidgin V2 bidder; results vary with
+the training seed.
+
+## Training history
+
+![Pidgin V2 validation IMPs and weak-opening share during training](figures/pidgin_v2_training.svg)
+
+These are recorded validation results from the run that produced the released
+checkpoint, shown at the logged steps without smoothing. IMPs compare against
+released Pidgin V1. Weak-opening share is the percentage of 0–7 HCP hands
+opened by the bidder. These validation results guided checkpoint selection;
+they are not an independent estimate of playing strength. See
+[training curves](training_curves.md) for the plotted data.

@@ -26,6 +26,79 @@ Search also keeps the original call when there is only one candidate or the
 auction exceeds the belief model's input limit. The default improvement margin
 is 50 bridge points; settings are in `server/emergent/engine.py`.
 
+## Network and outputs
+
+The released model is a multilayer perceptron (MLP), not a transformer. Its
+input is the viewer's 52-card ownership mask, two vulnerability flags (our side
+and theirs), the dealer's seat relative to the viewer, two optional bidder-system
+IDs, and the auction. An auction can have at most 48 calls. Each call occupies a
+slot for its position, caller's relative seat, and call (`1C` through `7NT`,
+pass, double, or redouble). This makes a mostly empty 7,580-value input in the
+released checkpoint. During search, both system IDs are set to “unknown.”
+
+| Part | Released layout | Purpose |
+|---|---|---|
+| Shared network | 1,024-value input projection, then four residual blocks with layer normalization, linear layers and GELU, then final normalization | Combines hand and auction evidence |
+| Card-owner head | 52 × 3 scores | For each card, estimates left-hand opponent, partner, or right-hand opponent; the viewer's 13 cards are ignored |
+| Summary head | Three hands × (31 high-card-point bins + four suits × 14 length bins) | Estimates points and each suit's length for each hidden hand |
+
+The training model also has a head to guess the two bidder-system IDs. The
+released server checkpoint omits that head because search does not use it.
+The width of the input depends on the number of bidding styles represented
+in the training data; the checkpoint records that count.
+
+```mermaid
+flowchart TD
+    input["Hand, auction and context: 7,580 values in the released model"] --> projection["Linear projection to 1,024 values"]
+    projection --> blocks["Four residual blocks, width 1,024"]
+    blocks --> norm["Layer normalization"]
+    norm --> owners["Card holders: 52 cards × 3 hidden seats"]
+    norm --> summary["Hidden-hand summaries: 261 scores"]
+    norm --> styles["Bidding-style classifier: training only"]
+```
+
+## What training minimizes
+
+The main loss is cross-entropy for the holder of each of the 39 unseen cards.
+The viewer's own cards do not count. Each side's system ID is independently
+hidden half the time; when hidden, a system-classification loss teaches the
+network to infer it from the auction. Training adds that loss at weight 0.1.
+The second stage adds high-card-point and suit-length classification losses
+for the three hidden hands, together at weight 0.3. It starts from the first
+stage's weights; the new summary head starts untrained.
+
+For each training row, the trainer chooses a viewer and an auction prefix,
+using the full auction half the time. In simplified pseudocode:
+
+```text
+load auction shards and the corresponding dealt hands
+for each training step:
+    sample auctions, including a fixed share from WBridge5 data
+    choose a viewer and an auction prefix for each auction
+    hide each partnership's system ID independently with probability 0.5
+    predict unseen-card holders and bidder systems
+    loss = card-holder cross-entropy + 0.1 × hidden-system cross-entropy
+    if training stage 2:
+        loss += 0.3 × (high-card-point loss + suit-length loss)
+    update the network; periodically evaluate full auctions and save a checkpoint
+```
+
+For evaluation and search, an iterative normalization called Sinkhorn adjusts
+the card-owner probabilities so each hidden seat is expected to hold 13 cards.
+This adjustment is not part of the training loss. Search then samples complete
+deals using the adjusted card probabilities and summary predictions.
+
+## Training history
+
+![Belief-model training losses across the summary fine-tune](figures/belief_training.svg)
+
+The chart shows the released model's 30,000-step summary fine-tune, which starts
+from an already trained card-owner model. It plots logged training-batch losses:
+full-auction card-owner cross-entropy and summary negative log likelihood,
+aggregated across bidder systems. The two losses have different scales, and
+their training trends do not measure strength on unseen auctions. See
+[training curves](training_curves.md) for the source and interpretation.
+
 The released checkpoint is `belief_r2.pt`. Download it with `scripts/get_models.sh`.
 To ask the released Pidgin V2 bidder for a call (without bidding search):
 
@@ -38,37 +111,33 @@ python scripts/bid.py AKQ2.JT9.876.543 --auction "1H P" --model PidginV2
 
 The complete team uses bidding search on the server; see [serving.md](serving.md).
 
-## Training data and reproduction
+## Train a belief model
 
-`belief/train.py` reads auction shards from `belief/data/train/` and a complete,
-fixed set of pairwise test shards from `belief/data/test/`. It rebuilds hands from
-`data/dds_results_100M.npy` (see the [README](../README.md#training-data)). The
-committed `belief/data/systems.json` records bidder IDs used in those shards; it
-is a data schema, not a list of models supplied by this repository. Its `D75` ID
-means Pidgin V1's bidding checkpoint. Other old IDs remain because changing them
-would mislabel saved data; they are not needed to use the released team.
+Training needs completed auctions, the dealt hands, and labels identifying the
+bidding style of each partnership. Use separate auctions for training and
+validation so the model is tested on deals it has not learned from.
 
-The auction generator, `belief/gen.py`, is **not independently runnable from this
-checkout**. It imports `match` from an external `BRIDGE_LAB` checkout and points to
-additional bidder checkpoints under `BRIDGE_KEEP`, plus EPBot and WBridge5 data.
-Neither those sources nor the generated shards are included here. The released
-belief checkpoint can be used without them. To reproduce training, first supply
-the external bidders and compatible auction shards. `--no-wb5` removes only the
-WBridge5 training input: the test loader still requires the WBridge5 test file
-and all 120 original pair files.
+The trainer reads auction shards from `belief/data/train/` and pairwise test
+shards from `belief/data/test/`, with style labels listed in
+`belief/data/systems.json`. It rebuilds hands from the DDS dataset described in
+the [README](../README.md#training-data).
 
-Once those inputs exist, the historical training sequence is:
+**The belief training data is not included.** The current generator also needs
+external bidding engines, and the test loader expects recorded WBridge5 auctions
+in addition to generated test shards. The commands below require those inputs;
+to use bidding search now, download the released belief model instead.
+
+With compatible training and test data in place:
 
 ```bash
-python -u belief/train.py --out runs/belief/r0 --steps 100000 --lr 3e-4 --d 1024 --layers 4 \
-  --holdout ep_wj,E28 --wb5-frac 0.2 --reload 2000
-python -u belief/train.py --out runs/belief/r2 --init runs/belief/r0/last.pt --steps 30000 \
+python -u belief/train.py --out runs/belief/card_owners \
+  --steps 100000 --lr 3e-4 --d 1024 --layers 4 --wb5-frac 0.2 --reload 2000
+python -u belief/train.py --out runs/belief/hand_summary \
+  --init runs/belief/card_owners/last.pt --steps 30000 \
   --lr 1e-4 --d 1024 --layers 4 --summary --sum-weight 0.3 \
-  --holdout ep_wj,E28 --wb5-frac 0.2 --reload 1000000
+  --wb5-frac 0.2 --reload 1000000
 ```
 
 The first run learns card locations; the second adds point and suit-length
-predictions. `--holdout` uses exact system IDs from `systems.json` and excludes
-those bidders from training. These commands describe the original settings;
-they require the missing auction data and bidders. Use `--device cpu`,
-`--device mps`, or `--device cuda` as available.
+predictions. `--holdout` can exclude selected style labels from training. Use
+`--device cpu`, `--device mps`, or `--device cuda` as available.

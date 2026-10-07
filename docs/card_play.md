@@ -28,7 +28,127 @@ This is separate from the [bidding belief model](belief.md). When search is off
 or does not apply to a move, the card-play model chooses directly. Search works
 with guessed hidden deals, not the opponents' actual hands.
 
-The old codes in these filenames identify published files. Download them with
+## What the models see
+
+Both models describe the position from the player making the decision. They see
+their own cards, dummy after the opening lead, the cards already played, the
+contract, vulnerability, and auction. Declarer chooses cards for dummy too.
+Neither model receives the hidden hands when it makes a move.
+
+| Model | Position encoding and network | Outputs |
+|---|---|---|
+| Pidgin V1 policy model | 740 numbers: card ownership and play history, contract and score state, calls made by each seat, and a 96-number reading of the ordered auction. A three-layer fully connected network uses width 1,024 in the released V1 model (512 in the compact model). The auction reader embeds each call and its caller, then runs a GRU once per deal. | A probability for each of 52 cards, with illegal cards masked out; and 52 × 4 scores for which seat holds each card. |
+| Pidgin Q-net | 899 numbers: visible and played cards, trick position, contract and score state, calls made by each seat, the last six calls, and dealer position. The released checkpoint has a width-1,024, three-block residual network. | One predicted trick-value difference for each of 52 cards. Auxiliary heads output 52 × 4 card-owner scores, 4 × 4 × 14 suit-length scores, and 4 × 38 high-card-point scores; serving uses its card values. |
+
+The policy trainer also has a **critic** with a separate 384-number input that
+includes all four hands. It estimates tricks the side on turn will still win and
+reduces noise in the policy update. The critic is never used when playing a board.
+The Q-net has no critic. Its optional `--belief` mode appends 171 features from a
+separate bidding belief model; the released Q-net has the standard 899 inputs and
+does not use that mode. See
+[`training/play/model.py`](../training/play/model.py),
+[`qnet/train_play.py`](../qnet/train_play.py), and
+[`server/emergent/playq.py`](../server/emergent/playq.py).
+
+```mermaid
+flowchart TD
+    policy_in["Policy input: 740 values, including the encoded auction"] --> policy["Three dense layers, width 1,024"]
+    policy --> card["52 card probabilities"]
+    policy --> hidden["52 × 4 card-holder scores"]
+    q_in["Q-net input: 899 values"] --> q["Projection and three residual blocks, width 1,024"]
+    q --> values["52 card values"]
+    q --> auxiliary["Card-holder, suit-length and point predictions"]
+```
+
+## How the policy model learns
+
+The policy trainer plays complete deals against itself or frozen earlier
+snapshots. After each deal, it counts how many tricks the acting side won from
+each decision onward. That return trains the card policy. The known dealt hands
+provide labels for the hidden-card head; the double-dummy table is used for
+evaluation only.
+
+For each learner decision, the loss in
+[`training/play/train.py`](../training/play/train.py) is:
+
+```text
+policy = -mean(normalized_advantage × log_probability(chosen_card))
+critic = mean((predicted_remaining_tricks - actual_remaining_tricks)²)
+belief = cross_entropy(hidden_card_owner, over unseen and unplayed cards)
+total = policy + 0.5 × critic + belief_weight × belief - 0.01 × policy_entropy
+```
+
+The advantage is actual remaining tricks minus the critic's prediction, then
+standardized across learner decisions in the batch. Only decisions made by the
+learning partnership enter these losses when an older snapshot plays the other
+side. The default belief weight is 1.0; `--belief-final` can lower it linearly
+over the first half of the run (the V1 league example below ends at 0.1).
+With `--group K`, the trainer instead plays each deal K times and compares each
+result with the mean of its other copies; the critic loss is then zero.
+
+```text
+load deals, auctions, contracts, and held-out deals
+for each training step:
+    sample deals; optionally choose a frozen opponent
+    play all 52 cards, sampling legal cards from each side's model
+    for each learner move, compute remaining tricks and hidden-card labels
+    estimate advantage with the critic (or other copies of the same deal)
+    update the policy, critic, and hidden-card head with the total loss
+    periodically evaluate on held-out deals and save a checkpoint
+```
+
+## How the Q-net learns
+
+The Q-net's data generator plays out auctions with the Pidgin V1 policy model.
+At every card position, a double-dummy solver evaluates **every legal card**.
+Training positions include some random legal moves, so the model sees positions
+outside the policy model's usual path. For a legal card, the target is its solver
+trick count for the side on turn **minus the best legal card's count**: 0 is best,
+and a negative value is tricks lost. Illegal cards are excluded from the loss.
+
+The trainer's default loss is the mean squared error of these targets over legal
+cards. With `--bhead`, it also predicts each hidden card's owner, each hidden
+hand's original suit lengths, and high-card points. Its actual combined loss is:
+
+```text
+Q = mean((predicted_value - solver_value_relative_to_best)², legal cards only)
+card = cross_entropy(hidden_card_owner, hidden unplayed cards only)
+summary = mean_suit_length_cross_entropy + high_card_point_cross_entropy
+total = Q + 0.1 × (card + 0.25 × summary)
+```
+
+The owner head excludes seats the player can already see. The summary losses
+cover hidden seats only. The released Q-net was trained with this auxiliary head,
+but serving uses the Pidgin V1 policy model's belief head to sample hidden deals
+for search. This keeps the Q-net's value predictions and the deal sampler as
+separate roles.
+
+```text
+generate auctions and play each deal with the policy model
+at each of 52 positions, solve every legal card and save its trick value
+for each training step:
+    sample a saved position and build the player's visible 899-number input
+    set legal-card targets relative to the best solver value
+    update the residual Q-net on legal-card error and hidden-hand labels
+    periodically measure card choices on held-out positions and save a checkpoint
+```
+
+The released `play_B2g_s540k.pt` records step 540,000, input size 899, width
+1,024, and depth 3. The commands below train the same kind of model.
+
+## Training history
+
+![Pidgin V1 card-play policy training losses](figures/card_play_training.svg)
+
+This plot follows the released wide Pidgin V1 policy model's league fine-tune
+from step 1 to 20,000. It starts from an already trained policy model. The lines
+show the raw training batch's critic mean squared error and hidden-card
+cross-entropy recorded by the trainer; they are loss measurements, not match
+results. See [Training curves](training_curves.md) for the data and plotting
+method. The available log for the released Q-net has only two evaluations at
+step 540,000, so it cannot show a training trajectory.
+
+Download the released models with
 `scripts/get_models.sh`. To compare the Pidgin V1 policy model with random legal
 play on the published benchmark (without search):
 
@@ -58,7 +178,7 @@ python scripts/generate_auctions.py --model PidginV1 --n 1000000 \
   --out data/play/auctions_1M.npz
 ```
 
-The historical policy training used two model widths. The compact model uses
+The policy trainer supports two example model widths. The compact model uses
 the first pair; Pidgin V1 card play uses the second. Each second run starts from
 the matching first run and plays against a pool of past snapshots:
 
@@ -69,15 +189,15 @@ python -m training.play.train data/play/auctions_1M.npz \
   --out runs/play/compact_league --init runs/play/compact_base/last.pt \
   --width 512 --pool-size 5 --steps 20000
 python -m training.play.train data/play/auctions_1M.npz \
-  --out runs/play/v1_base --width 1024 --batch 512
+  --out runs/play/v1_base --width 1024 --batch 512 --steps 25000
 python -m training.play.train data/play/auctions_1M.npz \
   --out runs/play/v1_league --init runs/play/v1_base/last.pt \
-  --width 1024 --pool-size 5 --belief-final 0.1
+  --width 1024 --pool-size 5 --belief-final 0.1 --steps 20000
 ```
 
-The latter two commands use the trainer's default `--steps 200`. Increase the
-step count for a serious training run. The released files are historical
-checkpoints; the commands show the stages and do not promise identical weights.
+Both examples train a base policy for 25,000 steps, then fine-tune it against
+earlier checkpoints for 20,000 steps. Use validation matches to decide whether
+a longer run helps.
 
 ## Train the Q-net
 
