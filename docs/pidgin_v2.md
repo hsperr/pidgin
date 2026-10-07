@@ -104,6 +104,23 @@ flags, and adds `--light-open-penalty 0.5`. Set a new `--out` directory and
 `--steps 40000` to reach the released checkpoint's step count. The released file is the step 40,000
 checkpoint.
 
+## Results
+
+Bidding alone, duplicate, double-dummy scoring, 160,000 held-out boards
+([all results](results.md)):
+
+| Opponent | IMPs/board |
+|---|---|
+| Pidgin V1 | +0.37 ± 0.03 |
+| `rule:sayc` (this repo's rule bidder) | +3.39 ± 0.05 |
+| punisher (doubles every contract that goes down) | +0.00 ± 0.03 |
+
+Full team (bidding search and Q-net card play) against the Pidgin V1 team, 4,000 boards
+scored on the real cards: +0.33 ± 0.10 IMPs per board.
+
+Style compared with V1: the same 0.92 code words per 100 calls; weak two-bids in all four
+suits; 1♠ shows five cards 91% of the time (V1: 66%); 6.5% of 0–7 HCP hands open (V1: 4.4%).
+
 ## Training history
 
 ![Pidgin V2 IMPs against Pidgin V1, contract score, light openings and code words across stages 2–4](figures/pidgin_v2_training.svg)

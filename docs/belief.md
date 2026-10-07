@@ -88,6 +88,20 @@ the card-owner probabilities so each hidden seat is expected to hold 13 cards.
 This adjustment is not part of the training loss. Search then samples complete
 deals using the adjusted card probabilities and summary predictions.
 
+## Results
+
+20,000 held-out auctions from many bidders, read from all four seats
+([all results](results.md#belief-net)):
+
+| Calls heard | Hidden cards placed right | HCP error per hand | Suit length error |
+|---|---|---|---|
+| 0 | 33.3% | 3.12 | 1.03 |
+| 4 | 42.8% | 2.15 | 0.83 |
+| full auction | 44.8% | 1.78 | 0.71 |
+
+A guesser told every hidden hand's exact suit lengths places 47.1%. Most of the
+information arrives in the first four calls.
+
 ## Training history
 
 ![Belief net held-out accuracy over both training stages, plus the released model by auction length and by card](figures/belief_training.svg)

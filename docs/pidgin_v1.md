@@ -56,6 +56,22 @@ The script writes the final selected checkpoint to `runs/my_v1/4_D/best.pt`.
 The recipe trains a comparable Pidgin V1 bidder and selects it against the
 stage 3 checkpoint. Results vary with the training seed.
 
+## Results
+
+Bidding alone, duplicate, double-dummy scoring, IMPs per board on 160,000 held-out
+boards unless noted ([all results](results.md)):
+
+| Opponent | IMPs/board |
+|---|---|
+| `rule:sayc` (this repo's rule bidder) | +3.18 ± 0.05 |
+| BRL (Kita et al. 2024) | −0.38 ± 0.03 |
+| EPBot, five convention cards (8,000 boards each) | +0.62 to +0.73 |
+| Pidgin V2 | −0.37 ± 0.03 |
+| punisher (doubles every contract that goes down) | −1.79 ± 0.03 |
+
+Style: 0.92 code words per 100 calls; 4.4% of 0–7 HCP hands open; no weak twos
+(seat 1, not vulnerable: 7+ spades and at most 10 HCP opens 1♠ 94% of the time).
+
 ## Training history
 
 ![Pidgin V1 contract score, code words, IMPs and competitive calls across the four training stages](figures/pidgin_v1_training.svg)

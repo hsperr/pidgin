@@ -19,6 +19,19 @@ No expert auctions or bidding labels are required.
 | `scripts/` | Commands to use the models: download, bid, generate auctions, serve ([scripts/README.md](scripts/README.md)). |
 | `tools/` | Matches, dashboard, analysis. |
 
+## Results at a glance
+
+| | |
+|---|---|
+| Pidgin V2 vs Pidgin V1, bidding | +0.37 ± 0.03 IMPs/board (160,000 boards) |
+| Pidgin V1 vs BRL, bidding | −0.38 ± 0.03 IMPs/board (160,000 boards) |
+| Pidgin V1 vs EPBot, five systems | +0.62 to +0.73 IMPs/board (8,000 boards each) |
+| Pidgin V2 team vs Pidgin V1 team, full play | +0.33 ± 0.10 IMPs/board (4,000 boards) |
+| Q-net opening leads (DDOLAR / ADDOLAR) | 81.3% / 74.7%, level with top experts |
+| Belief net, hidden cards placed after the auction | 44.8% (exact shapes would give 47.1%) |
+
+Details, board counts and how to rerun: [docs/results.md](docs/results.md).
+
 ## Set up
 
 Use Python 3.10 or newer. From the repo root:

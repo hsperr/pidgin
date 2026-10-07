@@ -136,6 +136,22 @@ for each training step:
 The released `play_B2g_s540k.pt` records step 540,000, input size 899, width
 1,024, and depth 3. The commands below train the same kind of model.
 
+## Results
+
+Opening leads on 5,000 benchmark contracts, every legal lead solved double dummy
+([all results](results.md#opening-leads)). DDOLAR: share of leads that give up no trick;
+ADDOLAR: the same without deals where every lead gives the same result.
+
+| Lead | DDOLAR | ADDOLAR |
+|---|---|---|
+| policy net (Pidgin V1 team) | 76.5 ± 0.6% | 68.2 ± 0.8% |
+| Q-net (Pidgin V2 and BRL teams) | 81.3 ± 0.6% | 74.7 ± 0.7% |
+| top human experts (Hammond) | about 81% | about 74.7% |
+
+Declarer play, 49,927 benchmark boards, IMPs per board: policy net vs random cards
++6.30 ± 0.03, vs the earlier policy net +0.44 ± 0.02. Q-net vs policy net, plain nets:
++0.93 ± 0.07 (5,990 boards); with PIMC search on both sides: +0.05 ± 0.06.
+
 ## Training history
 
 ![Policy net tricks gained over random play and tricks below double dummy across self-play and league training](figures/card_play_training.svg)
