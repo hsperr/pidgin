@@ -90,14 +90,11 @@ deals using the adjusted card probabilities and summary predictions.
 
 ## Training history
 
-![Belief-model training losses across the summary fine-tune](figures/belief_training.svg)
+![Belief net held-out accuracy over both training stages, plus the released model by auction length and by card](figures/belief_training.svg)
 
-The chart shows the released model's 30,000-step summary fine-tune, which starts
-from an already trained card-owner model. It plots logged training-batch losses:
-full-auction card-owner cross-entropy and summary negative log likelihood,
-aggregated across bidder systems. The two losses have different scales, and
-their training trends do not measure strength on unseen auctions. See
-[training curves](training_curves.md) for the source and interpretation.
+Held-out card placement improves through the card-owner stage and holds through the
+hand-summary fine-tune. The bottom row shows the released model by auction length and
+card rank. See [training curves](training_curves.md).
 
 The released checkpoint is `belief_r2.pt`. Download it with `scripts/get_models.sh`.
 To ask the released Pidgin V2 bidder for a call (without bidding search):

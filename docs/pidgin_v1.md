@@ -58,14 +58,11 @@ stage 3 checkpoint. Results vary with the training seed.
 
 ## Training history
 
-![Pidgin V1 call-value error and code words per 100 auctions](figures/pidgin_v1_training.svg)
+![Pidgin V1 contract score, code words, IMPs and competitive calls across the four training stages](figures/pidgin_v1_training.svg)
 
-The first panel shows training error when predicting a call's reward, measured
-in units of 100 bridge points. The second counts calls flagged by the
-[simplicity rule](../README.md#simplicity) per 100 validation auctions. Both follow
-the final table-score stage, which starts from a pretrained bidder. See
-[results](results.md) for match performance and [training curves](training_curves.md)
-for the plotted data.
+Grounding and own-contract play raise the contract score to about 150 points per deal.
+The simplicity stage halves the code words. Table score then trades some own-contract
+score for IMPs against the selection opponent. See [training curves](training_curves.md).
 
 Completed stages are skipped if you rerun the same output directory. Use a new
 directory when changing settings. The [README](../README.md#train-pidgin-v1) explains

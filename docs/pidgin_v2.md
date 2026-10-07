@@ -106,10 +106,8 @@ checkpoint.
 
 ## Training history
 
-![Pidgin V2 validation IMPs and weak-opening share during training](figures/pidgin_v2_training.svg)
+![Pidgin V2 IMPs against Pidgin V1, contract score, light openings and code words across stages 2–4](figures/pidgin_v2_training.svg)
 
-These are recorded validation results from the run that produced the released
-checkpoint, shown at the logged steps without smoothing. IMPs compare against
-released Pidgin V1. Weak-opening share is the percentage of 0–7 HCP hands
-opened by the bidder. See
-[training curves](training_curves.md) for the plotted data.
+IMPs against Pidgin V1 climb from −3.7 to about +0.35 per board over the three stages.
+The light-opening cost cuts openings on 0–7 HCP from 30% to about 10%. See
+[training curves](training_curves.md).

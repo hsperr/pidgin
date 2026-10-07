@@ -138,14 +138,13 @@ The released `play_B2g_s540k.pt` records step 540,000, input size 899, width
 
 ## Training history
 
-![Pidgin V1 card-play policy training losses](figures/card_play_training.svg)
+![Policy net tricks gained over random play and tricks below double dummy across self-play and league training](figures/card_play_training.svg)
 
-This plot follows the released wide Pidgin V1 policy model's league fine-tune
-from step 1 to 20,000. It starts from an already trained policy model. The lines
-show the raw training batch's critic mean squared error and hidden-card
-cross-entropy recorded by the trainer; they are loss measurements, not match
-results. See [Training curves](training_curves.md) for the data and plotting
-method.
+![Q-net tricks lost against double dummy and best-card rate by position](figures/qnet_training.svg)
+
+The policy net learns most of its declarer and defence play in the first 10,000
+self-play steps. The Q-net beats the policy net's double-dummy accuracy at every
+position type. See [training curves](training_curves.md).
 
 Download the released models with
 `scripts/get_models.sh`. To compare the Pidgin V1 policy model with random legal
